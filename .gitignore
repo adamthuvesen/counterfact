@@ -45,3 +45,11 @@ checkpoints/
 *.parquet
 *.duckdb
 *.sqlite
+
+# Counter runtime artifacts
+.counter/
+bench/real/runs/
+bench/synthetic/_out/
+
+# uv
+uv.lock
