@@ -119,3 +119,82 @@ def test_outcome_tagged_union__continuous_outcome_rejected_at_intervene_time() -
             step=1,
             intervention={"tool_choice": "inspect_file"},
         )
+
+
+def test_decisions_log_randomization__randomized_decision_round_trips_with_propensity() -> None:
+    """WHEN a Decision with full randomization metadata is round-tripped through JSON
+    THEN all six randomization fields are preserved."""
+    from counter.schema import Decision
+
+    src = Decision(
+        decision_id="d-rand",
+        decision_type="tool_call",
+        chosen_action="run_tests",
+        policy="epsilon_greedy",
+        policy_params={"epsilon": 0.2},
+        valid_actions=["run_tests", "inspect_file", "search_docs"],
+        propensity=0.85,
+        context_features={"step_index": 1},
+    )
+    raw = src.model_dump_json()
+    dst = Decision.model_validate_json(raw)
+    assert dst == src
+    assert dst.policy == "epsilon_greedy"
+    assert dst.policy_params == {"epsilon": 0.2}
+    assert dst.valid_actions == ["run_tests", "inspect_file", "search_docs"]
+    assert dst.chosen_action == "run_tests"
+    assert dst.propensity == 0.85
+    assert dst.context_features == {"step_index": 1}
+
+
+def test_decisions_log_randomization__unrandomized_decision_has_no_propensity() -> None:
+    """WHEN a Decision is created without randomization metadata
+    THEN the decision serializes without a propensity field and is loadable again without error."""
+    from counter.schema import Decision
+
+    src = Decision(decision_id="d-plain", decision_type="plan_step", chosen_action="investigate")
+    dumped = json.loads(src.model_dump_json())
+    assert dumped.get("propensity") is None
+    dst = Decision.model_validate(dumped)
+    assert dst == src
+
+
+def test_decisions_log_randomization__propensity_must_be_in_zero_one_inclusive() -> None:
+    """WHEN a Decision is constructed with propensity=0.0 or propensity=1.5
+    THEN the system raises a pydantic.ValidationError."""
+    from counter.schema import Decision
+
+    base = dict(decision_id="d-bad", decision_type="tool_call")
+    with pytest.raises(ValidationError):
+        Decision(**base, propensity=0.0)
+    with pytest.raises(ValidationError):
+        Decision(**base, propensity=1.5)
+    # propensity=1.0 is allowed (inclusive upper bound)
+    ok = Decision(**base, propensity=1.0)
+    assert ok.propensity == 1.0
+
+
+def test_schema_versioning__unrecognized_version_is_rejected() -> None:
+    """WHEN a trace with schema_version="0.99.0" is loaded by a runtime that only recognizes "0.1.0"
+    THEN the system raises a clear error naming both the seen and supported versions."""
+    from counter.schema import SCHEMA_VERSION, Run
+
+    payload = _fixture()
+    payload["schema_version"] = "0.99.0"
+    with pytest.raises(ValidationError) as exc_info:
+        Run.model_validate(payload)
+    msg = str(exc_info.value)
+    assert "0.99.0" in msg
+    assert SCHEMA_VERSION in msg
+
+
+def test_schema_versioning__current_version_round_trips() -> None:
+    """WHEN a trace produced by the current runtime is loaded by the same runtime
+    THEN load succeeds and schema_version survives the round-trip."""
+    from counter.schema import SCHEMA_VERSION, Run
+
+    payload = _fixture()
+    payload["schema_version"] = SCHEMA_VERSION
+    run = Run.model_validate(payload)
+    reloaded = Run.model_validate_json(run.model_dump_json())
+    assert reloaded.schema_version == SCHEMA_VERSION
