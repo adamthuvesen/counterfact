@@ -1,0 +1,74 @@
+{
+  "schema_version": "0.1.0",
+  "run_id": "run-canonical-001",
+  "steps": [
+    {
+      "step_index": 0,
+      "decisions": [
+        {
+          "decision_id": "d-0-plan",
+          "decision_type": "plan_step",
+          "chosen_action": "investigate_failure"
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    },
+    {
+      "step_index": 1,
+      "decisions": [
+        {
+          "decision_id": "d-1-tool",
+          "decision_type": "tool_call",
+          "chosen_action": "run_tests",
+          "policy": "epsilon_greedy",
+          "policy_params": {"epsilon": 0.2},
+          "valid_actions": ["run_tests", "inspect_file", "search_docs"],
+          "propensity": 0.85,
+          "context_features": {"step_index": 1, "tests_run_so_far": 0}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-1-pytest",
+          "content": {"exit_code": 1, "stdout_tail": "FAILED tests/test_foo.py::test_bar"},
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 2,
+      "decisions": [
+        {
+          "decision_id": "d-2-model",
+          "decision_type": "model_call",
+          "chosen_action": "claude-haiku-4-5",
+          "policy": "epsilon_greedy",
+          "policy_params": {"epsilon": 0.2},
+          "valid_actions": ["claude-haiku-4-5", "claude-sonnet-4-6"],
+          "propensity": 0.9,
+          "context_features": {"prompt_length": 412}
+        },
+        {
+          "decision_id": "d-2-term",
+          "decision_type": "termination",
+          "chosen_action": "stop"
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    }
+  ],
+  "outcome": {
+    "kind": "binary",
+    "value": false,
+    "verifier": "pytest",
+    "metadata": {}
+  },
+  "metadata": {
+    "agent_name": "coding_agent_v0",
+    "notes": "canonical fixture for trace-schema spec tests",
+    "extra": {}
+  }
+}
