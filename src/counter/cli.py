@@ -16,12 +16,13 @@ def _bench_synthetic(args: argparse.Namespace) -> int:
 
 
 def _bench_real(args: argparse.Namespace) -> int:
-    # Stub: real-agent harness lands in §11/§12 with HUMAN GATE.
-    print(
-        "real-agent corpus generator not yet implemented (tasks.md §11-§12).",
-        file=sys.stderr,
+    from bench.real.coding_agent.runner import run_real_corpus
+
+    return run_real_corpus(
+        n=args.n,
+        budget_cap_usd=args.budget_cap,
+        output_dir=args.output_dir,
     )
-    return 2
 
 
 def build_parser() -> argparse.ArgumentParser:
