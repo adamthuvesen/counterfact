@@ -19,6 +19,7 @@ from bench.real.coding_agent import (
     BudgetTracker,
     EpsilonGreedy,
 )
+from bench.real.coding_agent.fixtures import EASY_FIXTURES
 from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
 from bench.real.coding_agent.fixtures import run_pytest
 from bench.real.coding_agent.llm import LLMResponse, extract_cost
@@ -114,7 +115,8 @@ def test_real_corpus_has_at_least_three_fixtures() -> None:
 def test_outcome_is_pytest_exit_code(tmp_path: Path) -> None:
     """WHEN the real-agent harness completes a run on a fixture
     THEN Outcome.value is True iff `pytest <fixture>` returned exit code 0."""
-    fixture = FIXTURES[0]  # string-utils
+    # Use an easy fixture (string-utils) so a known good patch makes pytest pass.
+    fixture = EASY_FIXTURES[0]
 
     class _PerfectLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -142,6 +144,97 @@ def test_outcome_is_pytest_exit_code(tmp_path: Path) -> None:
     assert isinstance(run, Run)
     assert run.outcome.kind == "binary"
     assert run.outcome.value is True
+
+
+def test_agent_logs_retry_policy_on_every_trace_even_when_first_attempt_passes(
+    tmp_path: Path,
+) -> None:
+    """D18: retry_policy is decided UPFRONT. Even when the first attempt passes
+    and no retry happens, the trace must log a retry decision."""
+    fixture = EASY_FIXTURES[0]
+
+    class _PerfectLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            fixed = (
+                "```python\n"
+                '"""Patched."""\n'
+                "from __future__ import annotations\n"
+                "import re\n"
+                "def normalize_name(name: str) -> str:\n"
+                '    return re.sub(r"\\s+", " ", name.strip().lower())\n'
+                "```"
+            )
+            return LLMResponse(text=fixed, cost_usd=0.0)
+
+    budget = BudgetTracker(cap_usd=1.0)
+    run = run_one_trace(
+        fixture,
+        run_index=0,
+        llm=_PerfectLLM(),
+        budget=budget,
+        sandbox_root=tmp_path,
+        config=AgentRunConfig(epsilon=0.2, seed=1),
+    )
+    assert run.outcome.value is True  # first attempt passed
+    retry_decisions = [
+        d for s in run.steps for d in s.decisions if d.decision_type == "retry"
+    ]
+    assert len(retry_decisions) == 1
+    rd = retry_decisions[0]
+    assert rd.policy == "epsilon_greedy"
+    assert rd.chosen_action in {"no_retry", "retry_once"}
+    assert rd.propensity is not None
+    # The retry decision is sequenced BEFORE any model_call (D18 ordering).
+    decision_types_in_order: list[str] = [
+        d.decision_type for s in run.steps for d in s.decisions
+    ]
+    first_retry = decision_types_in_order.index("retry")
+    first_model = decision_types_in_order.index("model_call")
+    assert first_retry < first_model, (
+        f"retry_policy must be decided before model_call; got order {decision_types_in_order}"
+    )
+
+
+def test_agent_retry_branch_includes_failure_context_in_prompt(tmp_path: Path) -> None:
+    """D18: when the retry branch fires, the second model_call's prompt must
+    include the failing test output (not just the same prompt as attempt 1)."""
+    fixture = EASY_FIXTURES[0]
+
+    captured_prompts: list[str] = []
+
+    class _BlankPatchLLM:
+        """First call returns no code fence, so the patch is empty and tests fail.
+        Subsequent calls also return no patch — but we just want to verify the
+        retry prompt is *different* and contains the failure context."""
+
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            captured_prompts.append(prompt)
+            return LLMResponse(text="(no patch)", cost_usd=0.0)
+
+    budget = BudgetTracker(cap_usd=1.0)
+    # Force retry_once via epsilon=0 + greedy=retry_once (default greedy).
+    run = run_one_trace(
+        fixture,
+        run_index=0,
+        llm=_BlankPatchLLM(),
+        budget=budget,
+        sandbox_root=tmp_path,
+        config=AgentRunConfig(epsilon=0.0, seed=0),
+    )
+    assert len(captured_prompts) == 2, (
+        f"expected 2 model calls (initial + retry), got {len(captured_prompts)}"
+    )
+    initial, retry_prompt = captured_prompts
+    assert retry_prompt != initial
+    assert "previous patch" in retry_prompt.lower() or "test output" in retry_prompt.lower()
+    # The trace also captures the retry decision and both model_call attempts.
+    model_calls = [
+        d for s in run.steps for d in s.decisions if d.decision_type == "model_call"
+    ]
+    assert len(model_calls) == 2
+    assert model_calls[0].context_features.get("attempt") == 1
+    assert model_calls[1].context_features.get("attempt") == 2
+    assert model_calls[1].context_features.get("informed_retry") is True
 
 
 def test_agent_logs_all_randomization_fields(tmp_path: Path) -> None:

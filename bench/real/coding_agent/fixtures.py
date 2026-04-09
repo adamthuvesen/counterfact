@@ -32,10 +32,21 @@ class FixtureSpec:
         return self.root / "tests" / self.test_relpath
 
 
-FIXTURES: tuple[FixtureSpec, ...] = (
+# The original three fixtures are easy bugs that capable LLMs one-shot every
+# time (see design.md D19 + the post-mortem on the v0 200-trace corpus). They
+# are kept for harness-integration testing but excluded from the demo's causal
+# corpus by virtue of living in `EASY_FIXTURES`. The harder set in `FIXTURES`
+# is what `counter bench real` exercises.
+EASY_FIXTURES: tuple[FixtureSpec, ...] = (
     FixtureSpec("string-utils", "normalize.py", "test_normalize.py"),
     FixtureSpec("date-utils", "parse.py", "test_parse.py"),
     FixtureSpec("csv-stats", "agg.py", "test_agg.py"),
+)
+
+FIXTURES: tuple[FixtureSpec, ...] = (
+    FixtureSpec("regex-anchors", "match.py", "test_match.py"),
+    FixtureSpec("iso-week-dates", "iso_week.py", "test_iso_week.py"),
+    FixtureSpec("agg-with-groups", "agg.py", "test_agg.py"),
 )
 
 

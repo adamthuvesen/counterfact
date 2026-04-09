@@ -1,13 +1,16 @@
 """Coding-agent loop for the real-agent corpus.
 
-The loop is small and inspectable. Per design.md D16, the greedy branch is
-deliberately boring: inspect → propose fix via LLM → apply → run tests; on
-failure, ε-greedy chooses retry-once vs no-retry.
+The loop is small and inspectable. Per design.md D16/D18, the agent decides
+its retry budget *upfront* (after inspect_file, before the first model call)
+so that `retry_policy` is logged on every trace — not just the ones whose
+first attempt fails. When the retry branch does fire, the second model call's
+prompt includes the failing test output, so the retry is informed rather than
+a blind coin flip.
 
 Randomized decision types (per the v0 commitment in design.md D5/D9):
 * `model_call.model_choice` — which model role (small/large) drafts the patch
 * `tool_call.tool_choice`   — which tool comes first (run_tests vs inspect_file)
-* `retry.retry_policy`      — retry-once or no-retry on a failed test
+* `retry.retry_policy`      — attempt budget: no_retry (1 attempt) or retry_once (2)
 
 The loop emits a counter-native `Run` per fixture. LLM calls go through the
 `LLMClient` protocol so tests can mock them.
@@ -42,6 +45,16 @@ fenced ```python``` block. Do not include any other commentary.
 
 --- TEST ({test_relpath}) ---
 {test}
+"""
+
+_RETRY_PROMPT_SUFFIX = """
+
+Your previous patch was applied but the tests still failed. Here is the test
+output (last lines). Identify what your patch missed and reply with the FULL
+corrected source file inside a fenced ```python``` block.
+
+--- TEST OUTPUT (tail) ---
+{test_output}
 """
 
 _CODE_FENCE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
@@ -130,7 +143,29 @@ def run_one_trace(
     )
     step_index += 1
 
-    # ----- Step 2: model_call (ε-greedy on model_choice; greedy = large) -----
+    # ----- Step 2: retry_policy decided UPFRONT (D18) -----
+    retry_action, retry_prop = eg_retry.choose(RETRY_ARMS, greedy="retry_once")
+    attempts_remaining = 1 + (1 if retry_action == "retry_once" else 0)
+    steps.append(
+        Step(
+            step_index=step_index,
+            decisions=[
+                Decision(
+                    decision_id=f"d-{run_index:06d}-retry",
+                    decision_type="retry",
+                    chosen_action=retry_action,
+                    policy="epsilon_greedy",
+                    policy_params={"epsilon": config.epsilon},
+                    valid_actions=list(RETRY_ARMS),
+                    propensity=retry_prop,
+                    context_features={"step_index": step_index, "upfront": True},
+                )
+            ],
+        )
+    )
+    step_index += 1
+
+    # ----- Step 3: model_call (ε-greedy on model_choice; greedy = large) -----
     model_action, model_prop = eg_model.choose(MODEL_ARMS, greedy="large")
     prompt = _FIX_PROMPT.format(
         root=sandbox,
@@ -139,11 +174,7 @@ def run_one_trace(
         test_relpath=fixture.test_relpath,
         test=test_text,
     )
-    try:
-        resp = llm.call(role=model_action, prompt=prompt)
-    except BudgetExceeded:
-        # Propagate up so the caller halts the corpus run.
-        raise
+    resp = llm.call(role=model_action, prompt=prompt)
     budget.add(resp.cost_usd)
     patched = _extract_python_block(resp.text)
     steps.append(
@@ -151,19 +182,19 @@ def run_one_trace(
             step_index=step_index,
             decisions=[
                 Decision(
-                    decision_id=f"d-{run_index:06d}-model",
+                    decision_id=f"d-{run_index:06d}-model-1",
                     decision_type="model_call",
                     chosen_action=model_action,
                     policy="epsilon_greedy",
                     policy_params={"epsilon": config.epsilon},
                     valid_actions=list(MODEL_ARMS),
                     propensity=model_prop,
-                    context_features={"prompt_chars": len(prompt)},
+                    context_features={"prompt_chars": len(prompt), "attempt": 1},
                 )
             ],
             observations=[
                 Observation(
-                    observation_id=f"o-{run_index:06d}-model",
+                    observation_id=f"o-{run_index:06d}-model-1",
                     content={
                         "response_chars": len(resp.text),
                         "cost_usd": resp.cost_usd,
@@ -175,11 +206,10 @@ def run_one_trace(
     )
     step_index += 1
 
-    # ----- Apply patch (deterministic) -----
     if patched is not None:
         src_path.write_text(patched)
 
-    # ----- Step 3: tool_call run_tests (deterministic given prior tool was inspect) -----
+    # ----- Step 4: tool_call run_tests (deterministic) -----
     passed, tail = run_pytest(sandbox)
     steps.append(
         Step(
@@ -200,6 +230,7 @@ def run_one_trace(
         )
     )
     step_index += 1
+    attempts_remaining -= 1
 
     if passed:
         steps.append(
@@ -216,28 +247,8 @@ def run_one_trace(
         )
         return _build_run(run_index, fixture, steps, success=True)
 
-    # ----- Step 4: retry decision (ε-greedy on retry_policy; greedy = retry_once) -----
-    retry_action, retry_prop = eg_retry.choose(RETRY_ARMS, greedy="retry_once")
-    steps.append(
-        Step(
-            step_index=step_index,
-            decisions=[
-                Decision(
-                    decision_id=f"d-{run_index:06d}-retry",
-                    decision_type="retry",
-                    chosen_action=retry_action,
-                    policy="epsilon_greedy",
-                    policy_params={"epsilon": config.epsilon},
-                    valid_actions=list(RETRY_ARMS),
-                    propensity=retry_prop,
-                    context_features={"step_index": step_index},
-                )
-            ],
-        )
-    )
-    step_index += 1
-
-    if retry_action == "no_retry":
+    if attempts_remaining <= 0:
+        # no_retry was chosen; we ran the one allotted attempt and it failed
         steps.append(
             Step(
                 step_index=step_index,
@@ -252,20 +263,55 @@ def run_one_trace(
         )
         return _build_run(run_index, fixture, steps, success=False)
 
-    # ----- Retry pass: one more model call + run_tests -----
+    # ----- Step 5: model_call retry, with failure context (D18) -----
     src_text = src_path.read_text()
-    prompt2 = _FIX_PROMPT.format(
+    retry_prompt = _FIX_PROMPT.format(
         root=sandbox,
         source_relpath=fixture.source_relpath,
         source=src_text,
         test_relpath=fixture.test_relpath,
         test=test_text,
-    )
-    resp2 = llm.call(role=model_action, prompt=prompt2)
+    ) + _RETRY_PROMPT_SUFFIX.format(test_output=tail[-1000:])
+    resp2 = llm.call(role=model_action, prompt=retry_prompt)
     budget.add(resp2.cost_usd)
     patched2 = _extract_python_block(resp2.text)
+    steps.append(
+        Step(
+            step_index=step_index,
+            decisions=[
+                Decision(
+                    decision_id=f"d-{run_index:06d}-model-2",
+                    decision_type="model_call",
+                    chosen_action=model_action,
+                    policy="epsilon_greedy",
+                    policy_params={"epsilon": config.epsilon},
+                    valid_actions=list(MODEL_ARMS),
+                    propensity=model_prop,
+                    context_features={
+                        "prompt_chars": len(retry_prompt),
+                        "attempt": 2,
+                        "informed_retry": True,
+                    },
+                )
+            ],
+            observations=[
+                Observation(
+                    observation_id=f"o-{run_index:06d}-model-2",
+                    content={
+                        "response_chars": len(resp2.text),
+                        "cost_usd": resp2.cost_usd,
+                        "extracted_code": patched2 is not None,
+                    },
+                )
+            ],
+        )
+    )
+    step_index += 1
+
     if patched2 is not None:
         src_path.write_text(patched2)
+
+    # ----- Step 6: tool_call run_tests (second attempt) -----
     passed2, tail2 = run_pytest(sandbox)
     steps.append(
         Step(
@@ -316,3 +362,15 @@ def _build_run(
             metadata={"fixture_id": fixture.fixture_id},
         ),
     )
+
+
+# Re-export for tests / callers that imported BudgetExceeded from this module.
+__all__ = [
+    "AgentRunConfig",
+    "BudgetExceeded",
+    "DEFAULT_MAX_STEPS",
+    "MODEL_ARMS",
+    "RETRY_ARMS",
+    "TOOL_ARMS",
+    "run_one_trace",
+]
