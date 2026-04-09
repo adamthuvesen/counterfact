@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SCHEMA_VERSION = "0.1.0"
+SUPPORTED_SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION})
 
 DecisionTypeLiteral = Literal[
     "plan_step",
@@ -101,3 +102,13 @@ class Run(_Strict):
     steps: list[Step] = Field(default_factory=list)
     outcome: Outcome
     metadata: Metadata = Field(default_factory=Metadata)
+
+    @field_validator("schema_version")
+    @classmethod
+    def _check_schema_version(cls, v: str) -> str:
+        if v not in SUPPORTED_SCHEMA_VERSIONS:
+            supported = ", ".join(sorted(SUPPORTED_SCHEMA_VERSIONS))
+            raise ValueError(
+                f"unrecognized schema_version={v!r}; supported versions: {supported}"
+            )
+        return v
