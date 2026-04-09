@@ -7,7 +7,7 @@ from bench.synthetic.scm import (
     TOOL_CHOICE_ARMS,
     SyntheticSCM,
 )
-from bench.synthetic.generate import generate_corpus
+from bench.synthetic.generate import generate_corpus, generate_traces
 
 __all__ = [
     "HEADLINE_TRUE_EFFECT",
@@ -16,4 +16,5 @@ __all__ = [
     "TOOL_CHOICE_ARMS",
     "SyntheticSCM",
     "generate_corpus",
+    "generate_traces",
 ]

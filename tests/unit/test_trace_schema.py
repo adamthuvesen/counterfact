@@ -58,17 +58,18 @@ def test_outcome_tagged_union__binary_outcome_accepted_end_to_end() -> None:
     from counter import fit_outcome_model
     from counter.schema import Run
 
-    run = Run.model_validate(_fixture())
-    # The fixture has kind="binary", value=False — the call must reach the fit
-    # path without raising UnsupportedOutcomeError. We pass a single trace; the
-    # full statistical fit lands in §6, so we accept either a trained model
-    # object or the explicit "not yet implemented" sentinel.
-    try:
-        result = fit_outcome_model([run])
-    except NotImplementedError:
-        # acceptable: the fit body is §6 work; the boundary check passed
-        return
-    assert result is not None
+    # A binary outcome at the schema layer must reach fit_outcome_model
+    # without tripping UnsupportedOutcomeError. We pass two traces (one of each
+    # class) so logistic regression has two-class support.
+    run_pos = Run.model_validate(_fixture())
+    payload_neg = _fixture()
+    payload_neg["run_id"] = "run-canonical-002"
+    payload_neg["outcome"] = {"kind": "binary", "value": True, "verifier": "pytest", "metadata": {}}
+    run_neg = Run.model_validate(payload_neg)
+
+    model = fit_outcome_model([run_pos, run_neg], n_bootstrap=4)
+    assert model is not None
+    assert model.outcome_kind == "binary"
 
 
 def test_outcome_tagged_union__categorical_outcome_rejected_at_fit_time() -> None:
