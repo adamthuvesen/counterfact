@@ -80,18 +80,18 @@ class _NoSupport(Exception):
     """Internal: raised when the target arm has zero training support."""
 
 
-def _e_value(point: float, baseline: float = 0.5) -> float:
+def _e_value_from_probs(point: float, baseline: float = 0.5) -> float:
     """Compute the E-value for a marginal P(success) vs a baseline.
 
-    Risk ratio = max(point, 1-point) / max(baseline, 1-baseline) flipped to >= 1
-    by symmetry. Then E-value = RR + sqrt(RR * (RR - 1)).
+    Risk ratio = clamped(point) / clamped(baseline). Delegated to the canonical
+    implementation in `counter.sensitivity` so the test in §9.2 can pin the
+    formula directly.
     """
+    from counter.sensitivity import e_value as _ev
+
     p = max(min(point, 1 - 1e-12), 1e-12)
     b = max(min(baseline, 1 - 1e-12), 1e-12)
-    rr = p / b
-    if rr < 1:
-        rr = 1.0 / rr
-    return float(rr + (rr * (rr - 1.0)) ** 0.5)
+    return _ev(p / b)
 
 
 def _decision_type_at_step(dag: DAG, step: int) -> str:
@@ -172,7 +172,7 @@ def intervene(
     if stance == "requires-back-door-adjustment":
         # v0 returns a bounded estimate: we name the adjustment strategy in
         # assumptions and emit an E-value sentinel against a 0.5 baseline.
-        ev = _e_value(0.5, baseline=0.5)
+        ev = _e_value_from_probs(0.5, baseline=0.5)
         return CausalEstimate(
             query=query,
             identifiability=IdentifiabilityStatus.BOUNDED,
@@ -203,7 +203,7 @@ def intervene(
             next_step="extend corpus",
         )
 
-    ev = _e_value(delta.point, baseline=0.5)
+    ev = _e_value_from_probs(delta.point, baseline=0.5)
     return CausalEstimate(
         query=query,
         identifiability=IdentifiabilityStatus.IDENTIFIED,
