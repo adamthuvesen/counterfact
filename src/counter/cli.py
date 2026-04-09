@@ -16,12 +16,24 @@ def _bench_synthetic(args: argparse.Namespace) -> int:
 
 
 def _bench_real(args: argparse.Namespace) -> int:
+    from bench.real.coding_agent.agent import AgentRunConfig
     from bench.real.coding_agent.runner import run_real_corpus
 
+    config = AgentRunConfig(
+        seed=args.seed,
+        epsilon=args.epsilon,
+        tool_greedy=args.tool_greedy,
+        tool_epsilon=args.tool_epsilon,
+        model_greedy=args.model_greedy,
+        model_epsilon=args.model_epsilon,
+        retry_greedy=args.retry_greedy,
+        retry_epsilon=args.retry_epsilon,
+    )
     return run_real_corpus(
         n=args.n,
         budget_cap_usd=args.budget_cap,
         output_dir=args.output_dir,
+        config=config,
     )
 
 
@@ -51,6 +63,41 @@ def build_parser() -> argparse.ArgumentParser:
     real.add_argument("--n", type=int, required=True)
     real.add_argument("--budget-cap", type=float, default=50.0)
     real.add_argument("--output-dir", type=Path, default=Path("bench/real/runs"))
+    real.add_argument("--seed", type=int, default=0, help="Per-trace RNG seed (default: 0)")
+    real.add_argument(
+        "--epsilon",
+        type=float,
+        default=0.2,
+        help="Default ε used for any decision whose --*-epsilon is not set (default: 0.2)",
+    )
+    real.add_argument("--tool-greedy", type=str, default="inspect_file")
+    real.add_argument("--tool-epsilon", type=float, default=None)
+    real.add_argument(
+        "--model-greedy",
+        type=str,
+        default="large",
+        choices=["small", "large"],
+        help="Greedy arm for model_choice (default: large)",
+    )
+    real.add_argument(
+        "--model-epsilon",
+        type=float,
+        default=None,
+        help="ε for model_choice; falls back to --epsilon when unset",
+    )
+    real.add_argument(
+        "--retry-greedy",
+        type=str,
+        default="retry_once",
+        choices=["no_retry", "retry_once"],
+        help="Greedy arm for retry_policy (default: retry_once)",
+    )
+    real.add_argument(
+        "--retry-epsilon",
+        type=float,
+        default=None,
+        help="ε for retry_policy; falls back to --epsilon when unset",
+    )
     real.set_defaults(func=_bench_real)
 
     return p
