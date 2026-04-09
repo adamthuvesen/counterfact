@@ -21,7 +21,7 @@ from bench.real.coding_agent import (
 )
 from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
 from bench.real.coding_agent.fixtures import run_pytest
-from bench.real.coding_agent.llm import LLMResponse
+from bench.real.coding_agent.llm import LLMResponse, extract_cost
 from bench.real.coding_agent.runner import (
     APPROVAL_MARKER,
     check_credentials,
@@ -262,6 +262,36 @@ def test_resume_after_partial_run(tmp_path: Path) -> None:
     final_files = sorted(p.name for p in output.glob("real-*.json"))
     assert len(final_files) == 4
     assert set(first_files).issubset(final_files)
+
+
+def test_extract_cost__prefers_response_cost_when_present() -> None:
+    """If litellm populated response_cost on the response, use it directly."""
+    resp = {"choices": [{"message": {"content": "x"}}], "response_cost": 0.0237}
+    assert extract_cost(resp) == pytest.approx(0.0237)
+
+
+def test_extract_cost__falls_back_to_completion_cost(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When response_cost is absent or 0, derive cost via litellm.completion_cost."""
+    import litellm  # type: ignore[import-not-found]
+
+    resp = {"choices": [{"message": {"content": "x"}}], "response_cost": 0}
+    monkeypatch.setattr(litellm, "completion_cost", lambda completion_response: 0.0123)
+    assert extract_cost(resp) == pytest.approx(0.0123)
+
+
+def test_extract_cost__returns_zero_when_both_paths_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Last-resort: cost=0 if both response_cost and completion_cost are unavailable."""
+    import litellm  # type: ignore[import-not-found]
+
+    resp = {"choices": [{"message": {"content": "x"}}]}
+
+    def _raise(**kw: object) -> float:
+        raise RuntimeError("price table miss")
+
+    monkeypatch.setattr(litellm, "completion_cost", _raise)
+    assert extract_cost(resp) == 0.0
 
 
 def test_check_credentials__missing_anthropic_key_returns_error() -> None:
