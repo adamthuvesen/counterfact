@@ -35,9 +35,36 @@ class LLMClient(Protocol):
     def call(self, *, role: str, prompt: str) -> LLMResponse: ...
 
 
+def extract_cost(resp: object) -> float:
+    """Best-effort USD cost extraction from a litellm response.
+
+    Strategy:
+    1. Read `response_cost` if litellm populated it (varies by provider).
+    2. Fall back to `litellm.completion_cost(completion_response=resp)` which
+       computes cost from token usage and the published price table.
+    3. Return 0.0 only if both paths failed — the caller can decide whether
+       that's acceptable.
+    """
+    raw = None
+    if hasattr(resp, "get"):
+        raw = resp.get("response_cost")  # type: ignore[union-attr]
+    elif hasattr(resp, "response_cost"):
+        raw = getattr(resp, "response_cost")
+    cost = float(raw or 0.0)
+    if cost > 0.0:
+        return cost
+    try:
+        import litellm  # type: ignore[import-not-found]
+
+        return float(litellm.completion_cost(completion_response=resp))
+    except Exception:
+        return 0.0
+
+
 class LiteLLMClient:
     """Production client. Routes through litellm; cost is sourced from the
-    provider response when available, falling back to a coarse token estimate.
+    provider response when available, falling back to litellm's published
+    price table via `completion_cost`.
 
     Note: the actual API call is gated behind §12.3 HUMAN GATE — no LLM call
     happens until the human approves the smoke run.
@@ -58,6 +85,5 @@ class LiteLLMClient:
             max_tokens=1024,
         )
         text = resp["choices"][0]["message"]["content"]
-        # litellm exposes per-call USD cost via `response_cost` when supported.
-        cost = float(resp.get("response_cost") or 0.0)
+        cost = extract_cost(resp)
         return LLMResponse(text=text, cost_usd=cost)
