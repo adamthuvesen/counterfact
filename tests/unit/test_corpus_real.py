@@ -24,6 +24,7 @@ from bench.real.coding_agent.fixtures import run_pytest
 from bench.real.coding_agent.llm import LLMResponse
 from bench.real.coding_agent.runner import (
     APPROVAL_MARKER,
+    check_credentials,
     first_run_gate_check,
     run_real_corpus,
 )
@@ -261,6 +262,58 @@ def test_resume_after_partial_run(tmp_path: Path) -> None:
     final_files = sorted(p.name for p in output.glob("real-*.json"))
     assert len(final_files) == 4
     assert set(first_files).issubset(final_files)
+
+
+def test_check_credentials__missing_anthropic_key_returns_error() -> None:
+    """When ANTHROPIC_API_KEY is absent, check_credentials returns a fix-it message."""
+    err = check_credentials(
+        role_to_model={"small": "claude-haiku-4-5", "large": "claude-sonnet-4-6"},
+        env={},  # empty environment
+    )
+    assert err is not None
+    assert "ANTHROPIC_API_KEY" in err
+    assert "claude-haiku-4-5" in err or "claude-sonnet-4-6" in err
+
+
+def test_check_credentials__present_anthropic_key_returns_none() -> None:
+    """When the key is present, check_credentials returns None."""
+    err = check_credentials(
+        role_to_model={"small": "claude-haiku-4-5", "large": "claude-sonnet-4-6"},
+        env={"ANTHROPIC_API_KEY": "sk-ant-test"},
+    )
+    assert err is None
+
+
+def test_check_credentials__auth_token_alternative_accepted() -> None:
+    """ANTHROPIC_AUTH_TOKEN is also accepted (per the litellm error message)."""
+    err = check_credentials(
+        role_to_model={"large": "claude-sonnet-4-6"},
+        env={"ANTHROPIC_AUTH_TOKEN": "ant-token"},
+    )
+    assert err is None
+
+
+def test_run_real_corpus__exits_4_when_credentials_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With marker present but no API key (and no custom client factory), the
+    runner must exit 4 BEFORE any LLM call."""
+    marker = tmp_path / ".counter" / "approved"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+    output = tmp_path / "out"
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+
+    rc = run_real_corpus(
+        n=1,
+        budget_cap_usd=1.0,
+        output_dir=output,
+        # Note: no llm_client_factory — the production path triggers the cred check.
+        marker_path=marker,
+    )
+    assert rc == 4
 
 
 def test_cli_real_subcommand_first_run_prints_approval(tmp_path: Path) -> None:

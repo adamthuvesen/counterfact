@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 from collections.abc import Callable
@@ -11,9 +12,17 @@ from pathlib import Path
 from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
 from bench.real.coding_agent.budget import BudgetExceeded, BudgetTracker
 from bench.real.coding_agent.fixtures import FIXTURES, FixtureSpec
-from bench.real.coding_agent.llm import LiteLLMClient, LLMClient
+from bench.real.coding_agent.llm import ROLE_TO_MODEL, LiteLLMClient, LLMClient
 
 APPROVAL_MARKER = Path(".counter") / "approved"
+
+# Provider credential lookup table. Keys are env-var names that satisfy each
+# provider; the first non-empty hit wins. Adding a new provider means adding a
+# row here and an entry in `bench.real.coding_agent.llm.ROLE_TO_MODEL`.
+_PROVIDER_CREDENTIALS: dict[str, tuple[str, ...]] = {
+    "anthropic": ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
+    "openai": ("OPENAI_API_KEY",),
+}
 
 
 def first_run_gate_check(*, marker_path: Path | None = None) -> bool:
@@ -23,6 +32,51 @@ def first_run_gate_check(*, marker_path: Path | None = None) -> bool:
     explicit human approval. The autonomous loop MUST NOT create the marker.
     """
     return (marker_path or APPROVAL_MARKER).exists()
+
+
+def _provider_for_model(model_name: str) -> str:
+    """Infer the provider key from a litellm model identifier."""
+    name = model_name.lower()
+    if name.startswith(("claude", "anthropic/")):
+        return "anthropic"
+    if name.startswith(("gpt", "openai/", "o1", "o3", "o4")):
+        return "openai"
+    # Default: best-effort; unknown providers will surface their own errors.
+    return name.split("/", 1)[0] if "/" in name else "unknown"
+
+
+def check_credentials(
+    role_to_model: dict[str, str] | None = None,
+    env: dict[str, str] | None = None,
+) -> str | None:
+    """Return None if every required provider credential is present, else a
+    user-facing error message naming the provider and how to fix it."""
+    role_to_model = role_to_model or ROLE_TO_MODEL
+    env = env if env is not None else dict(os.environ)
+    missing: list[str] = []
+    for role, model in role_to_model.items():
+        provider = _provider_for_model(model)
+        candidates = _PROVIDER_CREDENTIALS.get(provider)
+        if candidates is None:
+            continue  # unknown provider — let it surface its own error at call time
+        if not any(env.get(name) for name in candidates):
+            missing.append(
+                f"  - role={role!r} (model={model!r}) needs one of: "
+                + " | ".join(candidates)
+            )
+    if not missing:
+        return None
+    lines = [
+        "Provider credentials missing — refusing to start the corpus run.",
+        "",
+        *missing,
+        "",
+        "Set the variable(s) before running, e.g.:",
+        "  export ANTHROPIC_API_KEY='your-key-here'",
+        "If you use 1Password:",
+        '  export ANTHROPIC_API_KEY="$(op read \'op://<vault>/<item>/credential\')"',
+    ]
+    return "\n".join(lines)
 
 
 def print_approval_prompt(stream=sys.stderr) -> None:
@@ -85,6 +139,16 @@ def run_real_corpus(
     if not first_run_gate_check(marker_path=marker_path):
         print_approval_prompt(stream=write_to_stream)
         return 2
+
+    # Credential pre-flight. Catches the missing-key case before any agent
+    # work starts — otherwise the first model_call dies mid-trace and you
+    # wake up to a half-written corpus. Skipped when a custom client factory
+    # is passed (test path; caller takes responsibility).
+    if llm_client_factory is None:
+        cred_error = check_credentials()
+        if cred_error is not None:
+            print(cred_error, file=sys.stderr)
+            return 4
 
     output_dir.mkdir(parents=True, exist_ok=True)
     config = config or AgentRunConfig()
