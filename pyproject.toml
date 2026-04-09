@@ -31,7 +31,7 @@ dev = [
 counter = "counter.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/counter"]
+packages = ["src/counter", "bench"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -264,13 +264,12 @@ def test_resume_after_partial_run(tmp_path: Path) -> None:
 
 
 def test_cli_real_subcommand_first_run_prints_approval(tmp_path: Path) -> None:
-    """`counter bench real ...` without an approval marker exits 2 with the prompt."""
+    """`counter bench real ...` without an approval marker exits 2 with the prompt.
+
+    Runs from a clean cwd with NO PYTHONPATH override — this is the regression
+    test that catches `bench` not being included in the wheel.
+    """
     out = tmp_path / "out"
-    repo_root = Path(__file__).resolve().parents[2]
-    env = {
-        **__import__("os").environ,
-        "PYTHONPATH": str(repo_root) + ":" + __import__("os").environ.get("PYTHONPATH", ""),
-    }
     proc = subprocess.run(
         [
             sys.executable,
@@ -285,8 +284,7 @@ def test_cli_real_subcommand_first_run_prints_approval(tmp_path: Path) -> None:
             "--output-dir",
             str(out),
         ],
-        cwd=tmp_path,  # ensures the (non-existent) ./.counter/approved is checked here
-        env=env,
+        cwd=tmp_path,
         capture_output=True,
         text=True,
     )
