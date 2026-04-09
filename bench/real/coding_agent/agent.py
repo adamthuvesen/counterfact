@@ -69,9 +69,37 @@ def _extract_python_block(text: str) -> str | None:
 
 @dataclass
 class AgentRunConfig:
+    """Per-decision policy knobs for the agent loop.
+
+    Each randomized decision type has its own (greedy_action, epsilon) pair so
+    experimental conditions can be set explicitly per pilot. The actual values
+    used for a decision are logged in that decision's `policy_params` so traces
+    are self-describing.
+
+    `epsilon` is the legacy fallback used when *_epsilon fields are at their
+    default; setting `epsilon` propagates to all three. Per-decision fields
+    take precedence when explicitly set to a non-default value.
+    """
+
     epsilon: float = 0.2
     max_steps: int = DEFAULT_MAX_STEPS
     seed: int = 0
+    # Per-decision policy knobs (D20)
+    tool_greedy: str = "inspect_file"
+    tool_epsilon: float | None = None
+    model_greedy: str = "large"
+    model_epsilon: float | None = None
+    retry_greedy: str = "retry_once"
+    retry_epsilon: float | None = None
+
+    def resolved_tool_epsilon(self) -> float:
+        return self.epsilon if self.tool_epsilon is None else self.tool_epsilon
+
+    def resolved_model_epsilon(self) -> float:
+        return self.epsilon if self.model_epsilon is None else self.model_epsilon
+
+    def resolved_retry_epsilon(self) -> float:
+        return self.epsilon if self.retry_epsilon is None else self.retry_epsilon
 
 
 def run_one_trace(
@@ -84,10 +112,14 @@ def run_one_trace(
     config: AgentRunConfig,
 ) -> Run:
     """Run the agent against one fixture sandbox; return a counter-native Run."""
+    tool_eps = config.resolved_tool_epsilon()
+    model_eps = config.resolved_model_epsilon()
+    retry_eps = config.resolved_retry_epsilon()
+
     rng = random.Random(config.seed ^ run_index)
-    eg_tool = EpsilonGreedy(epsilon=config.epsilon, seed=rng.randint(0, 2**31 - 1))
-    eg_model = EpsilonGreedy(epsilon=config.epsilon, seed=rng.randint(0, 2**31 - 1))
-    eg_retry = EpsilonGreedy(epsilon=config.epsilon, seed=rng.randint(0, 2**31 - 1))
+    eg_tool = EpsilonGreedy(epsilon=tool_eps, seed=rng.randint(0, 2**31 - 1))
+    eg_model = EpsilonGreedy(epsilon=model_eps, seed=rng.randint(0, 2**31 - 1))
+    eg_retry = EpsilonGreedy(epsilon=retry_eps, seed=rng.randint(0, 2**31 - 1))
 
     sandbox = snapshot_fixture(fixture, sandbox_root)
     src_path = sandbox / "src" / fixture.source_relpath
@@ -111,8 +143,8 @@ def run_one_trace(
     )
     step_index += 1
 
-    # ----- Step 1: tool_call (ε-greedy on tool_choice; greedy = inspect_file) -----
-    tool_action, tool_prop = eg_tool.choose(TOOL_ARMS, greedy="inspect_file")
+    # ----- Step 1: tool_call (ε-greedy on tool_choice) -----
+    tool_action, tool_prop = eg_tool.choose(TOOL_ARMS, greedy=config.tool_greedy)
     src_text = src_path.read_text()
     test_text = test_path.read_text()
     steps.append(
@@ -124,7 +156,7 @@ def run_one_trace(
                     decision_type="tool_call",
                     chosen_action=tool_action,
                     policy="epsilon_greedy",
-                    policy_params={"epsilon": config.epsilon},
+                    policy_params={"epsilon": tool_eps, "greedy": config.tool_greedy},
                     valid_actions=list(TOOL_ARMS),
                     propensity=tool_prop,
                     context_features={"first_action": True},
@@ -144,7 +176,7 @@ def run_one_trace(
     step_index += 1
 
     # ----- Step 2: retry_policy decided UPFRONT (D18) -----
-    retry_action, retry_prop = eg_retry.choose(RETRY_ARMS, greedy="retry_once")
+    retry_action, retry_prop = eg_retry.choose(RETRY_ARMS, greedy=config.retry_greedy)
     attempts_remaining = 1 + (1 if retry_action == "retry_once" else 0)
     steps.append(
         Step(
@@ -155,7 +187,7 @@ def run_one_trace(
                     decision_type="retry",
                     chosen_action=retry_action,
                     policy="epsilon_greedy",
-                    policy_params={"epsilon": config.epsilon},
+                    policy_params={"epsilon": retry_eps, "greedy": config.retry_greedy},
                     valid_actions=list(RETRY_ARMS),
                     propensity=retry_prop,
                     context_features={"step_index": step_index, "upfront": True},
@@ -165,8 +197,8 @@ def run_one_trace(
     )
     step_index += 1
 
-    # ----- Step 3: model_call (ε-greedy on model_choice; greedy = large) -----
-    model_action, model_prop = eg_model.choose(MODEL_ARMS, greedy="large")
+    # ----- Step 3: model_call (ε-greedy on model_choice) -----
+    model_action, model_prop = eg_model.choose(MODEL_ARMS, greedy=config.model_greedy)
     prompt = _FIX_PROMPT.format(
         root=sandbox,
         source_relpath=fixture.source_relpath,
@@ -186,7 +218,7 @@ def run_one_trace(
                     decision_type="model_call",
                     chosen_action=model_action,
                     policy="epsilon_greedy",
-                    policy_params={"epsilon": config.epsilon},
+                    policy_params={"epsilon": model_eps, "greedy": config.model_greedy},
                     valid_actions=list(MODEL_ARMS),
                     propensity=model_prop,
                     context_features={"prompt_chars": len(prompt), "attempt": 1},
@@ -284,7 +316,7 @@ def run_one_trace(
                     decision_type="model_call",
                     chosen_action=model_action,
                     policy="epsilon_greedy",
-                    policy_params={"epsilon": config.epsilon},
+                    policy_params={"epsilon": model_eps, "greedy": config.model_greedy},
                     valid_actions=list(MODEL_ARMS),
                     propensity=model_prop,
                     context_features={

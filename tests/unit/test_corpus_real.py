@@ -146,6 +146,46 @@ def test_outcome_is_pytest_exit_code(tmp_path: Path) -> None:
     assert run.outcome.value is True
 
 
+def test_agent_logs_per_decision_policy_params_with_resolved_config(
+    tmp_path: Path,
+) -> None:
+    """D20: when AgentRunConfig sets per-decision greedy/epsilon, every randomized
+    decision logs the *resolved* values it actually used — making the trace
+    self-describing about its experimental condition."""
+    fixture = EASY_FIXTURES[0]
+
+    class _BlankLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text="(no patch)", cost_usd=0.0)
+
+    budget = BudgetTracker(cap_usd=1.0)
+    cfg = AgentRunConfig(
+        seed=42,
+        epsilon=0.2,
+        tool_greedy="inspect_file",
+        tool_epsilon=None,        # falls back to 0.2
+        model_greedy="small",     # explicit non-default greedy
+        model_epsilon=0.4,        # explicit non-default ε
+        retry_greedy="retry_once",
+        retry_epsilon=None,       # falls back to 0.2
+    )
+    run = run_one_trace(
+        fixture, run_index=0, llm=_BlankLLM(), budget=budget,
+        sandbox_root=tmp_path, config=cfg,
+    )
+
+    by_type: dict[str, dict] = {}
+    for s in run.steps:
+        for d in s.decisions:
+            if d.policy is None:
+                continue
+            by_type.setdefault(d.decision_type, d.policy_params or {})
+
+    assert by_type["tool_call"] == {"epsilon": 0.2, "greedy": "inspect_file"}
+    assert by_type["model_call"] == {"epsilon": 0.4, "greedy": "small"}
+    assert by_type["retry"] == {"epsilon": 0.2, "greedy": "retry_once"}
+
+
 def test_agent_logs_retry_policy_on_every_trace_even_when_first_attempt_passes(
     tmp_path: Path,
 ) -> None:
