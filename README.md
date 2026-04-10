@@ -77,6 +77,16 @@ Refusals are first-class. Every `CausalEstimate.next_step` carries a structured 
 
 When the harness can generate the missing data, `payload["suggested_command"]` carries a copy-pasteable `uv run counterfact bench …` invocation. The full schema lives in `openspec/specs/causal-engine/spec.md`.
 
+### Corpus readiness
+
+Before any new real corpus is committed under `bench/real/runs_v2/`, run the no-spend analyzer to score it against the promotion rubric:
+
+```bash
+uv run counterfact analyze corpus bench/real/runs_pilot_<YYYY-MM-DD>/
+```
+
+The rubric (`src/counterfact/corpus_analyzer/rubric.py`) requires pass rate in [0.3, 0.7], ≥2 arms with `n ≥ 5` for some randomized decision type, and ≥1 decision type where `intervene()` returns `identified`. Promotion to `runs_v2/` is a deliberate human `mv` — see `bench/real/README.md` for the convention.
+
 ## Python API
 
 ```python

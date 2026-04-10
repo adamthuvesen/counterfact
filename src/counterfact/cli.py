@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -200,6 +201,85 @@ def _bench_synthetic(args: argparse.Namespace) -> int:
     return 0
 
 
+def _format_report(report: Any, runs_dir: Path) -> str:
+    """Plain-text rendering of a CorpusReadinessReport. Stable enough to grep."""
+    from counterfact.corpus_analyzer import CorpusReadinessReport
+
+    assert isinstance(report, CorpusReadinessReport)
+    lines: list[str] = [
+        f"counterfact analyze corpus: {runs_dir}",
+        f"n_traces: {report.n_traces}",
+        (
+            f"outcome_balance: pass={report.outcome_balance.n_pass} "
+            f"fail={report.outcome_balance.n_fail} "
+            f"pass_rate={report.outcome_balance.pass_rate:.3f}"
+        ),
+    ]
+    if report.arm_support:
+        lines.append("arm_support:")
+        lines.append("  decision_type    arm                  n  pass  rate")
+        for row in report.arm_support:
+            lines.append(
+                f"  {row.decision_type:<14} {row.arm:<18} {row.n:>4} {row.pass_count:>5} "
+                f"{row.pass_rate:>5.3f}"
+            )
+    else:
+        lines.append("arm_support: (no observed arms on randomized decision types)")
+    cov = report.identifiability_coverage
+    reachable_str = ",".join(cov.reachable) if cov.reachable else "(none)"
+    lines.append(
+        f"identifiability_coverage: reachable={reachable_str} "
+        f"unfittable_outcome_model={cov.unfittable_outcome_model}"
+    )
+    for c in report.criteria:
+        prefix = "PASS" if c.passed else "FAIL"
+        lines.append(f"{prefix} {c.reason}")
+    lines.append(f"promote: {report.promote}")
+    return "\n".join(lines)
+
+
+def _analyze_corpus(args: argparse.Namespace) -> int:
+    from pydantic import ValidationError
+
+    from counterfact.corpus_analyzer import RubricThresholds, analyze
+
+    runs_dir: Path = args.runs_dir
+    if not runs_dir.exists() or not runs_dir.is_dir():
+        print(
+            f"counterfact analyze corpus: directory not found: {runs_dir}",
+            file=sys.stderr,
+        )
+        return 2
+
+    runs: list[Run] = []
+    for path in sorted(runs_dir.glob("*.json")):
+        try:
+            runs.append(Run.model_validate_json(path.read_text()))
+        except (ValidationError, ValueError) as exc:
+            print(
+                f"counterfact analyze corpus: failed to parse {path}: {exc}",
+                file=sys.stderr,
+            )
+            return 2
+
+    overrides: dict[str, Any] = {}
+    if args.min_pass_rate is not None:
+        overrides["min_pass_rate"] = args.min_pass_rate
+    if args.max_pass_rate is not None:
+        overrides["max_pass_rate"] = args.max_pass_rate
+    if args.min_arms is not None:
+        overrides["min_arms_per_decision_type"] = args.min_arms
+    if args.min_n_per_arm is not None:
+        overrides["min_n_per_arm"] = args.min_n_per_arm
+    if args.min_identified is not None:
+        overrides["min_identified_decision_types"] = args.min_identified
+    thresholds = RubricThresholds(**overrides) if overrides else RubricThresholds()
+
+    report = analyze(runs, thresholds=thresholds)
+    print(_format_report(report, runs_dir))
+    return 0 if report.promote else 1
+
+
 def _bench_real(args: argparse.Namespace) -> int:
     from bench.real.coding_agent.agent import AgentRunConfig
     from bench.real.coding_agent.runner import run_real_corpus
@@ -333,6 +413,47 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     real.set_defaults(func=_bench_real)
+
+    analyze = sub.add_parser(
+        "analyze", help="Score a candidate corpus against the promotion rubric"
+    )
+    analyze_sub = analyze.add_subparsers(dest="analyze_kind", required=True)
+    corpus = analyze_sub.add_parser(
+        "corpus",
+        help="Run the corpus-readiness analyzer on a directory of trace JSON files",
+    )
+    corpus.add_argument("runs_dir", type=Path, help="Directory of trace JSON files")
+    corpus.add_argument(
+        "--min-pass-rate",
+        type=float,
+        default=None,
+        help="Override RubricThresholds.min_pass_rate (default: 0.3)",
+    )
+    corpus.add_argument(
+        "--max-pass-rate",
+        type=float,
+        default=None,
+        help="Override RubricThresholds.max_pass_rate (default: 0.7)",
+    )
+    corpus.add_argument(
+        "--min-arms",
+        type=int,
+        default=None,
+        help="Override RubricThresholds.min_arms_per_decision_type (default: 2)",
+    )
+    corpus.add_argument(
+        "--min-n-per-arm",
+        type=int,
+        default=None,
+        help="Override RubricThresholds.min_n_per_arm (default: 5)",
+    )
+    corpus.add_argument(
+        "--min-identified",
+        type=int,
+        default=None,
+        help="Override RubricThresholds.min_identified_decision_types (default: 1)",
+    )
+    corpus.set_defaults(func=_analyze_corpus)
 
     return p
 
