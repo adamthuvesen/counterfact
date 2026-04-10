@@ -28,8 +28,14 @@ from counter.intervene.estimate import (
     DistributionSummary,
     IdentifiabilityStatus,
     InterventionQuery,
+    NextStep,
     SensitivityBounds,
 )
+
+# Width below which an `identified` estimate is considered "tight enough" — no
+# action is needed and `next_step.action="none"`. Above this, intervene
+# emits `increase_n` with a binomial-Wald n estimate.
+_IDENTIFIED_TIGHT_CI_WIDTH = 0.10
 
 
 def _bootstrap_predict(
@@ -166,7 +172,14 @@ def intervene(
                 "latent prompt quality and LLM completion noise are unblocked; "
                 "no identifying assumptions hold here without replay infrastructure."
             ],
-            next_step="replay",
+            next_step=NextStep(
+                action="replay_required",
+                payload={"intervention_target": intervention_kind},
+                human_text=(
+                    f"{intervention_kind} is high-dimensional; only deterministic "
+                    "replay can answer this query."
+                ),
+            ),
         )
 
     if stance == "requires-back-door-adjustment":
@@ -186,6 +199,21 @@ def intervene(
                 "bounded path: confounders may exist; sensitivity bound holds the "
                 "result against unmeasured strength of confounding."
             ],
+            next_step=NextStep(
+                action="broaden_arm_support",
+                payload={
+                    "arm_name": decision_type,
+                    "missing_strata": [
+                        "back-door adjustment requires randomized support over "
+                        f"{decision_type} jointly with its parents; v0 returns a bound."
+                    ],
+                },
+                human_text=(
+                    f"{decision_type} would identify under back-door adjustment if "
+                    "the corpus had randomized joint support over its parents; "
+                    "v0 ships the E-value bound instead."
+                ),
+            ),
         )
 
     # stance == "requires-randomized-support" → identified path via g-formula.
@@ -200,10 +228,51 @@ def intervene(
                 "Increasing epsilon or extending the corpus could create support "
                 "for this arm and promote the result to identified."
             ],
-            next_step="extend corpus",
+            next_step=NextStep(
+                action="broaden_arm_support",
+                payload={
+                    "arm_name": decision_type,
+                    "missing_strata": [str(exc)],
+                },
+                human_text=(
+                    f"Arm {target_value!r} on {decision_type!r} has zero observed "
+                    "support; raise ε or run more traces with a deliberate sweep."
+                ),
+            ),
         )
 
     ev = _e_value_from_probs(delta.point, baseline=0.5)
+    ci_width = delta.ci_high - delta.ci_low
+    if ci_width <= _IDENTIFIED_TIGHT_CI_WIDTH:
+        next_step = NextStep(
+            action="none",
+            payload={},
+            human_text=(
+                f"CI width {ci_width:.3f} ≤ {_IDENTIFIED_TIGHT_CI_WIDTH:.2f}; "
+                "no further action required."
+            ),
+        )
+    else:
+        # Estimate the additional traces needed to bring CI width below the
+        # tight-enough threshold. Binomial-Wald scales as 1/√n, so:
+        #     n_required ≈ current_n * (current_width / target_width)^2
+        # We don't know the *exact* n_total contributing to this estimator
+        # without re-walking the corpus; approximate via the bootstrap n.
+        current_n = max(int(getattr(model, "train_n", 0)) or delta.n_bootstrap, 1)
+        scale = (ci_width / _IDENTIFIED_TIGHT_CI_WIDTH) ** 2
+        estimated_required_n = max(int(round(current_n * scale)), current_n + 1)
+        next_step = NextStep(
+            action="increase_n",
+            payload={
+                "current_n": current_n,
+                "estimated_required_n": estimated_required_n,
+                "target_ci_width": _IDENTIFIED_TIGHT_CI_WIDTH,
+            },
+            human_text=(
+                f"CI width {ci_width:.3f} > {_IDENTIFIED_TIGHT_CI_WIDTH:.2f}; "
+                f"~{estimated_required_n} traces would tighten it."
+            ),
+        )
     return CausalEstimate(
         query=query,
         identifiability=IdentifiabilityStatus.IDENTIFIED,
@@ -215,4 +284,5 @@ def intervene(
             "back-door adjustment via empirical training distribution (g-formula)",
             "uniform / propensity-logged randomization at this decision type",
         ],
+        next_step=next_step,
     )

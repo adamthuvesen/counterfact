@@ -6,6 +6,7 @@ from counter.intervene.estimate import (
     DistributionSummary,
     IdentifiabilityStatus,
     InterventionQuery,
+    NextStep,
     SensitivityBounds,
 )
 
@@ -14,6 +15,7 @@ __all__ = [
     "DistributionSummary",
     "IdentifiabilityStatus",
     "InterventionQuery",
+    "NextStep",
     "SensitivityBounds",
     "intervene",
 ]

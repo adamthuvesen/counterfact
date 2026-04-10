@@ -122,11 +122,12 @@ def test_intervene__bounded_result_has_bounds_and_assumptions(
     assert len(est.assumptions) >= 1
 
 
-def test_intervene__unidentified_result_has_reason_and_next_step(
+def test_intervene__unidentified_result_has_reason_and_structured_next_step(
     small_corpus: list[Run], fitted: object
 ) -> None:
     """WHEN intervene is called for a prompt_content query
-    THEN identifiability="unidentified", reason is non-null, next_step="replay"."""
+    THEN identifiability="unidentified", reason is non-null, and next_step has
+         action="replay_required" with intervention_target in payload."""
     # synthetic SCM has a model_call at step 2
     est = intervene(
         dag=_dag(small_corpus[0]),
@@ -136,7 +137,9 @@ def test_intervene__unidentified_result_has_reason_and_next_step(
     )
     assert est.identifiability == IdentifiabilityStatus.UNIDENTIFIED
     assert est.reason is not None and len(est.reason) > 0
-    assert est.next_step == "replay"
+    assert est.next_step.action == "replay_required"
+    assert est.next_step.payload["intervention_target"] == "prompt_content"
+    assert est.next_step.human_text
 
 
 def test_intervene__invalid_intervention_for_decision_type_raises(
