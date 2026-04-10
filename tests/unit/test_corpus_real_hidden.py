@@ -335,3 +335,212 @@ def test_hidden_fixture_prompt_does_not_mention_tests_hidden(tmp_path: Path) -> 
         assert needle not in prompt, (
             f"hidden test name leaked into prompt: {needle}"
         )
+
+
+# --- Phase D: hidden eval + Outcome metadata wiring ------------------------
+
+
+def _stub_llm_returning(text: str) -> object:
+    """Build a one-shot stub LLM that always returns `text`."""
+    from bench.real.coding_agent.llm import LLMResponse
+
+    class _Stub:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text=text, cost_usd=0.0)
+
+    return _Stub()
+
+
+def _csv_dedupe_reference_fence() -> str:
+    """The reference implementation source, fenced for the prompt protocol."""
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    csv = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
+    ref = (csv.root / "src" / "_dedupe_reference.py").read_text()
+    return f"```python\n{ref}```"
+
+
+def _csv_dedupe_buggy_fence() -> str:
+    """A patch that satisfies public tests but fails hidden tests."""
+    return (
+        "```python\n"
+        '"""Public-passing, hidden-failing patch."""\n'
+        "from __future__ import annotations\n"
+        "def dedupe(rows: list[str]) -> list[str]:\n"
+        "    seen: set[str] = set()\n"
+        "    out: list[str] = []\n"
+        "    for row in rows:\n"
+        "        if row in seen:\n"
+        "            continue\n"
+        "        seen.add(row)\n"
+        "        out.append(row)\n"
+        "    return out\n"
+        "```"
+    )
+
+
+def test_hidden_outcome_when_reference_passes_both(tmp_path: Path) -> None:
+    """Req: Hidden-test verifier runs once after the loop and defines Outcome
+    Req: Outcome metadata records public, hidden, and generalization gap
+    Req: Hidden-fixture traces use a distinct verifier label
+    WHEN a stub LLM returns the reference implementation
+    THEN Outcome.value=True, verifier='pytest_hidden', metadata records
+         public_pass=True, hidden_pass=True, generalization_gap=False."""
+    from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
+    from bench.real.coding_agent.budget import BudgetTracker
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    csv = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
+    budget = BudgetTracker(cap_usd=1.0)
+    run = run_one_trace(
+        csv,
+        run_index=0,
+        llm=_stub_llm_returning(_csv_dedupe_reference_fence()),  # type: ignore[arg-type]
+        budget=budget,
+        sandbox_root=tmp_path,
+        config=AgentRunConfig(epsilon=0.0, seed=42),
+    )
+    assert run.outcome.kind == "binary"
+    assert run.outcome.value is True
+    assert run.outcome.verifier == "pytest_hidden"
+    md = run.outcome.metadata
+    assert md["fixture_id"] == "csv_dedupe"
+    assert md["public_pass"] is True
+    assert md["hidden_pass"] is True
+    assert md["generalization_gap"] is False
+
+
+def test_hidden_outcome_records_generalization_gap(tmp_path: Path) -> None:
+    """Req: Outcome metadata records public, hidden, and generalization gap
+    Req: Hidden-test verifier runs once after the loop and defines Outcome
+    WHEN a stub LLM returns a fix that passes public but fails hidden
+    THEN Outcome.value=False, public_pass=True, hidden_pass=False,
+         generalization_gap=True."""
+    from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
+    from bench.real.coding_agent.budget import BudgetTracker
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    csv = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
+    budget = BudgetTracker(cap_usd=1.0)
+    run = run_one_trace(
+        csv,
+        run_index=0,
+        llm=_stub_llm_returning(_csv_dedupe_buggy_fence()),  # type: ignore[arg-type]
+        budget=budget,
+        sandbox_root=tmp_path,
+        config=AgentRunConfig(epsilon=0.0, seed=42),
+    )
+    assert run.outcome.value is False
+    md = run.outcome.metadata
+    assert md["public_pass"] is True
+    assert md["hidden_pass"] is False
+    assert md["generalization_gap"] is True
+
+
+def test_hidden_outcome_when_no_patch_extracted(tmp_path: Path) -> None:
+    """When the model returns no fenced block, src/ stays buggy. Public tests
+    still pass on the buggy src (by fixture invariant), so we must still see
+    public_pass=True / hidden_pass=False / gap=True."""
+    from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
+    from bench.real.coding_agent.budget import BudgetTracker
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    csv = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
+    budget = BudgetTracker(cap_usd=1.0)
+    run = run_one_trace(
+        csv,
+        run_index=0,
+        llm=_stub_llm_returning("(no fence)"),  # type: ignore[arg-type]
+        budget=budget,
+        sandbox_root=tmp_path,
+        config=AgentRunConfig(epsilon=0.0, seed=42),
+    )
+    md = run.outcome.metadata
+    assert md["public_pass"] is True
+    assert md["hidden_pass"] is False
+    assert md["generalization_gap"] is True
+    assert run.outcome.value is False
+
+
+def test_hidden_eval_runs_exactly_once_per_trace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Req: Hidden-test verifier runs once after the loop and defines Outcome
+    WHEN a single trace completes on a hidden-test fixture
+    THEN run_pytest_hidden is invoked exactly once after the agent has terminated."""
+    from bench.real.coding_agent import fixtures as fixtures_mod
+    from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
+    from bench.real.coding_agent.budget import BudgetTracker
+
+    csv = next(fx for fx in fixtures_mod.HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
+    calls: list[Path] = []
+    real_hidden = fixtures_mod.run_pytest_hidden
+
+    def _spy(workspace: Path, *, timeout_s: int = 30) -> tuple[bool, str]:
+        calls.append(workspace)
+        return real_hidden(workspace, timeout_s=timeout_s)
+
+    # Patch the symbol that agent.py imports so the spy is observed there.
+    import bench.real.coding_agent.agent as agent_mod
+
+    monkeypatch.setattr(agent_mod, "run_pytest_hidden", _spy, raising=True)
+    budget = BudgetTracker(cap_usd=1.0)
+    run_one_trace(
+        csv,
+        run_index=0,
+        llm=_stub_llm_returning("(no fence)"),  # type: ignore[arg-type]
+        budget=budget,
+        sandbox_root=tmp_path,
+        config=AgentRunConfig(epsilon=0.0, seed=42),
+    )
+    assert len(calls) == 1, f"expected hidden eval to run once, got {len(calls)}"
+
+
+def test_retry_prompt_tail_comes_from_public_not_hidden(tmp_path: Path) -> None:
+    """Req: Public-test verifier runs only public tests during the agent loop
+    WHEN the agent's first run_tests step on a hidden-fixture reports a failure
+    THEN the failure tail piped into the retry prompt comes from tests_public/
+         and contains no text originating from tests_hidden/."""
+    from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
+    from bench.real.coding_agent.budget import BudgetTracker
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+    from bench.real.coding_agent.llm import LLMResponse
+
+    csv = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
+    captured: list[str] = []
+    # Patch that BREAKS public tests (raises on import), so a public failure
+    # drives the retry prompt.
+    public_breaking_fence = (
+        "```python\n"
+        "raise RuntimeError('public-breaking patch')\n"
+        "```"
+    )
+
+    class _Stub:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            captured.append(prompt)
+            return LLMResponse(text=public_breaking_fence, cost_usd=0.0)
+
+    budget = BudgetTracker(cap_usd=1.0)
+    # Force retry_once via greedy + epsilon=0
+    cfg = AgentRunConfig(
+        epsilon=0.0, seed=0, retry_greedy="retry_once", retry_epsilon=0.0
+    )
+    run_one_trace(
+        csv,
+        run_index=0,
+        llm=_Stub(),  # type: ignore[arg-type]
+        budget=budget,
+        sandbox_root=tmp_path,
+        config=cfg,
+    )
+    assert len(captured) == 2, (
+        f"expected initial + retry prompts, got {len(captured)}"
+    )
+    retry_prompt = captured[1]
+    # The retry prompt's failure tail must mention public test output, not hidden.
+    assert "tests_public" in retry_prompt or "test_dedupe.py" in retry_prompt
+    assert "tests_hidden" not in retry_prompt
+    assert "test_dedupe_hidden" not in retry_prompt
+    assert "whitespace_rule" not in retry_prompt
+    assert "nfc_rule" not in retry_prompt
