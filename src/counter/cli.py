@@ -29,11 +29,18 @@ def _bench_real(args: argparse.Namespace) -> int:
         retry_greedy=args.retry_greedy,
         retry_epsilon=args.retry_epsilon,
     )
+    fixture_ids = (
+        tuple(s.strip() for s in args.fixtures.split(",") if s.strip())
+        if args.fixtures
+        else None
+    )
     return run_real_corpus(
         n=args.n,
         budget_cap_usd=args.budget_cap,
         output_dir=args.output_dir,
         config=config,
+        fixture_ids=fixture_ids,
+        fixture_set=args.fixture_set,
     )
 
 
@@ -97,6 +104,26 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="ε for retry_policy; falls back to --epsilon when unset",
+    )
+    real.add_argument(
+        "--fixtures",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated fixture ids to iterate over (e.g. 'csv_dedupe' "
+            "or 'csv_dedupe,date_window'). Overrides --fixture-set."
+        ),
+    )
+    real.add_argument(
+        "--fixture-set",
+        type=str,
+        default=None,
+        choices=["v0", "easy", "hidden_v1"],
+        help=(
+            "Named fixture-set shortcut. 'v0' is the original hard fixtures "
+            "(default behavior), 'easy' is the original easy fixtures, "
+            "'hidden_v1' is the public/hidden split fixture set."
+        ),
     )
     real.set_defaults(func=_bench_real)
 
