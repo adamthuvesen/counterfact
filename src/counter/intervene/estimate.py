@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class IdentifiabilityStatus(str, Enum):
@@ -46,6 +46,47 @@ class SensitivityBounds(_Strict):
     note: str | None = None
 
 
+# Required payload keys per action. Each action's payload must contain at
+# least these keys; extra keys are tolerated. `none` accepts an empty payload.
+_REQUIRED_PAYLOAD_KEYS: dict[str, tuple[str, ...]] = {
+    "increase_n": ("current_n", "estimated_required_n", "target_ci_width"),
+    "broaden_arm_support": ("arm_name", "missing_strata"),
+    "replay_required": ("intervention_target",),
+    "add_arm_randomization": ("arm_name", "current_policy"),
+    "none": (),
+}
+
+
+class NextStep(_Strict):
+    """Structured guidance for what to do when an estimate is not actionable as-is.
+
+    Each `action` documents a payload contract; the validator enforces that the
+    minimum keys are present so consumers (the demo notebook, tooling) can rely
+    on the shape rather than string-matching `human_text`.
+    """
+
+    action: Literal[
+        "increase_n",
+        "broaden_arm_support",
+        "replay_required",
+        "add_arm_randomization",
+        "none",
+    ]
+    payload: dict[str, Any] = Field(default_factory=dict)
+    human_text: str
+
+    @model_validator(mode="after")
+    def _check_payload_contract(self) -> "NextStep":
+        required = _REQUIRED_PAYLOAD_KEYS[self.action]
+        missing = [k for k in required if k not in self.payload]
+        if missing:
+            raise ValueError(
+                f"NextStep(action={self.action!r}) is missing required payload "
+                f"keys: {missing}"
+            )
+        return self
+
+
 class CausalEstimate(_Strict):
     """The result object returned by `counter.intervene`."""
 
@@ -58,4 +99,4 @@ class CausalEstimate(_Strict):
     bounds: SensitivityBounds | None = None
     assumptions: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    next_step: str | None = None
+    next_step: NextStep
