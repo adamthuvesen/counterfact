@@ -1,7 +1,7 @@
-"""Compute the 2×2 (public_pass, hidden_pass) contingency from a hidden-fixture run.
+"""Compute the 2x2 (public_pass, hidden_pass) contingency from a hidden-fixture run.
 
-Used by the hidden-test-fixtures pilot decision gate (tasks 6.2–6.4): if the
-cell `(public_pass=True, hidden_pass=False)` contains ≥3 traces, the
+Used by the hidden-test-fixtures pilot decision gate (tasks 6.2-6.4): if the
+cell `(public_pass=True, hidden_pass=False)` contains >=3 traces, the
 generalization gap exists and we replicate to date_window + rate_limit.
 Otherwise we stop and rethink.
 
@@ -64,14 +64,23 @@ def render(report: dict[str, object]) -> str:
             f"Cost: ${cost:.4f}  ({cost / n:.4f} / trace)",
             f"Fixtures: {fixtures}",
             "",
-            "## 2×2 contingency (public_pass × hidden_pass)",
-            f"|             | hidden=T | hidden=F |",
-            f"|-------------|---------:|---------:|",
-            f"| **public=T**| {table['public=T,hidden=T']:8d} | {table['public=T,hidden=F (gap)']:8d} |",
-            f"| **public=F**| {table['public=F,hidden=T']:8d} | {table['public=F,hidden=F']:8d} |",
+            "## 2x2 contingency (public_pass x hidden_pass)",
+            "|             | hidden=T | hidden=F |",
+            "|-------------|---------:|---------:|",
+            (
+                f"| **public=T**| {table['public=T,hidden=T']:8d} | "
+                f"{table['public=T,hidden=F (gap)']:8d} |"
+            ),
+            (
+                f"| **public=F**| {table['public=F,hidden=T']:8d} | "
+                f"{table['public=F,hidden=F']:8d} |"
+            ),
             "",
-            f"## Decision gate (task 6.3)",
-            f"Generalization-gap cell `(public=T, hidden=F)`: {table['public=T,hidden=F (gap)']} (need ≥3)",
+            "## Decision gate (task 6.3)",
+            (
+                "Generalization-gap cell `(public=T, hidden=F)`: "
+                f"{table['public=T,hidden=F (gap)']} (need >=3)"
+            ),
             f"Gate: **{gate}**",
         ]
     )

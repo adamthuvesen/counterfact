@@ -1,5 +1,6 @@
 """Synthetic SCM corpus — pure-Python simulator with known treatment effects."""
 
+from bench.synthetic.generate import generate_corpus, generate_traces
 from bench.synthetic.scm import (
     HEADLINE_TRUE_EFFECT,
     MODEL_CHOICE_ARMS,
@@ -7,7 +8,6 @@ from bench.synthetic.scm import (
     TOOL_CHOICE_ARMS,
     SyntheticSCM,
 )
-from bench.synthetic.generate import generate_corpus, generate_traces
 
 __all__ = [
     "HEADLINE_TRUE_EFFECT",

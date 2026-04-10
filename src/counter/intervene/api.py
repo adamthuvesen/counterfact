@@ -79,7 +79,12 @@ def _adjust_g_formula(
     boot_means = boot_per_run.mean(axis=0)  # (B,)
     ci_lo = float(np.percentile(boot_means, 2.5))
     ci_hi = float(np.percentile(boot_means, 97.5))
-    return DistributionSummary(point=point, ci_low=ci_lo, ci_high=ci_hi, n_bootstrap=len(boot_means))
+    return DistributionSummary(
+        point=point,
+        ci_low=ci_lo,
+        ci_high=ci_hi,
+        n_bootstrap=len(boot_means),
+    )
 
 
 class _NoSupport(Exception):
@@ -268,7 +273,7 @@ def intervene(
         )
         current_n = max(current_n, 1)
         scale = (ci_width / _IDENTIFIED_TIGHT_CI_WIDTH) ** 2
-        estimated_required_n = max(int(round(current_n * scale)), current_n + 1)
+        estimated_required_n = max(round(current_n * scale), current_n + 1)
         next_step = NextStep(
             action="increase_n",
             payload={

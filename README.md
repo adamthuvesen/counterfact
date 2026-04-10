@@ -1,302 +1,135 @@
 # counter
 
-> Causal attribution for agent traces. Ask what changed, what mattered, and what can actually be identified.
+> Causal attribution for LLM-agent traces, with the rare good manners to say when the data cannot support the counterfactual.
 
-**Status:** design phase · v0 scope sketch · 2026-05-02
+`counter` is a small Python research library for asking which agent decisions plausibly changed an outcome. It ingests typed decision traces, builds an inspectable per-trace DAG, fits a transparent outcome model, and answers intervention-style questions with an explicit identifiability label:
 
----
+- `identified` - estimable under the declared graph, support, and assumptions
+- `bounded` - not point-identified, but sensitivity bounds are available
+- `unidentified` - unsupported by the traces without stronger assumptions or replay
 
-## The pitch
+The point is not to turn trace inspection into a confident-looking probability. The point is to keep the causal claim honest.
 
-`counter` is a Python library for causal analysis of LLM-agent decision traces. It ingests a corpus of traces, maps each agent's decisions into a typed causal graph, fits a transparent outcome model, and answers intervention-style questions like:
+## Quickstart
 
-> If this agent had chosen a different tool at step 12, how would the final outcome distribution change?
+```bash
+uv pip install -e ".[dev]"
+uv run pytest
+uv run counter demo
+```
 
-The important part is not just the estimated effect. The important part is that every answer carries an **identifiability label**:
+The demo command is local-only. It uses the committed `bench/real/runs_v1/` corpus when present and falls back to synthetic SCM traces when it is not. It does not call the real-agent LLM harness or require provider credentials.
 
-- `identified` - the query can be estimated under the declared graph and assumptions.
-- `bounded` - the exact effect is not identified, but useful sensitivity bounds are available.
-- `unidentified` - the trace does not support the claim without stronger assumptions or replay.
-
-The library's posture is deliberately honest: agent traces are messy, LLM completions are stochastic, and many tempting "counterfactual" claims are not identifiable from observational traces alone. `counter` makes that uncertainty visible instead of hiding it behind a fake probability.
-
-## What "counterfactual" means here
-
-The word "counterfactual" gets overloaded. `counter` should keep the levels separate.
-
-| Level | Query | Example | v0 stance |
-| --- | --- | --- | --- |
-| Observational | `P(Y | X)` | Do traces using tool A fail more often? | Supported as descriptive analysis. |
-| Interventional | `P(Y | do(X))` | If we force tool B at step 12, what changes? | Core v0 target, when identifiable or bounded. |
-| Replay / rollout | Re-execute with a forced change | Run the same agent with tool B at step 12. | Useful, but reported as replay, not Pearl L3. |
-| Structural counterfactual | `P(Y_x | X=x', Y=y')` | Given this exact failed trace, what would have happened if step 12 differed? | Usually not identifiable for LLM agents without strong assumptions. |
-
-This distinction is the product. The best version of `counter` is not "we know what would have happened." It is:
-
-> Here are the decisions that most plausibly caused the failure, here is what is identifiable, here is what is only bounded, and here is where replay is required.
-
-## Why this exists
-
-Agent debugging today is mostly trace inspection plus retry loops. That is useful, but it is not causal. It can tell you what happened; it rarely tells you which decision mattered.
-
-`counter` aims to sit one layer above observability:
-
-- Observability tools capture traces.
-- Eval tools score outcomes.
-- `counter` estimates which decisions causally influenced those outcomes, subject to explicit assumptions.
-
-The wedge is the combination of causal-inference discipline with agent-infra pragmatism. The credibility comes from refusing to overclaim.
-
-## v0 scope
-
-A small Python package plus one high-quality notebook demo.
-
-### Trace corpus plan
-
-The v0 corpus should be generated, not discovered. Public benchmarks are useful inspiration, but most do not expose intermediate decisions in the typed, intervention-ready shape `counter` needs.
-
-Without controlled randomization or logged propensities, most decision-level interventions on real agent traces are unidentified by default. The corpus exists so the identifiability labels have teeth.
-
-The feasible path is **CounterBench**: a tiny controlled single-agent harness that runs reproducible tasks, randomly varies a few decision types, logs native `counter` traces, and records a verifiable final outcome.
-
-The corpus has two layers:
-
-1. **Synthetic SCM traces**
-   - Generated from a known causal process.
-   - Used for unit tests and sanity checks.
-   - Proves `counter` can recover known attribution under declared assumptions.
-
-2. **Controlled real-agent traces**
-   - Generated by a small instrumented agent loop.
-   - Tasks are simple, reproducible, and outcome-scored: tests pass/fail, answer correct/incorrect, artifact produced/not produced.
-   - Decision variation is randomized or propensity-logged so some causal effects are genuinely identifiable.
-
-This avoids the weakest version of the project: fitting a causal-looking model to one heroic failure trace. The demo should have a corpus behind it.
-
-Three pilots (Sonnet 4.6, Haiku 4.5, csv_dedupe with public/hidden test split) each produced 30/30 pass on small Python repair tasks, so the v0 ship gate no longer enforces class balance or a CI-width threshold on the real corpus. Instead, v0 ships when the synthetic SCM recovers a known effect within tolerance, every real-corpus intervention returns an internally-consistent identifiability label, and at least one query returns `unidentified` with a structured, actionable `next_step`. The demo lead is the naive-vs-honest contrast: `pass_rate_by_arm` (a punchy number) shown next to `intervene()` (a label, bounds, and a next-step recommendation). See `openspec/changes/identifiability-first-pivot/` for the full rationale.
-
-### Pipeline
+Example output:
 
 ```text
-trace corpus -> decision DAG -> outcome model -> intervention query -> identified/bounded/unidentified result
+counter demo: naive vs honest
+data: bench/real/runs_v1
+outcomes: 30 pass / 0 fail
+
+pass_rate_by_arm(model_call)
+arm              n  pass  rate    95% CI
+large           28    28 1.000  [0.879, 1.000]
+small            2     2 1.000  [0.342, 1.000]
+
+intervene(model_call -> large)
+identifiability: unidentified
+reason: real corpus is causally degenerate: every trace has Outcome.value=True; no outcome variation exists for an outcome model or back-door adjustment to leverage
+next_step: broaden_arm_support - Collect or construct traces with both pass and fail outcomes before estimating decision-level effects on the real corpus.
 ```
 
-### Core library
+See [docs/demo-excerpt.md](docs/demo-excerpt.md) for the rendered notebook-style excerpt.
 
-1. **Native trace schema**
-   - One JSON format in v0.
-   - Pydantic models for runs, steps, decisions, observations, outcomes, and metadata.
-   - External adapters are optional demo support, not core scope.
+## Why This Matters
 
-2. **Decision-type taxonomy**
-   - The reusable abstraction is not the DAG; it is the typed decision schema.
-   - Initial decision types:
-     - `plan_step`
-     - `model_call`
-     - `tool_call`
-     - `memory_read`
-     - `retry`
-     - `termination`
-   - Each type declares valid interventions, parent dependencies, feature extraction, and assumptions.
+Most agent-debugging tools can show you the trace. Some can score the final outcome. Very few can say, with discipline, whether a decision-level causal question is actually identifiable from the data you logged.
 
-3. **Hand-specified decision DAG**
-   - Single-agent traces only.
-   - Tool-call and plan-step granularity.
-   - No DAG learning in v0.
-   - The graph should be inspectable and boring.
+That matters because LLM-agent traces invite fake counterfactuals:
 
-4. **Transparent outcome model**
-   - Logistic regression on engineered features.
-   - Bootstrap coefficient uncertainty.
-   - Binary success/failure for v0.
-   - No generic model zoo, learned representations, or Bayesian machinery yet.
-   - Model uncertainty is separate from identifiability uncertainty: a stable fitted model does not make an unidentified causal query valid.
+> If the agent had used a different model, retried once, or called another tool, would the task have passed?
 
-5. **Intervention and attribution API**
-   - Estimate intervention effects when identifiable.
-   - Return bounds when exact identification is not justified.
-   - Rank decisions by estimated causal influence.
-   - Surface assumptions in every result object.
+Sometimes `counter` can estimate that. Sometimes it can only bound it. Sometimes the right answer is: no, this corpus does not contain the variation needed to make that claim. That refusal is the product taste.
 
-   Initial intervention scope:
+## What Ships in v0
 
-   | Intervention | v0 behavior | Why |
-   | --- | --- | --- |
-   | `tool_choice` | Estimate when graph support exists. | Categorical, legible, commonly varied. |
-   | `model_choice` | Estimate when enough variation exists. | Categorical and finite. |
-   | `retry_policy` | Estimate or bound. | Clean intervention on agent control flow. |
-   | `memory_content` | Usually bounded or unidentified. | High-dimensional and heavily confounded. |
-   | `prompt_template` | Replay-only in v0. | Usually not identifiable from observational traces. |
+- Native Pydantic trace schema: `Run`, `Step`, `Decision`, `Observation`, `Outcome`, strict JSON validation
+- Decision taxonomy: `plan_step`, `model_call`, `tool_call`, `memory_read`, `retry`, `termination`
+- Hand-built per-trace DAG builder
+- Logistic-regression outcome model with bootstrap uncertainty
+- `intervene()` returning `identified | bounded | unidentified`, assumptions, warnings, bounds, outcome deltas, and structured `next_step`
+- E-value sensitivity bounds
+- `attribute_failure()` decision ranking
+- `pass_rate_by_arm()` naive baseline table
+- `power_analysis()` rough sample-size guidance
+- Synthetic SCM benchmark with a known treatment effect
+- Real-agent coding harness with randomized decisions, budget gate, hidden/public fixture support, and a committed 30-trace `runs_v1` pilot corpus
+- Demo notebook and acceptance tests around the naive-vs-honest story
 
-6. **Sensitivity analysis**
-   - First-class support for "how strong would hidden confounding need to be to flip this attribution?"
-   - This is more defensible and more interesting than pretending all probabilities are calibrated.
-
-7. **One killer notebook**
-   - A real or reproducible agent trace.
-   - A legible failure.
-   - A ranked attribution report.
-   - Explicit identifiability badges.
-   - Optional replay only for queries that the trace cannot identify.
-
-## Definition of done
-
-v0 is done when:
-
-- The synthetic SCM check recovers known attribution within tolerance.
-- The controlled real-agent corpus has enough variation to estimate at least one `tool_choice`, `model_choice`, or `retry_policy` intervention.
-- The demo notebook ranks a plausible failure cause for one failed run.
-- The demo includes at least one `unidentified` query with a concrete `reason` and `next_step`.
-- The README and API make no Pearl L3 claim unless the assumptions are explicit.
-
-## API sketch
+## Python API
 
 ```python
-import counter
+from bench.synthetic import generate_traces
+from counter import build_dag, fit_outcome_model, intervene, pass_rate_by_arm
+from counter.schema import Run
 
-trace = counter.load_trace("agent-run.json")
-schema = counter.DecisionSchema.default()
+runs = [Run.model_validate(trace) for trace in generate_traces(n=500, seed=42)]
 
-dag = counter.build_dag(trace, schema=schema)
-model = counter.fit_outcome_model(
-    traces=training_traces,
-    schema=schema,
-    outcome="success",
-)
+print(pass_rate_by_arm(runs, "model_call"))
 
-estimate = counter.intervene(
-    dag=dag,
+model = fit_outcome_model(runs, n_bootstrap=200, seed=42)
+estimate = intervene(
+    dag=build_dag(runs[0]),
     model=model,
-    step=12,
-    intervention={"tool": "search_docs"},
+    step=2,
+    intervention={"model_choice": "sonnet"},
 )
 
-print(estimate.identifiability)      # identified | bounded | unidentified
-print(estimate.outcome_delta)        # distribution, not a naked point estimate
-print(estimate.assumptions)          # graph + adjustment + sensitivity notes
-print(estimate.sensitivity_bounds)
-
-attribution = counter.attribute_failure(
-    dag=dag,
-    model=model,
-    outcome="failed",
-)
-
-print(attribution.top_k(5))
+print(estimate.identifiability)
+print(estimate.assumptions)
+print(estimate.next_step)
 ```
 
-Unidentified queries should be just as concrete as identified ones:
+The committed real corpus currently has one outcome class, so the CLI demo intentionally surfaces the degenerate case instead of fitting logistic regression. Use the synthetic SCM, as above, or a mixed-outcome real corpus for identified estimates.
 
-```python
-estimate = counter.intervene(
-    dag=dag,
-    model=model,
-    step=7,
-    intervention={"prompt_template": "reflection_first"},
-)
+## CLI
 
-print(estimate.identifiability)  # unidentified
-print(estimate.reason)           # prompt_template has no observed support
-print(estimate.warnings)         # latent prompt quality and LLM completion noise are unblocked
-print(estimate.next_step)        # run replay or report sensitivity bounds only
+```bash
+# Synthetic SCM traces, deterministic and no LLM calls
+uv run counter bench synthetic --n 500 --seed 42 --output-dir /tmp/counter-syn
+
+# Local showcase demo
+uv run counter demo
+
+# Force synthetic fallback for the demo
+uv run counter demo --runs-dir /tmp/missing --synthetic-n 500 --target sonnet
 ```
 
-Possible result shape:
+The real-agent harness is available behind an explicit budget and first-run approval gate:
 
-```python
-class CausalEstimate(BaseModel):
-    query: InterventionQuery
-    identifiability: IdentifiabilityStatus
-    reason: str | None
-    estimand: str | None
-    adjustment_set: list[str]
-    outcome_delta: DistributionSummary | None
-    bounds: SensitivityBounds | None
-    assumptions: list[str]
-    warnings: list[str]
-    next_step: str | None
+```bash
+uv run counter bench real --n 30 --budget-cap 50 --fixture-set hidden_v1
 ```
 
-## What v0 does not ship
+That command can call external LLM APIs. The showcase demo and CI never run it.
 
-- DAG learning from traces.
-- Multi-agent graphs.
-- Token-level decision graphs.
-- Calibrated `P(success)` claims.
-- Multi-format ingestion.
-- Public benchmark ingestion as a prerequisite.
-- Generic outcome-model selection.
-- Bandit exploration loops.
-- Observability UI.
-- Tight integration with sibling projects.
-- A paper.
+## Validation
 
-Those may become valuable later. In v0 they are mostly ways to make the core idea fuzzier.
+```bash
+uv run ruff check .
+uv run pytest
+openspec validate --all --strict
+```
 
-## Demo target
+Current local gate: `139 passed, 2 skipped`; the skipped tests are human-gated attribution checks.
 
-The demo should use a small generated corpus, then zoom into one failed run. The trace contains meaningful intermediate decisions, the corpus contains enough variation to estimate effects, and the final outcome is verifiable.
+## What v0 Does Not Claim
 
-Good task families:
+- No Pearl L3 structural counterfactual for arbitrary prompt changes
+- No DAG learning
+- No multi-agent or token-level graph
+- No calibrated universal `P(success)` story
+- No hidden "LLM quality" latent node
+- No observability UI
+- No provider-specific replay guarantee
 
-- Tiny coding-agent tasks with broken tests.
-- Tool-use tasks with verifiable answers.
-- Controlled local tasks where the true causal structure is partially known.
-
-The ideal demo has two layers:
-
-1. **Synthetic SCM sanity check**
-   - Generate traces from a known causal process.
-   - Prove `counter` recovers the expected attribution under known assumptions.
-
-2. **Real trace case study**
-   - Analyze one messy real failure.
-   - Show which claims are identified, bounded, or unidentified.
-   - Use replay only where the causal estimate honestly cannot answer the query.
-
-## How this compounds
-
-| Compound with | Relationship |
-| --- | --- |
-| **trace / observability systems** | `counter` consumes trace data and produces causal attribution. It should not become an observability product. |
-| **rigor** | `rigor` can evaluate whether `counter`'s predicted intervention effects match replay or benchmark outcomes. |
-| **engram** | Memory can later become a graph input or prior, but v0 should not depend on it. |
-| **agent research portfolio** | The project demonstrates causal taste, agent-infra fluency, and epistemic discipline. |
-
-## Research angle
-
-The paper-shaped idea is not "LLM agents can do counterfactual reasoning." That space is crowded and slippery.
-
-The stronger angle is:
-
-> Causal attribution over agent decision traces with explicit identifiability reporting, sensitivity bounds, and controlled trace generation.
-
-Research-shaped questions this artifact opens:
-
-- A decision-type taxonomy for agent traces.
-- Identifiability labels as part of the agent-debugging interface.
-- Sensitivity bounds for failure attribution under hidden confounding.
-- Controlled randomization as a practical route to identifiable agent-trace effects.
-- Causal influence ranking over a decision DAG.
-- A bridge between trace observability, replay, and structural causal inference.
-
-## Open questions
-
-- What is the first outcome type: binary success/failure, numeric reward, or failure mode?
-- How should LLM completions be modeled: exogenous randomness, deterministic given prompt and context, or an explicit latent node?
-- What is the smallest CounterBench task set that creates enough variation without becoming its own benchmark project?
-- Which decision randomization policy is acceptable: uniform randomization, epsilon-greedy routing, or logged propensities from a simple policy?
-- How many traces are enough for the demo to be credible without pretending to be a benchmark-scale result?
-- What assumptions are acceptable for a portfolio-grade artifact versus a paper-grade claim?
-
-## Decision log
-
-- 2026-05-02 - Repo created. Initial README framed the project as counterfactual reasoning for LLM agents.
-- 2026-05-02 - Reframed v0 around causal attribution, identifiability labels, sensitivity bounds, one native trace format, hand-specified DAGs, and transparent logistic outcome modeling.
-- 2026-05-02 - Committed v0 corpus strategy: generate a controlled CounterBench corpus with synthetic SCM traces plus randomized real-agent traces.
-
-## Cross-references
-
-- Sibling repo: `../rigor` - eval harness with experimental rigor.
-- Sibling repos: `related local agent-infra repos` - existing pieces of the agent-infra portfolio.
-- Reference paper: [Abduct-Act-Predict scaffolding for causal inference (Sept 2025)](https://arxiv.org/pdf/2509.10401) - prompt-based causal inference reference point.
+`counter` is deliberately a research artifact, not a polished platform. Its useful edge is narrower and sharper: causal attribution for logged agent decisions, with identifiability visible in the API.

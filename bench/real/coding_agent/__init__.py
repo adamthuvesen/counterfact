@@ -5,10 +5,10 @@ from bench.real.coding_agent.fixtures import FIXTURES, FixtureSpec, run_pytest
 from bench.real.coding_agent.randomize import EpsilonGreedy, epsilon_greedy
 
 __all__ = [
+    "FIXTURES",
     "BudgetExceeded",
     "BudgetTracker",
     "EpsilonGreedy",
-    "FIXTURES",
     "FixtureSpec",
     "epsilon_greedy",
     "run_pytest",

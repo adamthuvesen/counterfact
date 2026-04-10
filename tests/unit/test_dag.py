@@ -27,9 +27,13 @@ def test_build_dag__empty_trace_yields_empty_dag() -> None:
 
 
 def test_build_dag__edges_respect_parent_declarations() -> None:
-    """WHEN build_dag is called on a trace with a tool_call at step 3 and a plan_step at step 2
-    THEN the resulting DAG contains an edge from the step-2 plan_step node to the step-3 tool_call node."""
-    plan_2 = Decision(decision_id="d-2-plan", decision_type="plan_step", chosen_action="investigate")
+    """WHEN build_dag is called on a trace with a tool_call and earlier plan_step
+    THEN the resulting DAG contains the declared parent edge."""
+    plan_2 = Decision(
+        decision_id="d-2-plan",
+        decision_type="plan_step",
+        chosen_action="investigate",
+    )
     tool_3 = Decision(decision_id="d-3-tool", decision_type="tool_call", chosen_action="run_tests")
     run = _make_run(
         [

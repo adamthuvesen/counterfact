@@ -64,7 +64,8 @@ def _all_text_outputs(nb: dict) -> str:
             continue
         for out in cell.get("outputs", []):
             if "text" in out:
-                pieces.append("".join(out["text"]) if isinstance(out["text"], list) else out["text"])
+                text = out["text"]
+                pieces.append("".join(text) if isinstance(text, list) else text)
             elif "data" in out and "text/plain" in out["data"]:
                 d = out["data"]["text/plain"]
                 pieces.append("".join(d) if isinstance(d, list) else d)
@@ -124,7 +125,8 @@ def test_demo__at_least_one_unidentified_result_is_rendered_with_structured_next
 
 def test_demo__top_k_table_is_rendered_with_labels(executed_notebook: dict) -> None:
     """WHEN the notebook's attribution section is executed
-    THEN the rendered table contains up to 5 rows with decision id, influence score, and identifiability label."""
+    THEN the rendered table contains up to 5 rows with decision id, influence score,
+    and identifiability label."""
     text = _all_text_outputs(executed_notebook)
     assert "failure attribution for" in text
     assert "rank" in text and "decision_id" in text and "influence" in text

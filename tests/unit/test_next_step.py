@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from counter.intervene import NextStep
 
@@ -74,5 +75,5 @@ def test_next_step_add_arm_randomization_requires_policy() -> None:
 
 
 def test_next_step_unknown_action_raises() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         NextStep(action="teleport", payload={}, human_text="…")  # type: ignore[arg-type]

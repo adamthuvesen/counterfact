@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from normalize import normalize_name  # noqa: E402
+from normalize import normalize_name
 
 
 def test_strip_and_lowercase() -> None:

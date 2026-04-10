@@ -65,7 +65,7 @@ def test_scm_recovery__bootstrap_ci_covers_true_effect(
 ) -> None:
     """WHEN the SCM-recovery acceptance test computes the 95% bootstrap CI for the headline effect
     THEN the interval contains E."""
-    runs, model = fitted_corpus
+    _, model = fitted_corpus
 
     # Compute the per-bootstrap effect estimate by re-running the g-formula
     # with each bootstrap coefficient draw.

@@ -151,7 +151,7 @@ def _pick_three_queries(real_corpus: list[Run]) -> list[tuple[Run, int, dict[str
                     queries.append(
                         (run, step.step_index, {"prompt_content": "be more careful"})
                     )
-                    return queries[:3] + [queries[-1]] if len(queries) > 3 else queries
+                    return [*queries[:3], queries[-1]] if len(queries) > 3 else queries
     return queries
 
 
@@ -318,7 +318,7 @@ def test_at_least_one_unidentified_with_actionable_next_step(
                 assert "intervention_target" in est.next_step.payload
             else:
                 assert est.next_step.payload, (
-                    f"non-replay unidentified estimate has empty payload"
+                    "non-replay unidentified estimate has empty payload"
                 )
             found = True
             break
@@ -448,8 +448,14 @@ def test_manual_gates_are_documented() -> None:
     """§15.10/§15.11 are explicit human gates — this test exists so the gate
     appears in pytest output as a reminder, not as a soft pass."""
     gates = [
-        "§15.10: run `/opsx:verify identifiability-first-pivot` — surface drift between specs and impl",
-        "§15.11: human reads notebooks/demo.ipynb end-to-end; the naive-vs-honest narrative must land without hand-waving",
+        (
+            "§15.10: run `/opsx:verify identifiability-first-pivot` — "
+            "surface drift between specs and impl"
+        ),
+        (
+            "§15.11: human reads notebooks/demo.ipynb end-to-end; "
+            "the naive-vs-honest narrative must land without hand-waving"
+        ),
         "§15.11: at least one `bounded` query renders an E-value",
         "§15.11: every rendered `next_step.human_text` is reader-comprehensible",
     ]
