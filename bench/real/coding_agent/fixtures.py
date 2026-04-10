@@ -91,13 +91,11 @@ HIDDEN_FIXTURES: tuple[FixtureSpec, ...] = (
 )
 
 
-def run_pytest(fixture_root: Path, *, timeout_s: int = 30) -> tuple[bool, str]:
-    """Run pytest in the fixture's `tests/` directory.
-
-    Returns `(passed, stdout_tail)`.
-    """
+def _run_pytest_at(
+    fixture_root: Path, target: str, *, timeout_s: int = 30
+) -> tuple[bool, str]:
     proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=line"],
+        [sys.executable, "-m", "pytest", target, "-q", "--tb=line"],
         cwd=fixture_root,
         capture_output=True,
         text=True,
@@ -107,10 +105,74 @@ def run_pytest(fixture_root: Path, *, timeout_s: int = 30) -> tuple[bool, str]:
     return proc.returncode == 0, tail
 
 
+def run_pytest(fixture_root: Path, *, timeout_s: int = 30) -> tuple[bool, str]:
+    """Run pytest in the fixture's `tests/` directory (v0 layout).
+
+    Returns `(passed, stdout_tail)`.
+    """
+    return _run_pytest_at(fixture_root, "tests/", timeout_s=timeout_s)
+
+
+def run_pytest_public(sandbox_root: Path, *, timeout_s: int = 30) -> tuple[bool, str]:
+    """Run pytest in the sandbox's `tests_public/` directory (hidden-fixture layout).
+
+    The agent invokes this during its loop; it never sees `tests_hidden/`.
+    """
+    return _run_pytest_at(sandbox_root, "tests_public/", timeout_s=timeout_s)
+
+
+def run_pytest_hidden(
+    eval_workspace: Path, *, timeout_s: int = 30
+) -> tuple[bool, str]:
+    """Run pytest in a hidden-eval workspace's `tests_hidden/` directory.
+
+    The harness invokes this exactly once per trace, after the agent loop
+    has terminated, in a workspace separate from the agent's sandbox.
+    """
+    return _run_pytest_at(eval_workspace, "tests_hidden/", timeout_s=timeout_s)
+
+
 def snapshot_fixture(fixture: FixtureSpec, dest_root: Path) -> Path:
-    """Copy a fixture into a sandbox so the agent can edit without dirtying source."""
+    """Copy a fixture into a sandbox so the agent can edit without dirtying source.
+
+    For hidden-test fixtures, `tests_hidden/` is excluded — the agent must not
+    see hidden tests, by structural guarantee (per design.md D2).
+    """
     dest = dest_root / fixture.fixture_id
     if dest.exists():
         shutil.rmtree(dest)
-    shutil.copytree(fixture.root, dest)
+    if is_hidden_fixture(fixture):
+        shutil.copytree(
+            fixture.root,
+            dest,
+            ignore=shutil.ignore_patterns("tests_hidden", "_*reference*"),
+        )
+    else:
+        shutil.copytree(fixture.root, dest)
     return dest
+
+
+def build_hidden_eval_workspace(
+    fixture: FixtureSpec, sandbox_root: Path, dest_root: Path
+) -> Path:
+    """Stage a hidden-eval workspace by copying the agent's patched src/ next
+    to the canonical tests_hidden/ from the fixture's source tree.
+
+    The agent's sandbox is read; the fixture's source is read; nothing is
+    written back to either. The returned workspace lives under `dest_root`
+    and is the cwd for `run_pytest_hidden`.
+    """
+    if not is_hidden_fixture(fixture):
+        raise ValueError(
+            f"build_hidden_eval_workspace called on non-hidden fixture {fixture.fixture_id!r}"
+        )
+    workspace = dest_root / f"{fixture.fixture_id}-hidden-eval"
+    if workspace.exists():
+        shutil.rmtree(workspace)
+    workspace.mkdir(parents=True)
+    # Patched src/ from the agent's sandbox.
+    shutil.copytree(sandbox_root / "src", workspace / "src")
+    # Canonical tests_hidden/ from the fixture's source tree (NOT from the
+    # sandbox — the sandbox doesn't have it).
+    shutil.copytree(fixture.root / "tests_hidden", workspace / "tests_hidden")
+    return workspace

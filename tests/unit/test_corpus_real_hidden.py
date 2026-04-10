@@ -205,3 +205,72 @@ def test_csv_dedupe_buggy_src_fails_hidden_passes_public(tmp_path: Path) -> None
     assert proc_hid.returncode != 0, (
         "buggy src must fail at least one hidden test (otherwise no generalization gap is possible)"
     )
+
+
+# --- Phase B: sandbox + public-pytest isolation ----------------------------
+
+
+def test_sandbox_snapshot_omits_tests_hidden(tmp_path: Path) -> None:
+    """Req: Hidden tests are not present in the agent sandbox
+    WHEN snapshot_fixture is called on a hidden-test fixture
+    THEN the sandbox contains src/, tests_public/, spec.md and does NOT
+         contain tests_hidden/ at any depth."""
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES, snapshot_fixture
+
+    csv_dedupe = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
+    sandbox = snapshot_fixture(csv_dedupe, tmp_path)
+    assert (sandbox / "src").is_dir()
+    assert (sandbox / "tests_public").is_dir()
+    assert (sandbox / "spec.md").is_file()
+    # tests_hidden/ must be absent at any depth
+    hidden_dirs = [p for p in sandbox.rglob("tests_hidden") if p.is_dir()]
+    hidden_files = [p for p in sandbox.rglob("*") if p.name.startswith("test_dedupe_hidden")]
+    assert hidden_dirs == [], f"tests_hidden/ leaked into sandbox: {hidden_dirs}"
+    assert hidden_files == [], f"hidden test file leaked into sandbox: {hidden_files}"
+
+
+def test_sandbox_stays_clean_through_run_pytest_public(tmp_path: Path) -> None:
+    """Req: Hidden tests are not present in the agent sandbox
+    WHEN the agent runs run_pytest_public against the sandbox
+    THEN tests_hidden/ remains absent from the sandbox after execution."""
+    from bench.real.coding_agent.fixtures import (
+        HIDDEN_FIXTURES,
+        run_pytest_public,
+        snapshot_fixture,
+    )
+
+    csv_dedupe = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
+    sandbox = snapshot_fixture(csv_dedupe, tmp_path)
+    # Run public tests — must not introduce tests_hidden/ as a side effect.
+    passed, _ = run_pytest_public(sandbox)
+    assert passed is True  # buggy-but-public-passing is the fixture's invariant
+    hidden_dirs = [p for p in sandbox.rglob("tests_hidden") if p.is_dir()]
+    assert hidden_dirs == []
+
+
+def test_run_pytest_public_targets_only_tests_public(tmp_path: Path) -> None:
+    """Req: Public-test verifier runs only public tests during the agent loop
+    WHEN the agent's run_tests step executes on a hidden-fixture sandbox
+    THEN pytest collects zero items from tests_hidden/ (defensive: hidden dir is also
+         absent from the sandbox per the sandbox snapshot requirement)."""
+    import subprocess
+    import sys
+
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES, snapshot_fixture
+
+    csv_dedupe = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
+    sandbox = snapshot_fixture(csv_dedupe, tmp_path)
+    # Belt-and-braces: even if a future regression copies tests_hidden/ into
+    # the sandbox, pytest should still only collect from tests_public/ when
+    # invoked with that path.
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests_public/", "--collect-only", "-q"],
+        cwd=sandbox,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode == 0, f"collect-only failed: {proc.stdout}\n{proc.stderr}"
+    # No collected node should reference tests_hidden.
+    assert "tests_hidden" not in proc.stdout, proc.stdout
+    assert "test_dedupe_hidden" not in proc.stdout, proc.stdout
