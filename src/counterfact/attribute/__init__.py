@@ -1,6 +1,6 @@
 """Failure attribution: rank decisions by causal influence on the outcome."""
 
-from counter.attribute.failure import (
+from counterfact.attribute.failure import (
     AttributionEntry,
     FailureAttribution,
     attribute_failure,

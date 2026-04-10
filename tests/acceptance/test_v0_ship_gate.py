@@ -34,15 +34,15 @@ from pathlib import Path
 import pytest
 
 from bench.synthetic import generate_traces
-from counter import fit_outcome_model, intervene, pass_rate_by_arm
-from counter.dag import build_dag
-from counter.intervene.estimate import (
+from counterfact import fit_outcome_model, intervene, pass_rate_by_arm
+from counterfact.dag import build_dag
+from counterfact.intervene.estimate import (
     CausalEstimate,
     IdentifiabilityStatus,
     InterventionQuery,
     NextStep,
 )
-from counter.schema import Run
+from counterfact.schema import Run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNS_V1_DIR = REPO_ROOT / "bench" / "real" / "runs_v1"
@@ -82,7 +82,7 @@ def real_corpus() -> list[Run]:
     if not runs:
         pytest.skip(
             f"runs_v1 corpus absent at {RUNS_V1_DIR}. Generate via "
-            f"`counter bench real --fixture-set hidden_v1 --output-dir bench/real/runs_v1` "
+            f"`counterfact bench real --fixture-set hidden_v1 --output-dir bench/real/runs_v1` "
             f"before §15 runs."
         )
     return runs

@@ -12,7 +12,7 @@ Randomized decision types (per the v0 commitment in design.md D5/D9):
 * `tool_call.tool_choice`   — which tool comes first (run_tests vs inspect_file)
 * `retry.retry_policy`      — attempt budget: no_retry (1 attempt) or retry_once (2)
 
-The loop emits a counter-native `Run` per fixture. LLM calls go through the
+The loop emits a counterfact-native `Run` per fixture. LLM calls go through the
 `LLMClient` protocol so tests can mock them.
 """
 
@@ -35,7 +35,7 @@ from bench.real.coding_agent.fixtures import (
 )
 from bench.real.coding_agent.llm import LLMClient
 from bench.real.coding_agent.randomize import EpsilonGreedy
-from counter.schema import Decision, Observation, Outcome, Run, Step
+from counterfact.schema import Decision, Observation, Outcome, Run, Step
 
 DEFAULT_MAX_STEPS = 8
 TOOL_ARMS: list[str] = ["inspect_file", "run_tests", "search_docs"]
@@ -171,7 +171,7 @@ def run_one_trace(
     sandbox_root: Path,
     config: AgentRunConfig,
 ) -> Run:
-    """Run the agent against one fixture sandbox; return a counter-native Run."""
+    """Run the agent against one fixture sandbox; return a counterfact-native Run."""
     tool_eps = config.resolved_tool_epsilon()
     model_eps = config.resolved_model_epsilon()
     retry_eps = config.resolved_retry_epsilon()

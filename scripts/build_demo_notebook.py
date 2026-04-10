@@ -40,12 +40,12 @@ def _code(text: str) -> dict:
 
 CELLS = [
     _md(
-        "# `counter` demo — causal attribution, with discipline\n\n"
-        "Most agent-infra tools score traces and call it done. `counter` runs structural causal "
+        "# `counterfact` demo — causal attribution, with discipline\n\n"
+        "Most agent-infra tools score traces and call it done. `counterfact` runs structural causal "
         "inference end-to-end **and tells you when your corpus does not support the question you asked**.\n\n"
         "This notebook walks through that contrast on three artifacts:\n\n"
         "1. **Naive vs honest** — same query, two estimators. The naive marginal says one number; "
-        "`counter.intervene` says `bounded` or `unidentified` with a structured next step.\n"
+        "`counterfact.intervene` says `bounded` or `unidentified` with a structured next step.\n"
         "2. **Synthetic SCM canary** — the engine recovers a *known* effect within tolerance. "
         "Mechanism check, not a headline claim.\n"
         "3. **Three identifiability paths** — `identified`, `bounded`, `unidentified` shown end-to-end "
@@ -61,7 +61,7 @@ CELLS = [
         "import sys\n"
         "from pathlib import Path\n\n"
         "from bench.synthetic import HEADLINE_TRUE_EFFECT, generate_traces\n"
-        "from counter import (\n"
+        "from counterfact import (\n"
         "    attribute_failure,\n"
         "    build_dag,\n"
         "    fit_outcome_model,\n"
@@ -69,8 +69,8 @@ CELLS = [
         "    pass_rate_by_arm,\n"
         "    power_analysis,\n"
         ")\n"
-        "from counter.intervene import IdentifiabilityStatus\n"
-        "from counter.schema import Decision, Outcome, Run, Step\n\n"
+        "from counterfact.intervene import IdentifiabilityStatus\n"
+        "from counterfact.schema import Decision, Outcome, Run, Step\n\n"
         "REPO_ROOT = Path('.').resolve()\n"
         "while REPO_ROOT.parent != REPO_ROOT and not (REPO_ROOT / 'pyproject.toml').exists():\n"
         "    REPO_ROOT = REPO_ROOT.parent\n\n"
@@ -101,7 +101,7 @@ CELLS = [
         "taxonomy and emits a `CausalEstimate` carrying `identifiability ∈ {identified, bounded, unidentified}` "
         "plus a structured `next_step` describing what would change the answer.\n\n"
         "If both estimators agree, great. If they disagree, the disagreement is the diagnostic — and "
-        "`counter` won't lie to you about which one to trust."
+        "`counterfact` won't lie to you about which one to trust."
     ),
     _code(
         "if real_corpus:\n"
@@ -153,7 +153,7 @@ CELLS = [
         "elif real_corpus and real_is_degenerate:\n"
         "    # Pilot 3 result: 30/30 pass on csv_dedupe with frontier models. The\n"
         "    # logistic outcome model cannot fit on a single-class corpus, which\n"
-        "    # is itself the honest signal. `counter`\\'s job is to surface this\n"
+        "    # is itself the honest signal. `counterfact`\\'s job is to surface this\n"
         "    # rather than paper over it.\n"
         "    print('--- honest causal estimator (intervene) ---')\n"
         "    print('identifiability : unidentified')\n"
@@ -364,7 +364,7 @@ CELLS = [
         "honest causal estimator can stand next to it. **The disagreement, when it appears, is the diagnostic.**\n"
         "- `power_analysis` connects 'this CI is too wide' to a concrete `n` under documented "
         "assumptions. **You can act on the answer.**\n\n"
-        "What `counter` is for: a tool that **says no when the data says no**, and tells you what would "
+        "What `counterfact` is for: a tool that **says no when the data says no**, and tells you what would "
         "change the answer."
     ),
 ]

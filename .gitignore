@@ -51,8 +51,8 @@ checkpoints/
 *.duckdb
 *.sqlite
 
-# Counter runtime artifacts
-.counter/
+# Counterfact runtime artifacts
+.counterfact/
 bench/real/runs/
 bench/synthetic/_out/
 

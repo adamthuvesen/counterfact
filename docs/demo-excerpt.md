@@ -28,5 +28,5 @@ but it is not a causal attribution.
 | warning | `fit_outcome_model` is intentionally skipped for single-class real corpora |
 | next step | collect or construct traces with both pass and fail outcomes before estimating decision-level effects |
 
-That is the product stance: `counter` does not launder a degenerate corpus into
+That is the product stance: `counterfact` does not launder a degenerate corpus into
 a fake probability. It returns a useful no, plus the next data collection step.

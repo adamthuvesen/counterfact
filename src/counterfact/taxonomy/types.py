@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from counter.errors import UnknownDecisionTypeError
-from counter.schema import Decision, DecisionTypeLiteral, Run
+from counterfact.errors import UnknownDecisionTypeError
+from counterfact.schema import Decision, DecisionTypeLiteral, Run
 
 IdentifiabilityStance = Literal[
     "requires-randomized-support",

@@ -1,4 +1,4 @@
-"""`counter` CLI."""
+"""`counterfact` CLI."""
 
 from __future__ import annotations
 
@@ -6,13 +6,13 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from counter.intervene.estimate import (
+from counterfact.intervene.estimate import (
     CausalEstimate,
     IdentifiabilityStatus,
     InterventionQuery,
     NextStep,
 )
-from counter.schema import Run
+from counterfact.schema import Run
 
 
 def _load_trace_dir(path: Path) -> list[Run]:
@@ -96,7 +96,7 @@ def _degenerate_estimate(
 
 
 def _format_pass_rate_table(runs: list[Run], decision_type: str) -> list[str]:
-    from counter import pass_rate_by_arm
+    from counterfact import pass_rate_by_arm
 
     table = pass_rate_by_arm(runs, decision_type)
     lines = [f"pass_rate_by_arm({decision_type})", "arm              n  pass  rate    95% CI"]
@@ -112,8 +112,8 @@ def _format_pass_rate_table(runs: list[Run], decision_type: str) -> list[str]:
 
 
 def _demo(args: argparse.Namespace) -> int:
-    from counter import fit_outcome_model, intervene
-    from counter.dag import build_dag
+    from counterfact import fit_outcome_model, intervene
+    from counterfact.dag import build_dag
 
     runs = _load_trace_dir(args.runs_dir)
     source = str(args.runs_dir)
@@ -126,7 +126,7 @@ def _demo(args: argparse.Namespace) -> int:
     target = args.target or _first_arm(runs, decision_type)
 
     pass_count = sum(1 for run in runs if bool(run.outcome.value))
-    print("counter demo: naive vs honest")
+    print("counterfact demo: naive vs honest")
     print(f"data: {source}")
     print(f"outcomes: {pass_count} pass / {len(runs) - pass_count} fail")
     print()
@@ -204,7 +204,7 @@ def _bench_real(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="counter", description=__doc__)
+    p = argparse.ArgumentParser(prog="counterfact", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
 
     demo = sub.add_parser(

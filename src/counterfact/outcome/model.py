@@ -23,8 +23,8 @@ import numpy as np
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import LogisticRegression
 
-from counter.errors import UnsupportedOutcomeError
-from counter.schema import Run
+from counterfact.errors import UnsupportedOutcomeError
+from counterfact.schema import Run
 
 
 @dataclass
@@ -66,7 +66,7 @@ def _assert_binary(runs: list[Run]) -> None:
 
 def _intervenable_decisions(run: Run) -> list[tuple[str, str]]:
     """Yield (decision_type, chosen_action) for decisions whose type has interventions."""
-    from counter.taxonomy import valid_interventions
+    from counterfact.taxonomy import valid_interventions
 
     out: list[tuple[str, str]] = []
     for step in run.steps:

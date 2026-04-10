@@ -3,7 +3,7 @@ from __future__ import annotations
 import builtins
 from pathlib import Path
 
-from counter.cli import main
+from counterfact.cli import main
 
 
 def test_demo__uses_local_real_corpus_and_reports_degenerate_verdict(
@@ -13,7 +13,7 @@ def test_demo__uses_local_real_corpus_and_reports_degenerate_verdict(
     out = capsys.readouterr().out
 
     assert rc == 0
-    assert "counter demo: naive vs honest" in out
+    assert "counterfact demo: naive vs honest" in out
     assert "data: bench/real/runs_v1" in out
     assert "pass_rate_by_arm(model_call)" in out
     assert "intervene(model_call ->" in out
@@ -30,7 +30,7 @@ def test_demo__falls_back_to_synthetic_without_real_harness_import(
 
     def guarded_import(name, *args, **kwargs):
         if name.startswith("bench.real.coding_agent.runner"):
-            raise AssertionError("counter demo must not import the real-agent runner")
+            raise AssertionError("counterfact demo must not import the real-agent runner")
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", guarded_import)

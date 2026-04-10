@@ -1,8 +1,8 @@
-# counter
+# counterfact
 
 > Causal attribution for LLM-agent traces, with the rare good manners to say when the data cannot support the counterfactual.
 
-`counter` is a small Python research library for asking which agent decisions plausibly changed an outcome. It ingests typed decision traces, builds an inspectable per-trace DAG, fits a transparent outcome model, and answers intervention-style questions with an explicit identifiability label:
+`counterfact` is a small Python research library for asking which agent decisions plausibly changed an outcome. It ingests typed decision traces, builds an inspectable per-trace DAG, fits a transparent outcome model, and answers intervention-style questions with an explicit identifiability label:
 
 - `identified` - estimable under the declared graph, support, and assumptions
 - `bounded` - not point-identified, but sensitivity bounds are available
@@ -15,7 +15,7 @@ The point is not to turn trace inspection into a confident-looking probability. 
 ```bash
 uv pip install -e ".[dev]"
 uv run pytest
-uv run counter demo
+uv run counterfact demo
 ```
 
 The demo command is local-only. It uses the committed `bench/real/runs_v1/` corpus when present and falls back to synthetic SCM traces when it is not. It does not call the real-agent LLM harness or require provider credentials.
@@ -23,7 +23,7 @@ The demo command is local-only. It uses the committed `bench/real/runs_v1/` corp
 Example output:
 
 ```text
-counter demo: naive vs honest
+counterfact demo: naive vs honest
 data: bench/real/runs_v1
 outcomes: 30 pass / 0 fail
 
@@ -48,7 +48,7 @@ That matters because LLM-agent traces invite fake counterfactuals:
 
 > If the agent had used a different model, retried once, or called another tool, would the task have passed?
 
-Sometimes `counter` can estimate that. Sometimes it can only bound it. Sometimes the right answer is: no, this corpus does not contain the variation needed to make that claim. That refusal is the product taste.
+Sometimes `counterfact` can estimate that. Sometimes it can only bound it. Sometimes the right answer is: no, this corpus does not contain the variation needed to make that claim. That refusal is the product taste.
 
 ## What Ships in v0
 
@@ -69,8 +69,8 @@ Sometimes `counter` can estimate that. Sometimes it can only bound it. Sometimes
 
 ```python
 from bench.synthetic import generate_traces
-from counter import build_dag, fit_outcome_model, intervene, pass_rate_by_arm
-from counter.schema import Run
+from counterfact import build_dag, fit_outcome_model, intervene, pass_rate_by_arm
+from counterfact.schema import Run
 
 runs = [Run.model_validate(trace) for trace in generate_traces(n=500, seed=42)]
 
@@ -95,19 +95,19 @@ The committed real corpus currently has one outcome class, so the CLI demo inten
 
 ```bash
 # Synthetic SCM traces, deterministic and no LLM calls
-uv run counter bench synthetic --n 500 --seed 42 --output-dir /tmp/counter-syn
+uv run counterfact bench synthetic --n 500 --seed 42 --output-dir /tmp/counterfact-syn
 
 # Local showcase demo
-uv run counter demo
+uv run counterfact demo
 
 # Force synthetic fallback for the demo
-uv run counter demo --runs-dir /tmp/missing --synthetic-n 500 --target sonnet
+uv run counterfact demo --runs-dir /tmp/missing --synthetic-n 500 --target sonnet
 ```
 
 The real-agent harness is available behind an explicit budget and first-run approval gate:
 
 ```bash
-uv run counter bench real --n 30 --budget-cap 50 --fixture-set hidden_v1
+uv run counterfact bench real --n 30 --budget-cap 50 --fixture-set hidden_v1
 ```
 
 That command can call external LLM APIs. The showcase demo and CI never run it.
@@ -131,4 +131,4 @@ Current local gate: `139 passed, 2 skipped`; the skipped tests are human-gated a
 - No observability UI
 - No provider-specific replay guarantee
 
-`counter` is deliberately a research artifact, not a polished platform. Its useful edge is narrower and sharper: causal attribution for logged agent decisions, with identifiability visible in the API.
+`counterfact` is deliberately a research artifact, not a polished platform. Its useful edge is narrower and sharper: causal attribution for logged agent decisions, with identifiability visible in the API.

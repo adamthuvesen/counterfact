@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from counter.intervene import NextStep
+from counterfact.intervene import NextStep
 
 
 def test_next_step_increase_n_round_trips_through_json() -> None:

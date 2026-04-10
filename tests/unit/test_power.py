@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import math
 
-from counter.power import power_analysis
-from counter.schema import Decision, Outcome, Run, Step
+from counterfact.power import power_analysis
+from counterfact.schema import Decision, Outcome, Run, Step
 
 
 def _arm_run(*, run_id: str, decision_type: str, action: str, outcome_pass: bool) -> Run:

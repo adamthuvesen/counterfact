@@ -609,7 +609,7 @@ def test_run_real_corpus_with_fixtures_csv_dedupe(tmp_path: Path) -> None:
     from bench.real.coding_agent.runner import run_real_corpus
 
     output = tmp_path / "out"
-    marker = tmp_path / ".counter" / "approved"
+    marker = tmp_path / ".counterfact" / "approved"
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.touch()
 
@@ -648,7 +648,7 @@ def test_cli_real_subcommand_accepts_fixtures_flag(tmp_path: Path) -> None:
         [
             sys.executable,
             "-m",
-            "counter.cli",
+            "counterfact.cli",
             "bench",
             "real",
             "--n",

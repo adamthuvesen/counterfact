@@ -1,6 +1,6 @@
 """Native trace schema."""
 
-from counter.schema.models import (
+from counterfact.schema.models import (
     SCHEMA_VERSION,
     Decision,
     DecisionTypeLiteral,

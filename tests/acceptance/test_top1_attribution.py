@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from counter import attribute_failure, build_dag, fit_outcome_model
-from counter.schema import Run
+from counterfact import attribute_failure, build_dag, fit_outcome_model
+from counterfact.schema import Run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LABELS_PATH = REPO_ROOT / "bench" / "real" / "coding_agent" / "labels.json"
@@ -59,7 +59,7 @@ def corpus() -> list[Run]:
     if not runs:
         pytest.skip(
             f"runs_v1 corpus absent at {CORPUS_DIR}. Generate it via "
-            f"`counter bench real --n 200 --output-dir bench/real/runs_v1` "
+            f"`counterfact bench real --n 200 --output-dir bench/real/runs_v1` "
             f"before running this test."
         )
     return runs

@@ -15,11 +15,11 @@ import numpy as np
 import pytest
 
 from bench.synthetic import generate_traces
-from counter import attribute_failure, build_dag, fit_outcome_model, intervene
-from counter.errors import InvalidInterventionError, UnsupportedOutcomeError
-from counter.intervene import IdentifiabilityStatus
-from counter.schema import Decision, Outcome, Run, Step
-from counter.sensitivity import e_value
+from counterfact import attribute_failure, build_dag, fit_outcome_model, intervene
+from counterfact.errors import InvalidInterventionError, UnsupportedOutcomeError
+from counterfact.intervene import IdentifiabilityStatus
+from counterfact.schema import Decision, Outcome, Run, Step
+from counterfact.sensitivity import e_value
 
 # --- shared fixtures ---------------------------------------------------------
 

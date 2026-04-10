@@ -26,7 +26,7 @@ from bench.real.coding_agent.runner import (
     check_credentials,
     run_real_corpus,
 )
-from counter.schema import Run
+from counterfact.schema import Run
 
 # --- ε-greedy randomization spec scenarios ----------------------------------
 
@@ -312,7 +312,7 @@ def test_agent_logs_all_randomization_fields(tmp_path: Path) -> None:
 
 
 def test_first_run_prompts_before_any_api_call(tmp_path: Path) -> None:
-    """WHEN counter bench real is invoked and no .counter/approved marker exists
+    """WHEN counterfact bench real is invoked and no .counterfact/approved marker exists
     THEN the harness prints an approval prompt and exits before making any external API call."""
     output = tmp_path / "out"
 
@@ -325,7 +325,7 @@ def test_first_run_prompts_before_any_api_call(tmp_path: Path) -> None:
         budget_cap_usd=5.0,
         output_dir=output,
         llm_client_factory=lambda: _ExplodingLLM(),
-        marker_path=tmp_path / ".counter" / "approved",  # does not exist
+        marker_path=tmp_path / ".counterfact" / "approved",  # does not exist
     )
     assert rc == 2
 
@@ -334,7 +334,7 @@ def test_approved_marker_skips_prompt(tmp_path: Path) -> None:
     """WHEN the approval marker exists and the harness is invoked
     THEN the harness proceeds to corpus generation without re-prompting."""
     output = tmp_path / "out"
-    marker = tmp_path / ".counter" / "approved"
+    marker = tmp_path / ".counterfact" / "approved"
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.touch()
 
@@ -358,7 +358,7 @@ def test_resume_after_partial_run(tmp_path: Path) -> None:
     """WHEN a run is halted and re-invoked
     THEN the harness skips already-completed traces and writes only new ones."""
     output = tmp_path / "out"
-    marker = tmp_path / ".counter" / "approved"
+    marker = tmp_path / ".counterfact" / "approved"
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.touch()
 
@@ -456,7 +456,7 @@ def test_run_real_corpus__exits_4_when_credentials_missing(
 ) -> None:
     """With marker present but no API key (and no custom client factory), the
     runner must exit 4 BEFORE any LLM call."""
-    marker = tmp_path / ".counter" / "approved"
+    marker = tmp_path / ".counterfact" / "approved"
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.touch()
     output = tmp_path / "out"
@@ -475,7 +475,7 @@ def test_run_real_corpus__exits_4_when_credentials_missing(
 
 
 def test_cli_real_subcommand_first_run_prints_approval(tmp_path: Path) -> None:
-    """`counter bench real ...` without an approval marker exits 2 with the prompt.
+    """`counterfact bench real ...` without an approval marker exits 2 with the prompt.
 
     Runs from a clean cwd with NO PYTHONPATH override — this is the regression
     test that catches `bench` not being included in the wheel.
@@ -485,7 +485,7 @@ def test_cli_real_subcommand_first_run_prints_approval(tmp_path: Path) -> None:
         [
             sys.executable,
             "-m",
-            "counter.cli",
+            "counterfact.cli",
             "bench",
             "real",
             "--n",

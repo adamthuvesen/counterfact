@@ -2,7 +2,7 @@
 
 Lab researchers will compute these numbers anyway. Exposing them cleanly lets
 the demo present the naive read alongside the honest causal verdict from
-`counter.intervene` rather than letting consumers roll their own.
+`counterfact.intervene` rather than letting consumers roll their own.
 
 Use `intervene` for causal queries.
 """
@@ -14,7 +14,7 @@ from collections.abc import Iterable
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from counter.schema import Run
+from counterfact.schema import Run
 
 
 class _Strict(BaseModel):
@@ -36,7 +36,7 @@ class PassRateTable(_Strict):
     """Per-arm pass-rate breakdown for a single decision type.
 
     This is the **naive marginal estimator**. It ignores confounding, propensity,
-    and identifiability. Use `counter.intervene` for causal queries.
+    and identifiability. Use `counterfact.intervene` for causal queries.
     """
 
     decision_type: str
@@ -60,7 +60,7 @@ def pass_rate_by_arm(
     """Naive marginal pass-rate per `chosen_action` for `decision_type`.
 
     This is the **naive marginal estimator** — comparison baseline, not the
-    recommended estimator. Use `counter.intervene` for causal queries; that
+    recommended estimator. Use `counterfact.intervene` for causal queries; that
     estimator carries an `identifiability` label and respects the DAG.
 
     Returns a `PassRateTable` with one row per observed arm. Each row carries:

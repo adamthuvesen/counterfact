@@ -88,7 +88,7 @@ class NextStep(_Strict):
 
 
 class CausalEstimate(_Strict):
-    """The result object returned by `counter.intervene`."""
+    """The result object returned by `counterfact.intervene`."""
 
     query: InterventionQuery
     identifiability: IdentifiabilityStatus

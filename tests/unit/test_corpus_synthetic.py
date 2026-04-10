@@ -12,11 +12,11 @@ import pytest
 
 from bench.synthetic import HEADLINE_TRUE_EFFECT, generate_corpus
 from bench.synthetic.scm import MODEL_CHOICE_ARMS, RETRY_POLICY_ARMS, TOOL_CHOICE_ARMS
-from counter.schema import Run
+from counterfact.schema import Run
 
 
 def test_synthetic__generator_produces_n_traces(tmp_path: Path) -> None:
-    """WHEN counter bench synthetic --n 500 --seed 42 is executed
+    """WHEN counterfact bench synthetic --n 500 --seed 42 is executed
     THEN 500 trace files are produced and the wall-clock runtime is under 60 seconds."""
     out = tmp_path / "syn"
     t0 = time.monotonic()
@@ -62,7 +62,7 @@ def test_synthetic__randomization_is_uniform(tmp_path: Path) -> None:
 
 
 def test_synthetic__same_seed_yields_same_traces(tmp_path: Path) -> None:
-    """WHEN counter bench synthetic --n 100 --seed 7 is executed twice
+    """WHEN counterfact bench synthetic --n 100 --seed 7 is executed twice
     THEN the two output directories contain byte-identical files."""
     a, b = tmp_path / "a", tmp_path / "b"
     generate_corpus(n=100, seed=7, output_dir=a)
@@ -75,7 +75,7 @@ def test_synthetic__same_seed_yields_same_traces(tmp_path: Path) -> None:
 
 
 def test_synthetic__different_seeds_yield_different_traces(tmp_path: Path) -> None:
-    """WHEN counter bench synthetic --n 100 --seed 7 and --seed 8 are executed
+    """WHEN counterfact bench synthetic --n 100 --seed 7 and --seed 8 are executed
     THEN at least one trace file differs between the two outputs."""
     a, b = tmp_path / "a", tmp_path / "b"
     generate_corpus(n=100, seed=7, output_dir=a)
@@ -91,14 +91,14 @@ def test_synthetic__different_seeds_yield_different_traces(tmp_path: Path) -> No
 
 
 def test_cli__synthetic_subcommand_runs_end_to_end(tmp_path: Path) -> None:
-    """WHEN `counter bench synthetic --n 50 --seed 1 --output-dir DIR` is executed
+    """WHEN `counterfact bench synthetic --n 50 --seed 1 --output-dir DIR` is executed
     THEN 50 trace JSON files appear in DIR and the process exits 0."""
     out = tmp_path / "cli_syn"
     proc = subprocess.run(
         [
             sys.executable,
             "-m",
-            "counter.cli",
+            "counterfact.cli",
             "bench",
             "synthetic",
             "--n",
@@ -116,10 +116,10 @@ def test_cli__synthetic_subcommand_runs_end_to_end(tmp_path: Path) -> None:
 
 
 def test_cli__bench_help_describes_both_subcommands() -> None:
-    """WHEN `counter bench --help` is executed
+    """WHEN `counterfact bench --help` is executed
     THEN the output mentions both `synthetic` and `real` subcommands."""
     proc = subprocess.run(
-        [sys.executable, "-m", "counter.cli", "bench", "--help"],
+        [sys.executable, "-m", "counterfact.cli", "bench", "--help"],
         capture_output=True,
         text=True,
     )

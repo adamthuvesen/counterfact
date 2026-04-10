@@ -1,6 +1,6 @@
 """Decision-type taxonomy."""
 
-from counter.taxonomy.types import (
+from counterfact.taxonomy.types import (
     DECISION_TYPES,
     IdentifiabilityStance,
     extract_features,
