@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "counterfact"
-version = "0.0.0"
+version = "0.1.0"
 description = "Causal attribution for agent traces with first-class identifiability labels."
 readme = "README.md"
 requires-python = ">=3.11"
