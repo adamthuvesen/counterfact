@@ -107,16 +107,19 @@ def test_demo__at_least_one_bounded_result_is_rendered(executed_notebook: dict) 
     assert "E-value" in text
 
 
-def test_demo__at_least_one_unidentified_result_is_rendered_with_reason_and_next_step(
+def test_demo__at_least_one_unidentified_result_is_rendered_with_structured_next_step(
     executed_notebook: dict,
 ) -> None:
     """WHEN the notebook's real-trace section is executed
     THEN at least one cell output displays identifiability='unidentified',
-    a non-null reason, and next_step='replay'."""
+    a non-null reason, and a structured next_step.action ∈ the documented set."""
     text = _all_text_outputs(executed_notebook)
     assert "identifiability : unidentified" in text
-    assert "next_step       : replay" in text
     assert "reason" in text
+    actionable = {"increase_n", "broaden_arm_support", "replay_required", "add_arm_randomization"}
+    assert any(a in text for a in actionable), (
+        f"no actionable next_step.action rendered; expected one of {sorted(actionable)}"
+    )
 
 
 def test_demo__top_k_table_is_rendered_with_labels(executed_notebook: dict) -> None:
