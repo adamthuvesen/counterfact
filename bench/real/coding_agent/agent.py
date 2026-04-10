@@ -26,8 +26,11 @@ from pathlib import Path
 from bench.real.coding_agent.budget import BudgetExceeded, BudgetTracker
 from bench.real.coding_agent.fixtures import (
     FixtureSpec,
+    build_hidden_eval_workspace,
     is_hidden_fixture,
     run_pytest,
+    run_pytest_hidden,
+    run_pytest_public,
     snapshot_fixture,
 )
 from bench.real.coding_agent.llm import LLMClient
@@ -180,7 +183,10 @@ def run_one_trace(
 
     sandbox = snapshot_fixture(fixture, sandbox_root)
     src_path = sandbox / "src" / fixture.source_relpath
-    test_path = sandbox / "tests" / fixture.test_relpath
+    hidden = is_hidden_fixture(fixture)
+
+    def _run_tests_in_loop() -> tuple[bool, str]:
+        return run_pytest_public(sandbox) if hidden else run_pytest(sandbox)
 
     steps: list[Step] = []
     step_index = 0
@@ -203,7 +209,13 @@ def run_one_trace(
     # ----- Step 1: tool_call (ε-greedy on tool_choice) -----
     tool_action, tool_prop = eg_tool.choose(TOOL_ARMS, greedy=config.tool_greedy)
     src_text = src_path.read_text()
-    test_text = test_path.read_text()
+    if hidden:
+        assert fixture.public_tests_relpath is not None
+        test_chars = len(
+            (sandbox / "tests_public" / fixture.public_tests_relpath).read_text()
+        )
+    else:
+        test_chars = len((sandbox / "tests" / fixture.test_relpath).read_text())
     steps.append(
         Step(
             step_index=step_index,
@@ -224,7 +236,7 @@ def run_one_trace(
                     observation_id=f"o-{run_index:06d}-inspect",
                     content={
                         "source_chars": len(src_text),
-                        "test_chars": len(test_text),
+                        "test_chars": test_chars,
                     },
                 )
             ],
@@ -256,13 +268,7 @@ def run_one_trace(
 
     # ----- Step 3: model_call (ε-greedy on model_choice) -----
     model_action, model_prop = eg_model.choose(MODEL_ARMS, greedy=config.model_greedy)
-    prompt = _FIX_PROMPT.format(
-        root=sandbox,
-        source_relpath=fixture.source_relpath,
-        source=src_text,
-        test_relpath=fixture.test_relpath,
-        test=test_text,
-    )
+    prompt = build_fix_prompt(fixture, sandbox)
     resp = llm.call(role=model_action, prompt=prompt)
     budget.add(resp.cost_usd)
     patched = _extract_python_block(resp.text)
@@ -299,7 +305,7 @@ def run_one_trace(
         src_path.write_text(patched)
 
     # ----- Step 4: tool_call run_tests (deterministic) -----
-    passed, tail = run_pytest(sandbox)
+    passed, tail = _run_tests_in_loop()
     steps.append(
         Step(
             step_index=step_index,
@@ -334,7 +340,9 @@ def run_one_trace(
                 ],
             )
         )
-        return _build_run(run_index, fixture, steps, success=True)
+        return _finalize_run(
+            run_index, fixture, steps, sandbox, sandbox_root, public_pass=True
+        )
 
     if attempts_remaining <= 0:
         # no_retry was chosen; we ran the one allotted attempt and it failed
@@ -350,17 +358,14 @@ def run_one_trace(
                 ],
             )
         )
-        return _build_run(run_index, fixture, steps, success=False)
+        return _finalize_run(
+            run_index, fixture, steps, sandbox, sandbox_root, public_pass=False
+        )
 
     # ----- Step 5: model_call retry, with failure context (D18) -----
-    src_text = src_path.read_text()
-    retry_prompt = _FIX_PROMPT.format(
-        root=sandbox,
-        source_relpath=fixture.source_relpath,
-        source=src_text,
-        test_relpath=fixture.test_relpath,
-        test=test_text,
-    ) + _RETRY_PROMPT_SUFFIX.format(test_output=tail[-1000:])
+    retry_prompt = build_fix_prompt(fixture, sandbox) + _RETRY_PROMPT_SUFFIX.format(
+        test_output=tail[-1000:]
+    )
     resp2 = llm.call(role=model_action, prompt=retry_prompt)
     budget.add(resp2.cost_usd)
     patched2 = _extract_python_block(resp2.text)
@@ -401,7 +406,7 @@ def run_one_trace(
         src_path.write_text(patched2)
 
     # ----- Step 6: tool_call run_tests (second attempt) -----
-    passed2, tail2 = run_pytest(sandbox)
+    passed2, tail2 = _run_tests_in_loop()
     steps.append(
         Step(
             step_index=step_index,
@@ -434,21 +439,58 @@ def run_one_trace(
             ],
         )
     )
-    return _build_run(run_index, fixture, steps, success=passed2)
+    return _finalize_run(
+        run_index, fixture, steps, sandbox, sandbox_root, public_pass=passed2
+    )
 
 
-def _build_run(
-    run_index: int, fixture: FixtureSpec, steps: list[Step], *, success: bool
+def _finalize_run(
+    run_index: int,
+    fixture: FixtureSpec,
+    steps: list[Step],
+    sandbox: Path,
+    sandbox_root: Path,
+    *,
+    public_pass: bool,
 ) -> Run:
+    """Build the final Run, branching on whether `fixture` is hidden.
+
+    For v0 fixtures, `Outcome.value` is the in-loop pytest result and
+    `verifier="pytest"`. For hidden fixtures, the in-loop pytest result is
+    `public_pass`; the harness then runs `tests_hidden/` once in a separate
+    workspace, and `Outcome.value` is the hidden-test result.
+    """
+    if not is_hidden_fixture(fixture):
+        return Run(
+            schema_version="0.1.0",
+            run_id=f"real-{fixture.fixture_id}-{run_index:06d}",
+            steps=steps,
+            outcome=Outcome(
+                kind="binary",
+                value=public_pass,
+                verifier="pytest",
+                metadata={"fixture_id": fixture.fixture_id},
+            ),
+        )
+
+    eval_workspace = build_hidden_eval_workspace(
+        fixture, sandbox, sandbox_root / "_hidden_eval"
+    )
+    hidden_pass, _ = run_pytest_hidden(eval_workspace)
     return Run(
         schema_version="0.1.0",
         run_id=f"real-{fixture.fixture_id}-{run_index:06d}",
         steps=steps,
         outcome=Outcome(
             kind="binary",
-            value=success,
-            verifier="pytest",
-            metadata={"fixture_id": fixture.fixture_id},
+            value=hidden_pass,
+            verifier="pytest_hidden",
+            metadata={
+                "fixture_id": fixture.fixture_id,
+                "public_pass": public_pass,
+                "hidden_pass": hidden_pass,
+                "generalization_gap": public_pass and not hidden_pass,
+            },
         ),
     )
 
