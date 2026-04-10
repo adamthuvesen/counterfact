@@ -29,6 +29,10 @@ class LLMResponse:
     cost_usd: float
 
 
+class CostUnknownError(RuntimeError):
+    """Raised when a production LLM response cannot be priced safely."""
+
+
 class LLMClient(Protocol):
     """Minimal interface the agent loop depends on."""
 
@@ -42,8 +46,7 @@ def extract_cost(resp: object) -> float:
     1. Read `response_cost` if litellm populated it (varies by provider).
     2. Fall back to `litellm.completion_cost(completion_response=resp)` which
        computes cost from token usage and the published price table.
-    3. Return 0.0 only if both paths failed — the caller can decide whether
-       that's acceptable.
+    3. Raise if both paths fail. Production budget accounting must fail closed.
     """
     raw = None
     if hasattr(resp, "get"):
@@ -57,8 +60,11 @@ def extract_cost(resp: object) -> float:
         import litellm  # type: ignore[import-not-found]
 
         return float(litellm.completion_cost(completion_response=resp))
-    except Exception:
-        return 0.0
+    except Exception as exc:
+        raise CostUnknownError(
+            "could not determine LLM response cost from provider response or "
+            "litellm.completion_cost; refusing to treat the call as free"
+        ) from exc
 
 
 class LiteLLMClient:

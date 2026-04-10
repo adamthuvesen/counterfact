@@ -160,6 +160,39 @@ def test_decisions_log_randomization__unrandomized_decision_has_no_propensity() 
     assert dst == src
 
 
+def test_decisions_log_randomization__partial_randomization_metadata_is_rejected() -> None:
+    from counterfact.schema import Decision
+
+    with pytest.raises(ValidationError) as exc_info:
+        Decision(
+            decision_id="d-partial",
+            decision_type="tool_call",
+            policy="epsilon_greedy",
+        )
+    msg = str(exc_info.value)
+    assert "randomized decisions" in msg
+    assert "propensity" in msg
+    assert "valid_actions" in msg
+
+
+def test_decisions_log_randomization__chosen_action_must_be_valid_action() -> None:
+    from counterfact.schema import Decision
+
+    with pytest.raises(ValidationError) as exc_info:
+        Decision(
+            decision_id="d-invalid-arm",
+            decision_type="tool_call",
+            chosen_action="delete_repo",
+            policy="epsilon_greedy",
+            policy_params={"epsilon": 0.2},
+            valid_actions=["run_tests", "inspect_file"],
+            propensity=0.1,
+            context_features={},
+        )
+    assert "chosen_action" in str(exc_info.value)
+    assert "valid_actions" in str(exc_info.value)
+
+
 def test_decisions_log_randomization__propensity_must_be_in_zero_one_inclusive() -> None:
     """WHEN a Decision is constructed with propensity=0.0 or propensity=1.5
     THEN the system raises a pydantic.ValidationError."""
@@ -171,8 +204,42 @@ def test_decisions_log_randomization__propensity_must_be_in_zero_one_inclusive()
     with pytest.raises(ValidationError):
         Decision(**base, propensity=1.5)
     # propensity=1.0 is allowed (inclusive upper bound)
-    ok = Decision(**base, propensity=1.0)
+    ok = Decision(
+        **base,
+        chosen_action="run_tests",
+        policy="epsilon_greedy",
+        policy_params={"epsilon": 0.0},
+        valid_actions=["run_tests"],
+        propensity=1.0,
+        context_features={},
+    )
     assert ok.propensity == 1.0
+
+
+def test_run_rejects_duplicate_decision_ids() -> None:
+    from counterfact.schema import Decision, Outcome, Run, Step
+
+    with pytest.raises(ValidationError) as exc_info:
+        Run(
+            schema_version="0.1.0",
+            run_id="duplicate-decisions",
+            steps=[
+                Step(
+                    step_index=0,
+                    decisions=[
+                        Decision(decision_id="d0", decision_type="plan_step"),
+                        Decision(
+                            decision_id="d0",
+                            decision_type="tool_call",
+                            chosen_action="run_tests",
+                        ),
+                    ],
+                )
+            ],
+            outcome=Outcome(kind="binary", value=True, verifier="pytest"),
+        )
+    assert "d0" in str(exc_info.value)
+    assert "unique" in str(exc_info.value)
 
 
 def test_schema_versioning__unrecognized_version_is_rejected() -> None:

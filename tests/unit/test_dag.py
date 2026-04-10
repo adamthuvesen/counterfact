@@ -80,3 +80,26 @@ def test_build_dag__cycle_raises() -> None:
     b = Decision(decision_id="b", decision_type="plan_step")
     with pytest.raises(DAGCycleError):
         DAG(nodes=[a, b], edges=[("a", "b"), ("b", "a")])
+
+
+def test_build_dag__duplicate_decision_ids_raise_defensively() -> None:
+    """Even if schema validation is bypassed, DAG construction refuses duplicates."""
+    steps = [
+        Step.model_construct(
+            step_index=0,
+            decisions=[
+                Decision(decision_id="dup", decision_type="plan_step"),
+                Decision(decision_id="dup", decision_type="tool_call", chosen_action="run_tests"),
+            ],
+            observations=[],
+            metadata={},
+        )
+    ]
+    run = Run.model_construct(
+        schema_version="0.1.0",
+        run_id="r-dup",
+        steps=steps,
+        outcome=Outcome(kind="binary", value=True, verifier="pytest"),
+    )
+    with pytest.raises(ValueError, match="duplicate decision_id"):
+        build_dag(run)

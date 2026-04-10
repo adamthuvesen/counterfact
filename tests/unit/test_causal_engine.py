@@ -16,7 +16,11 @@ import pytest
 
 from bench.synthetic import generate_traces
 from counterfact import attribute_failure, build_dag, fit_outcome_model, intervene
-from counterfact.errors import InvalidInterventionError, UnsupportedOutcomeError
+from counterfact.errors import (
+    InsufficientOutcomeSupportError,
+    InvalidInterventionError,
+    UnsupportedOutcomeError,
+)
 from counterfact.intervene import IdentifiabilityStatus
 from counterfact.schema import Decision, Outcome, Run, Step
 from counterfact.sensitivity import e_value
@@ -66,6 +70,39 @@ def test_fit_outcome_model__bootstrap_cis_surround_point_estimate(fitted: object
         assert lo <= point <= hi, (
             f"coefficient {name} point={point} outside [{lo}, {hi}]"
         )
+
+
+def test_fit_outcome_model__all_pass_corpus_raises_domain_error() -> None:
+    runs = [
+        Run.model_validate(t).model_copy(
+            update={"outcome": Outcome(kind="binary", value=True, verifier="synthetic")}
+        )
+        for t in generate_traces(n=20, seed=3)
+    ]
+    with pytest.raises(InsufficientOutcomeSupportError) as exc_info:
+        fit_outcome_model(runs)
+    msg = str(exc_info.value)
+    assert "at least two outcome classes" in msg
+    assert "pass and fail outcomes" in msg
+
+
+def test_fit_outcome_model__all_fail_corpus_raises_domain_error() -> None:
+    runs = [
+        Run.model_validate(t).model_copy(
+            update={"outcome": Outcome(kind="binary", value=False, verifier="synthetic")}
+        )
+        for t in generate_traces(n=20, seed=4)
+    ]
+    with pytest.raises(InsufficientOutcomeSupportError) as exc_info:
+        fit_outcome_model(runs)
+    assert "at least two outcome classes" in str(exc_info.value)
+
+
+def test_fit_outcome_model__mixed_binary_corpus_still_fits() -> None:
+    runs = [Run.model_validate(t) for t in generate_traces(n=80, seed=5)]
+    assert {bool(run.outcome.value) for run in runs} == {False, True}
+    model = fit_outcome_model(runs, n_bootstrap=10, seed=5)
+    assert model.train_n == len(runs)
 
 
 # --- intervene spec scenarios ------------------------------------------------
