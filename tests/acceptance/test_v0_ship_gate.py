@@ -190,6 +190,8 @@ def _degenerate_real_corpus_estimate(real_corpus: list[Run]) -> CausalEstimate:
             payload={
                 "arm_name": "outcome",
                 "missing_strata": [f"Outcome.value={not observed}"],
+                "observed_arms": [],
+                "missing_arms": [f"Outcome.value={not observed}"],
             },
             human_text=(
                 "Collect or construct traces with both pass and fail outcomes "
@@ -316,6 +318,22 @@ def test_at_least_one_unidentified_with_actionable_next_step(
             assert est.next_step.human_text, "next_step.human_text is empty"
             if est.next_step.action == "replay_required":
                 assert "intervention_target" in est.next_step.payload
+                # New: replay payload must name what would have to be replayed.
+                assert est.next_step.payload.get("replay_inputs_required"), (
+                    "replay_required payload missing replay_inputs_required"
+                )
+                assert est.next_step.payload.get("note"), (
+                    "replay_required payload missing note"
+                )
+            elif est.next_step.action == "broaden_arm_support":
+                assert est.next_step.payload, (
+                    "broaden_arm_support unidentified estimate has empty payload"
+                )
+                # New: payload must surface what was observed and what's missing.
+                assert "observed_arms" in est.next_step.payload
+                assert "missing_arms" in est.next_step.payload
+                assert isinstance(est.next_step.payload["observed_arms"], list)
+                assert isinstance(est.next_step.payload["missing_arms"], list)
             else:
                 assert est.next_step.payload, (
                     "non-replay unidentified estimate has empty payload"

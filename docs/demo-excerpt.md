@@ -26,7 +26,9 @@ but it is not a causal attribution.
 | identifiability | `unidentified` |
 | reason | every trace has `Outcome.value=True`; there is no outcome variation for an outcome model or back-door adjustment |
 | warning | `fit_outcome_model` is intentionally skipped for single-class real corpora |
-| next step | collect or construct traces with both pass and fail outcomes before estimating decision-level effects |
+| next step | `broaden_arm_support`: collect or construct traces with both pass and fail outcomes before estimating decision-level effects |
+| suggested command | `uv run counterfact bench real --n 30 --fixture-set hidden_v1 --model-greedy large --model-epsilon 0.5` |
 
 That is the product stance: `counterfact` does not launder a degenerate corpus into
-a fake probability. It returns a useful no, plus the next data collection step.
+a fake probability. It returns a useful no, plus the next data collection step — and,
+when the harness can produce that data, the exact command to do it.

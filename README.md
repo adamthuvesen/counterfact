@@ -65,6 +65,18 @@ Sometimes `counterfact` can estimate that. Sometimes it can only bound it. Somet
 - Real-agent coding harness with randomized decisions, budget gate, hidden/public fixture support, and a committed 30-trace `runs_v1` pilot corpus
 - Demo notebook and acceptance tests around the naive-vs-honest story
 
+### NextStep payload contract
+
+Refusals are first-class. Every `CausalEstimate.next_step` carries a structured payload alongside `human_text`:
+
+- `broaden_arm_support` → `arm_name`, `missing_strata`, `observed_arms`, `missing_arms`
+- `increase_n` → `current_n`, `estimated_required_n`, `target_ci_width`, `power_method` (`binomial_wald_two_arm` | `inline_scaling` | `degenerate`), `arm_breakdown`
+- `replay_required` → `intervention_target`, `replay_inputs_required`, `note`
+- `add_arm_randomization` → `arm_name`, `current_policy`
+- `none` → empty
+
+When the harness can generate the missing data, `payload["suggested_command"]` carries a copy-pasteable `uv run counterfact bench …` invocation. The full schema lives in `openspec/specs/causal-engine/spec.md`.
+
 ## Python API
 
 ```python

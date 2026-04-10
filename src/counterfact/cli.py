@@ -61,10 +61,36 @@ def _intervention_kind(decision_type: str) -> str:
 def _degenerate_estimate(
     runs: list[Run], *, decision_type: str, intervention_kind: str, target: Any
 ) -> CausalEstimate:
+    from counterfact import pass_rate_by_arm
+    from counterfact.intervene.suggest import known_arms, suggest_harness_command
+
     classes = _outcome_classes(runs)
     if len(classes) != 1:
         raise ValueError("degenerate estimate requires exactly one outcome class")
     observed = next(iter(classes))
+
+    table = pass_rate_by_arm(runs, decision_type)
+    observed_arms = [row.model_dump() for row in table.rows]
+    observed_arm_names = [row.arm for row in table.rows]
+    canonical = known_arms(decision_type, intervention_kind)
+    missing_arms = [arm for arm in canonical if arm not in observed_arm_names]
+
+    suggestion = suggest_harness_command(
+        decision_type=decision_type,
+        intervention_kind=intervention_kind,
+        action="broaden_arm_support",
+        arm_name=str(target) if target is not None else None,
+    )
+
+    payload: dict[str, Any] = {
+        "arm_name": "outcome",
+        "missing_strata": [f"Outcome.value={not observed}"],
+        "observed_arms": observed_arms,
+        "missing_arms": missing_arms,
+    }
+    if suggestion is not None:
+        payload["suggested_command"] = suggestion
+
     return CausalEstimate(
         query=InterventionQuery(
             decision_type=decision_type,
@@ -83,10 +109,7 @@ def _degenerate_estimate(
         ],
         next_step=NextStep(
             action="broaden_arm_support",
-            payload={
-                "arm_name": "outcome",
-                "missing_strata": [f"Outcome.value={not observed}"],
-            },
+            payload=payload,
             human_text=(
                 "Collect or construct traces with both pass and fail outcomes before "
                 "estimating decision-level effects on the real corpus."
@@ -163,6 +186,9 @@ def _demo(args: argparse.Namespace) -> int:
     if estimate.warnings:
         print(f"warning: {estimate.warnings[0]}")
     print(f"next_step: {estimate.next_step.action} - {estimate.next_step.human_text}")
+    suggested = estimate.next_step.payload.get("suggested_command")
+    if suggested:
+        print(f"suggested_command: {suggested}")
     return 0
 
 
