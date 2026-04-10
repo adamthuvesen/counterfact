@@ -19,6 +19,7 @@ def test_demo__uses_local_real_corpus_and_reports_degenerate_verdict(
     assert "intervene(model_call ->" in out
     assert "identifiability: unidentified" in out
     assert "next_step: broaden_arm_support" in out
+    assert "suggested_command: uv run counterfact bench real " in out
 
 
 def test_demo__falls_back_to_synthetic_without_real_harness_import(
@@ -55,3 +56,8 @@ def test_demo__falls_back_to_synthetic_without_real_harness_import(
     assert "pass_rate_by_arm(model_call)" in out
     assert "intervene(model_call -> sonnet)" in out
     assert "identifiability: identified" in out
+    # When the synthetic-tight branch fires, next_step.action is "none" and
+    # no suggested_command line is printed; when it's wide, an increase_n
+    # suggestion is printed. Either is valid.
+    if "next_step: none" in out:
+        assert "suggested_command:" not in out

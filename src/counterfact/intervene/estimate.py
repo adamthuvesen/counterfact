@@ -48,10 +48,28 @@ class SensitivityBounds(_Strict):
 
 # Required payload keys per action. Each action's payload must contain at
 # least these keys; extra keys are tolerated. `none` accepts an empty payload.
+# The full per-action schema (including optional keys like `suggested_command`)
+# is documented in openspec/specs/causal-engine/spec.md under the
+# `intervene returns a CausalEstimate with identifiability label` requirement.
 _REQUIRED_PAYLOAD_KEYS: dict[str, tuple[str, ...]] = {
-    "increase_n": ("current_n", "estimated_required_n", "target_ci_width"),
-    "broaden_arm_support": ("arm_name", "missing_strata"),
-    "replay_required": ("intervention_target",),
+    "increase_n": (
+        "current_n",
+        "estimated_required_n",
+        "target_ci_width",
+        "power_method",
+        "arm_breakdown",
+    ),
+    "broaden_arm_support": (
+        "arm_name",
+        "missing_strata",
+        "observed_arms",
+        "missing_arms",
+    ),
+    "replay_required": (
+        "intervention_target",
+        "replay_inputs_required",
+        "note",
+    ),
     "add_arm_randomization": ("arm_name", "current_policy"),
     "none": (),
 }
@@ -60,9 +78,10 @@ _REQUIRED_PAYLOAD_KEYS: dict[str, tuple[str, ...]] = {
 class NextStep(_Strict):
     """Structured guidance for what to do when an estimate is not actionable as-is.
 
-    Each `action` documents a payload contract; the validator enforces that the
-    minimum keys are present so consumers (the demo notebook, tooling) can rely
-    on the shape rather than string-matching `human_text`.
+    The validator enforces that each action's minimum payload keys are present
+    so consumers can rely on the shape rather than string-matching `human_text`.
+    See openspec/specs/causal-engine/spec.md for the full per-action contract,
+    including optional keys (`suggested_command`) not enforced here.
     """
 
     action: Literal[
