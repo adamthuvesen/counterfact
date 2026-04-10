@@ -6,15 +6,20 @@ them post-hoc and the demo points at one as its evidence base.
 
 ## Output directories
 
-- **`runs_v1/`** — the canonical degenerate-case showcase. Single-class
-  outcomes (every trace passes, by construction of the easy fixtures used at
-  the time). Kept committed because the demo's "honest refusal" punchline
-  lands hardest with real evidence behind it. Never modified.
+- **`runs_v2/`** — the canonical mixed-outcome corpus. 30 `date_window`
+  traces from the `hard_hidden_v1` set, generated with
+  `--model-greedy small --model-epsilon 0.67 --seed 1`. Cleared
+  `counterfact analyze corpus` with `promote: True` (pass rate 0.467, both
+  `model_call` arms supported, `identified` and `unidentified` reachable).
+  This is the corpus the demo and the v0 ship gate point at by default.
+- **`runs_v1/`** — the original degenerate-case showcase. Single-class
+  outcomes (30/30 pass on `csv_dedupe`). Kept committed as a regression
+  anchor for the analyzer (it must never promote) and as evidence that the
+  demo's "honest refusal" branch still lands when handed a degenerate
+  corpus. Never modified.
 - **`runs_pilot_<YYYY-MM-DD>/`** — where new pilots write by default. Pilots
   are exploratory; they may or may not clear the analyzer. They are not
   committed unless they pass the promotion gate.
-- **`runs_v2/`** — reserved for a corpus that has cleared
-  `counterfact analyze corpus` with `promote: True`. Does not exist yet.
 
 ## Promotion convention
 
