@@ -73,7 +73,7 @@ The corpus has two layers:
 
 This avoids the weakest version of the project: fitting a causal-looking model to one heroic failure trace. The demo should have a corpus behind it.
 
-Aim for roughly 300 controlled real-agent traces in the first demo corpus, then judge adequacy by class balance, intervention support, and bootstrap interval width rather than pretending there is a magic sample size.
+Three pilots (Sonnet 4.6, Haiku 4.5, csv_dedupe with public/hidden test split) each produced 30/30 pass on small Python repair tasks, so the v0 ship gate no longer enforces class balance or a CI-width threshold on the real corpus. Instead, v0 ships when the synthetic SCM recovers a known effect within tolerance, every real-corpus intervention returns an internally-consistent identifiability label, and at least one query returns `unidentified` with a structured, actionable `next_step`. The demo lead is the naive-vs-honest contrast: `pass_rate_by_arm` (a punchy number) shown next to `intervene()` (a label, bounds, and a next-step recommendation). See `openspec/changes/identifiability-first-pivot/` for the full rationale.
 
 ### Pipeline
 
