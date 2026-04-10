@@ -19,10 +19,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
 from pydantic import BaseModel, ConfigDict
 
 from counterfact.dag import DAG
+from counterfact.errors import UnknownDecisionTypeError
 from counterfact.intervene.api import intervene as _intervene
 from counterfact.intervene.estimate import CausalEstimate, IdentifiabilityStatus
 from counterfact.taxonomy import valid_interventions
@@ -62,9 +62,20 @@ def _intervention_kind_for(decision_type: str) -> str | None:
         try:
             if identifiability_stance(decision_type, k) == "requires-randomized-support":
                 return k
-        except Exception:
+        except UnknownDecisionTypeError:
             continue
     return kinds[0] if kinds else None
+
+
+def _combined_identifiability(
+    actual: CausalEstimate, counterfactual: CausalEstimate
+) -> IdentifiabilityStatus:
+    statuses = {actual.identifiability, counterfactual.identifiability}
+    if IdentifiabilityStatus.UNIDENTIFIED in statuses:
+        return IdentifiabilityStatus.UNIDENTIFIED
+    if statuses == {IdentifiabilityStatus.IDENTIFIED}:
+        return IdentifiabilityStatus.IDENTIFIED
+    return IdentifiabilityStatus.BOUNDED
 
 
 def _sibling_action(model: object, decision_type: str, chosen_action: str) -> str | None:
@@ -137,30 +148,14 @@ def attribute_failure(
                 intervention={intervention_kind: sibling},
             )
 
-            ident = (
-                IdentifiabilityStatus.UNIDENTIFIED
-                if (
-                    actual.identifiability == IdentifiabilityStatus.UNIDENTIFIED
-                    or counterfactual.identifiability == IdentifiabilityStatus.UNIDENTIFIED
-                )
-                else (
-                    IdentifiabilityStatus.IDENTIFIED
-                    if (
-                        actual.identifiability == IdentifiabilityStatus.IDENTIFIED
-                        and counterfactual.identifiability == IdentifiabilityStatus.IDENTIFIED
-                    )
-                    else IdentifiabilityStatus.BOUNDED
-                )
-            )
+            ident = _combined_identifiability(actual, counterfactual)
 
             if (
                 actual.outcome_delta is not None
                 and counterfactual.outcome_delta is not None
                 and ident != IdentifiabilityStatus.UNIDENTIFIED
             ):
-                influence = float(
-                    np.abs(actual.outcome_delta.point - counterfactual.outcome_delta.point)
-                )
+                influence = abs(actual.outcome_delta.point - counterfactual.outcome_delta.point)
             else:
                 influence = 0.0
 

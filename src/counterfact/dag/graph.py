@@ -10,7 +10,7 @@ the graph inspectable.
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -30,13 +30,7 @@ class DAG:
         # Acyclicity check fires on every construction (including DAG(...) directly,
         # which is what the cycle-rejection scenario uses).
         if self.nodes or self.edges:
-            self._assert_acyclic()
-
-    def _assert_acyclic(self) -> None:
-        try:
             self.topological_sort()
-        except DAGCycleError:
-            raise
 
     def node_ids(self) -> list[str]:
         return [n.decision_id for n in self.nodes]
@@ -114,7 +108,9 @@ def build_dag(trace: Run, schema: Any | None = None) -> DAG:
             flat.append((step.step_index, pos, d))
             nodes.append(d)
     ids = [d.decision_id for _, _, d in flat]
-    duplicate_ids = sorted({decision_id for decision_id in ids if ids.count(decision_id) > 1})
+    duplicate_ids = sorted(
+        decision_id for decision_id, count in Counter(ids).items() if count > 1
+    )
     if duplicate_ids:
         raise ValueError(
             "cannot build DAG with duplicate decision_id values: "

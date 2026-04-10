@@ -38,9 +38,7 @@ from counterfact.intervene.estimate import (
 _IDENTIFIED_TIGHT_CI_WIDTH = 0.10
 
 
-def _bootstrap_predict(
-    model: Any, X: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
+def _bootstrap_predict(model: Any, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Compute predictions per bootstrap draw. Returns (point_per_run, boot_per_run)."""
     boot_coefs = model.bootstrap_coefs  # (B, n_feat)
     boot_intercepts = model.bootstrap_intercepts  # (B,)
@@ -126,7 +124,7 @@ def _resolve_intervention(intervention: dict[str, Any]) -> tuple[str, Any]:
         raise InvalidInterventionError(
             "intervention must be a single-key dict like {'tool_choice': 'inspect_file'}"
         )
-    [(kind, value)] = list(intervention.items())
+    kind, value = next(iter(intervention.items()))
     return kind, value
 
 
