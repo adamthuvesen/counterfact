@@ -24,7 +24,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bench.real.coding_agent.budget import BudgetExceeded, BudgetTracker
-from bench.real.coding_agent.fixtures import FixtureSpec, run_pytest, snapshot_fixture
+from bench.real.coding_agent.fixtures import (
+    FixtureSpec,
+    is_hidden_fixture,
+    run_pytest,
+    snapshot_fixture,
+)
 from bench.real.coding_agent.llm import LLMClient
 from bench.real.coding_agent.randomize import EpsilonGreedy
 from counter.schema import Decision, Observation, Outcome, Run, Step
@@ -47,6 +52,24 @@ fenced ```python``` block. Do not include any other commentary.
 {test}
 """
 
+_HIDDEN_FIX_PROMPT = """\
+You are a small coding agent. The repository under {root} contains a Python
+source file with a bug. The requirements live in spec.md (the source of truth)
+and a small set of public tests under tests_public/ exercises a subset of
+those requirements. Implement the full spec, not just enough to pass the
+public tests. Reply with the FULL corrected source file inside a fenced
+```python``` block. Do not include any other commentary.
+
+--- SPEC (spec.md) ---
+{spec}
+
+--- SOURCE ({source_relpath}) ---
+{source}
+
+--- PUBLIC TESTS ({public_tests_relpath}) ---
+{public_tests}
+"""
+
 _RETRY_PROMPT_SUFFIX = """
 
 Your previous patch was applied but the tests still failed. Here is the test
@@ -65,6 +88,40 @@ def _extract_python_block(text: str) -> str | None:
     if not m:
         return None
     return m.group(1).rstrip() + "\n"
+
+
+def build_fix_prompt(fixture: FixtureSpec, sandbox: Path) -> str:
+    """Build the initial fix prompt for `fixture` against its `sandbox` snapshot.
+
+    Hidden-test fixtures get a prompt that cites spec.md as the requirements
+    source and tests_public/ as feedback — the prompt never references
+    tests_hidden/ or its filenames. v0 fixtures get the original
+    test-in-prompt template.
+    """
+    src_path = sandbox / "src" / fixture.source_relpath
+    src_text = src_path.read_text()
+    if is_hidden_fixture(fixture):
+        spec_text = (sandbox / "spec.md").read_text()
+        assert fixture.public_tests_relpath is not None
+        public_path = sandbox / "tests_public" / fixture.public_tests_relpath
+        public_text = public_path.read_text()
+        return _HIDDEN_FIX_PROMPT.format(
+            root=sandbox,
+            spec=spec_text,
+            source_relpath=fixture.source_relpath,
+            source=src_text,
+            public_tests_relpath=fixture.public_tests_relpath,
+            public_tests=public_text,
+        )
+    test_path = sandbox / "tests" / fixture.test_relpath
+    test_text = test_path.read_text()
+    return _FIX_PROMPT.format(
+        root=sandbox,
+        source_relpath=fixture.source_relpath,
+        source=src_text,
+        test_relpath=fixture.test_relpath,
+        test=test_text,
+    )
 
 
 @dataclass
