@@ -74,8 +74,7 @@ def power_analysis(
     binomial formula is ill-posed there, and the right next step is broader
     arm support, not bigger n.
     """
-    corpus_list = list(corpus)
-    table = pass_rate_by_arm(corpus_list, decision_type)
+    table = pass_rate_by_arm(corpus, decision_type)
     by_arm = {row.arm: row for row in table.rows}
 
     arm_a, arm_b = arms
