@@ -544,3 +544,126 @@ def test_retry_prompt_tail_comes_from_public_not_hidden(tmp_path: Path) -> None:
     assert "test_dedupe_hidden" not in retry_prompt
     assert "whitespace_rule" not in retry_prompt
     assert "nfc_rule" not in retry_prompt
+
+
+# --- Phase E: v0 backward compat -------------------------------------------
+
+
+def test_v0_fixture_outcome_unchanged(tmp_path: Path) -> None:
+    """Req: Hidden-fixture traces use a distinct verifier label
+    Req: MODIFIED Real-agent family generates traces from a coding-agent loop
+    WHEN a v0 (single-tests-dir) fixture run completes
+    THEN Outcome.verifier='pytest' and metadata has only fixture_id
+         (no public_pass / hidden_pass / generalization_gap keys)."""
+    from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
+    from bench.real.coding_agent.budget import BudgetTracker
+    from bench.real.coding_agent.fixtures import EASY_FIXTURES
+    from bench.real.coding_agent.llm import LLMResponse
+
+    fixture = EASY_FIXTURES[0]  # string-utils — known-good patch is small
+
+    class _PerfectLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            fixed = (
+                "```python\n"
+                '"""Patched."""\n'
+                "from __future__ import annotations\n"
+                "import re\n"
+                "def normalize_name(name: str) -> str:\n"
+                '    return re.sub(r"\\s+", " ", name.strip().lower())\n'
+                "```"
+            )
+            return LLMResponse(text=fixed, cost_usd=0.0)
+
+    budget = BudgetTracker(cap_usd=1.0)
+    run = run_one_trace(
+        fixture,
+        run_index=0,
+        llm=_PerfectLLM(),  # type: ignore[arg-type]
+        budget=budget,
+        sandbox_root=tmp_path,
+        config=AgentRunConfig(epsilon=0.0, seed=42),
+    )
+    assert run.outcome.value is True
+    assert run.outcome.verifier == "pytest"
+    assert run.outcome.metadata == {"fixture_id": fixture.fixture_id}
+    # Specifically, none of the hidden-fixture metadata keys leaked into v0.
+    for forbidden in ("public_pass", "hidden_pass", "generalization_gap"):
+        assert forbidden not in run.outcome.metadata
+
+
+# --- Phase F: CLI --fixtures flag ------------------------------------------
+
+
+def test_run_real_corpus_with_fixtures_csv_dedupe(tmp_path: Path) -> None:
+    """Req: Pilot gate before scaling to additional hidden fixtures
+    WHEN the corpus generator is invoked with --fixtures csv_dedupe
+    THEN the harness runs only csv_dedupe and produces traces tagged with that
+         fixture_id (and verifier='pytest_hidden')."""
+    import json
+
+    from bench.real.coding_agent.llm import LLMResponse
+    from bench.real.coding_agent.runner import run_real_corpus
+
+    output = tmp_path / "out"
+    marker = tmp_path / ".counter" / "approved"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+
+    class _NullLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text="(no patch)", cost_usd=0.0)
+
+    rc = run_real_corpus(
+        n=2,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        llm_client_factory=lambda: _NullLLM(),
+        marker_path=marker,
+        fixture_ids=("csv_dedupe",),
+    )
+    assert rc == 0
+    written = sorted(output.glob("real-*.json"))
+    assert len(written) == 2
+    for path in written:
+        assert "csv_dedupe" in path.name
+        data = json.loads(path.read_text())
+        assert data["outcome"]["verifier"] == "pytest_hidden"
+        assert data["outcome"]["metadata"]["fixture_id"] == "csv_dedupe"
+
+
+def test_cli_real_subcommand_accepts_fixtures_flag(tmp_path: Path) -> None:
+    """The CLI parses --fixtures as a comma-separated list and forwards it
+    through to run_real_corpus."""
+    import subprocess
+    import sys
+
+    out = tmp_path / "out"
+    # Without an approval marker, the run will exit 2 — we only want to assert
+    # the CLI accepts the flag without an argparse error.
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "counter.cli",
+            "bench",
+            "real",
+            "--n",
+            "1",
+            "--budget-cap",
+            "1",
+            "--output-dir",
+            str(out),
+            "--fixtures",
+            "csv_dedupe",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    # Exit 2 is the HUMAN-GATE refusal, which proves the CLI parsed the args.
+    assert proc.returncode == 2, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    # Argparse errors on unknown flags exit 2 *with* an "unrecognized arguments"
+    # message; the gate refusal does not. Distinguish.
+    assert "unrecognized arguments" not in (proc.stdout + proc.stderr)
+    assert "HUMAN GATE" in (proc.stdout + proc.stderr)

@@ -11,7 +11,12 @@ from pathlib import Path
 
 from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
 from bench.real.coding_agent.budget import BudgetExceeded, BudgetTracker
-from bench.real.coding_agent.fixtures import FIXTURES, FixtureSpec
+from bench.real.coding_agent.fixtures import (
+    EASY_FIXTURES,
+    FIXTURES,
+    HIDDEN_FIXTURES,
+    FixtureSpec,
+)
 from bench.real.coding_agent.llm import ROLE_TO_MODEL, LiteLLMClient, LLMClient
 
 APPROVAL_MARKER = Path(".counter") / "approved"
@@ -116,8 +121,43 @@ def _completed_indices(output_dir: Path) -> set[int]:
     return out
 
 
-def _fixture_for_index(index: int) -> FixtureSpec:
-    return FIXTURES[index % len(FIXTURES)]
+def _fixture_for_index(index: int, fixtures: tuple[FixtureSpec, ...]) -> FixtureSpec:
+    return fixtures[index % len(fixtures)]
+
+
+_FIXTURE_SETS: dict[str, tuple[FixtureSpec, ...]] = {
+    "v0": FIXTURES,
+    "easy": EASY_FIXTURES,
+    "hidden_v1": HIDDEN_FIXTURES,
+}
+
+
+def resolve_fixtures(
+    fixture_ids: tuple[str, ...] | None = None,
+    fixture_set: str | None = None,
+) -> tuple[FixtureSpec, ...]:
+    """Resolve which fixtures the runner should iterate over.
+
+    Precedence: explicit `fixture_ids` > named `fixture_set` > the default v0
+    `FIXTURES` (preserving existing behavior).
+    """
+    if fixture_ids:
+        registry = {
+            fx.fixture_id: fx
+            for fx in (*FIXTURES, *EASY_FIXTURES, *HIDDEN_FIXTURES)
+        }
+        unknown = [fid for fid in fixture_ids if fid not in registry]
+        if unknown:
+            raise ValueError(f"unknown fixture id(s): {unknown}")
+        return tuple(registry[fid] for fid in fixture_ids)
+    if fixture_set:
+        if fixture_set not in _FIXTURE_SETS:
+            raise ValueError(
+                f"unknown fixture-set {fixture_set!r}; "
+                f"choices: {sorted(_FIXTURE_SETS)}"
+            )
+        return _FIXTURE_SETS[fixture_set]
+    return FIXTURES
 
 
 def run_real_corpus(
@@ -130,6 +170,8 @@ def run_real_corpus(
     sandbox_root: Path | None = None,
     marker_path: Path | None = None,
     write_to_stream=sys.stdout,
+    fixture_ids: tuple[str, ...] | None = None,
+    fixture_set: str | None = None,
 ) -> int:
     """Generate `n` real-agent traces. Returns process-style exit code.
 
@@ -156,6 +198,7 @@ def run_real_corpus(
     budget = BudgetTracker(cap_usd=budget_cap_usd)
     llm = (llm_client_factory or LiteLLMClient)()
 
+    fixtures = resolve_fixtures(fixture_ids, fixture_set)
     done = _completed_indices(output_dir)
     progress_path = _checkpoint_dir(output_dir) / "progress.jsonl"
 
@@ -164,7 +207,7 @@ def run_real_corpus(
         for i in range(n):
             if i in done:
                 continue
-            fixture = _fixture_for_index(i)
+            fixture = _fixture_for_index(i, fixtures)
             run = run_one_trace(
                 fixture,
                 run_index=i,
