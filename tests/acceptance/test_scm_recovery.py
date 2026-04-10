@@ -15,9 +15,9 @@ import pytest
 
 from bench.synthetic import HEADLINE_TRUE_EFFECT, generate_traces
 from bench.synthetic.scm import MODEL_CHOICE_ARMS
-from counter import build_dag, fit_outcome_model, intervene
-from counter.intervene import CausalEstimate, IdentifiabilityStatus
-from counter.schema import Run
+from counterfact import build_dag, fit_outcome_model, intervene
+from counterfact.intervene import CausalEstimate, IdentifiabilityStatus
+from counterfact.schema import Run
 
 
 def _generate_runs(n: int, seed: int) -> list[Run]:

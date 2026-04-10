@@ -1,7 +1,7 @@
 # csv_dedupe pilot (Pilot 3) — n=30
 
 **Date:** 2026-05-02
-**Command:** `counter bench real --fixtures csv_dedupe --n 30 --budget-cap 5 --output-dir bench/real/runs_v3_pilot --seed 0 --epsilon 0.2`
+**Command:** `counterfact bench real --fixtures csv_dedupe --n 30 --budget-cap 5 --output-dir bench/real/runs_v3_pilot --seed 0 --epsilon 0.2`
 **Cost:** $0.1896 ($0.0063 / trace)
 
 ## 2×2 contingency (public_pass × hidden_pass)
@@ -71,7 +71,7 @@ difficulty, not feedback transparency.
    layout; this is the natural next step.
 3. **(c) Pivot Path 2's framing.** Use the corpus as a "harness-correctness"
    demo and explicitly drop the §15.2 class-balance criterion — the demo
-   shows that `counter` produces honest `unidentified` results when
+   shows that `counterfact` produces honest `unidentified` results when
    intervention support is degenerate. Less compelling but ships sooner.
 
 **Recommendation:** **(b)**. Move on to `date_window` next, with `spec.md`
@@ -109,4 +109,4 @@ causally degenerate corpus where the back-door criterion cannot be
 evaluated and `intervene()` correctly refuses to claim a difference.
 
 In other words: this is no longer "Pilot 3 — gate failed". It is
-"Pilot 3 — the demo's evidence that `counter` says no when it should."
+"Pilot 3 — the demo's evidence that `counterfact` says no when it should."

@@ -2,13 +2,13 @@
 
 
 def test_package_imports() -> None:
-    import counter
+    import counterfact
 
-    assert counter.__version__ == "0.0.0"
+    assert counterfact.__version__ == "0.0.0"
 
 
 def test_errors_module_imports() -> None:
-    from counter.errors import (
+    from counterfact.errors import (
         CounterError,
         DAGCycleError,
         InvalidInterventionError,

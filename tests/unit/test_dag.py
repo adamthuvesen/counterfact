@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from counter import build_dag
-from counter.errors import DAGCycleError
-from counter.schema import Decision, Outcome, Run, Step
+from counterfact import build_dag
+from counterfact.errors import DAGCycleError
+from counterfact.schema import Decision, Outcome, Run, Step
 
 
 def _make_run(steps: list[Step]) -> Run:
@@ -74,7 +74,7 @@ def test_build_dag__cycle_raises() -> None:
     cycle (steps are temporally ordered) but the builder MUST refuse one if
     asked.
     """
-    from counter.dag.graph import DAG
+    from counterfact.dag.graph import DAG
 
     a = Decision(decision_id="a", decision_type="plan_step")
     b = Decision(decision_id="b", decision_type="plan_step")

@@ -12,7 +12,7 @@ identifiability stance. `intervene` dispatches on that stance:
 * `always-replay`: returns `unidentified` with `next_step="replay"`.
 
 The CausalEstimate result object is the public contract; full schema lives in
-`counter.intervene.estimate`.
+`counterfact.intervene.estimate`.
 """
 
 from __future__ import annotations
@@ -21,9 +21,9 @@ from typing import Any
 
 import numpy as np
 
-from counter.dag import DAG
-from counter.errors import InvalidInterventionError, UnsupportedOutcomeError
-from counter.intervene.estimate import (
+from counterfact.dag import DAG
+from counterfact.errors import InvalidInterventionError, UnsupportedOutcomeError
+from counterfact.intervene.estimate import (
     CausalEstimate,
     DistributionSummary,
     IdentifiabilityStatus,
@@ -95,10 +95,10 @@ def _e_value_from_probs(point: float, baseline: float = 0.5) -> float:
     """Compute the E-value for a marginal P(success) vs a baseline.
 
     Risk ratio = clamped(point) / clamped(baseline). Delegated to the canonical
-    implementation in `counter.sensitivity` so the test in §9.2 can pin the
+    implementation in `counterfact.sensitivity` so the test in §9.2 can pin the
     formula directly.
     """
-    from counter.sensitivity import e_value as _ev
+    from counterfact.sensitivity import e_value as _ev
 
     p = max(min(point, 1 - 1e-12), 1e-12)
     b = max(min(baseline, 1 - 1e-12), 1e-12)
@@ -138,7 +138,7 @@ def intervene(
     intervention: dict[str, Any],
 ) -> CausalEstimate:
     """Run an intervention query and return a CausalEstimate."""
-    from counter.taxonomy import (
+    from counterfact.taxonomy import (
         identifiability_stance,
         is_valid_intervention,
     )

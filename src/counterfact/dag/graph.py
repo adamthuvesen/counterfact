@@ -14,8 +14,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
-from counter.errors import DAGCycleError
-from counter.schema import Decision, Run
+from counterfact.errors import DAGCycleError
+from counterfact.schema import Decision, Run
 
 
 @dataclass
@@ -105,7 +105,7 @@ def build_dag(trace: Run, schema: Any | None = None) -> DAG:
     """
     # Avoid a circular import: the taxonomy module imports schema, which in
     # turn lives below this module's package; deferring keeps the surface tidy.
-    from counter.taxonomy import parent_types
+    from counterfact.taxonomy import parent_types
 
     nodes: list[Decision] = []
     flat: list[tuple[int, int, Decision]] = []  # (step_index, intra_step_pos, decision)

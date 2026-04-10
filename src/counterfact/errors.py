@@ -1,8 +1,8 @@
-"""Exception types raised by counter."""
+"""Exception types raised by counterfact."""
 
 
 class CounterError(Exception):
-    """Base class for counter errors."""
+    """Base class for counterfact errors."""
 
 
 class UnsupportedOutcomeError(CounterError):

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from counter.baselines import pass_rate_by_arm
-from counter.schema import Decision, Outcome, Run, Step
+from counterfact.baselines import pass_rate_by_arm
+from counterfact.schema import Decision, Outcome, Run, Step
 
 
 def _make_run(*, run_id: str, arms_for_decision: list[tuple[str, str]], outcome_pass: bool) -> Run:

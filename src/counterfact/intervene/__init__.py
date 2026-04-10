@@ -1,7 +1,7 @@
 """Intervention API."""
 
-from counter.intervene.api import intervene
-from counter.intervene.estimate import (
+from counterfact.intervene.api import intervene
+from counterfact.intervene.estimate import (
     CausalEstimate,
     DistributionSummary,
     IdentifiabilityStatus,

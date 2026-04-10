@@ -19,7 +19,7 @@ from bench.real.coding_agent.fixtures import (
 )
 from bench.real.coding_agent.llm import ROLE_TO_MODEL, LiteLLMClient, LLMClient
 
-APPROVAL_MARKER = Path(".counter") / "approved"
+APPROVAL_MARKER = Path(".counterfact") / "approved"
 
 # Provider credential lookup table. Keys are env-var names that satisfy each
 # provider; the first non-empty hit wins. Adding a new provider means adding a
@@ -88,15 +88,15 @@ def print_approval_prompt(stream=sys.stderr) -> None:
     """Render the first-run prompt the user sees before any API call."""
     print(
         "------------------------------------------------------------\n"
-        "counter bench real — first-run HUMAN GATE (§12.3)\n"
+        "counterfact bench real — first-run HUMAN GATE (§12.3)\n"
         "------------------------------------------------------------\n"
         "This will make external LLM API calls and incur USD spend.\n"
         "Before proceeding, the user must:\n"
         "  1. Run a tiny smoke corpus:\n"
-        "       counter bench real --n 5 --budget-cap 5\n"
+        "       counterfact bench real --n 5 --budget-cap 5\n"
         "  2. Eyeball the resulting traces under bench/real/runs/.\n"
         "  3. If sane, create the approval marker:\n"
-        "       mkdir -p .counter && touch .counter/approved\n"
+        "       mkdir -p .counterfact && touch .counterfact/approved\n"
         "Re-run after the marker exists.\n",
         file=stream,
     )
@@ -194,7 +194,7 @@ def run_real_corpus(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     config = config or AgentRunConfig()
-    sandbox = sandbox_root or Path(tempfile.mkdtemp(prefix="counter-real-"))
+    sandbox = sandbox_root or Path(tempfile.mkdtemp(prefix="counterfact-real-"))
     budget = BudgetTracker(cap_usd=budget_cap_usd)
     llm = (llm_client_factory or LiteLLMClient)()
 

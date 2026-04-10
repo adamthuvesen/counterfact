@@ -64,7 +64,7 @@ def is_hidden_fixture(fixture: FixtureSpec) -> bool:
 # time (see design.md D19 + the post-mortem on the v0 200-trace corpus). They
 # are kept for harness-integration testing but excluded from the demo's causal
 # corpus by virtue of living in `EASY_FIXTURES`. The harder set in `FIXTURES`
-# is what `counter bench real` exercises.
+# is what `counterfact bench real` exercises.
 EASY_FIXTURES: tuple[FixtureSpec, ...] = (
     FixtureSpec("string-utils", "normalize.py", "test_normalize.py"),
     FixtureSpec("date-utils", "parse.py", "test_parse.py"),

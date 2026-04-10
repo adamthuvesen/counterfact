@@ -22,10 +22,10 @@ from dataclasses import dataclass
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
-from counter.dag import DAG
-from counter.intervene.api import intervene as _intervene
-from counter.intervene.estimate import CausalEstimate, IdentifiabilityStatus
-from counter.taxonomy import valid_interventions
+from counterfact.dag import DAG
+from counterfact.intervene.api import intervene as _intervene
+from counterfact.intervene.estimate import CausalEstimate, IdentifiabilityStatus
+from counterfact.taxonomy import valid_interventions
 
 
 class AttributionEntry(BaseModel):
@@ -55,7 +55,7 @@ def _intervention_kind_for(decision_type: str) -> str | None:
     (those are the ones we can actually estimate). Falls back to the first
     declared kind.
     """
-    from counter.taxonomy import identifiability_stance
+    from counterfact.taxonomy import identifiability_stance
 
     kinds = sorted(valid_interventions(decision_type))
     for k in kinds:
@@ -101,7 +101,7 @@ def attribute_failure(
                 continue
             sibling = _sibling_action(model, d.decision_type, d.chosen_action)
             if sibling is None:
-                # No alternative arm with support: nothing to counter-factualize against.
+                # No alternative arm with support: nothing to counterfact-factualize against.
                 entries.append(
                     AttributionEntry(
                         decision_id=d.decision_id,

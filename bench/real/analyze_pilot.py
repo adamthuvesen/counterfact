@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections import Counter
+from collections import Counterfact
 from pathlib import Path
 
 
@@ -21,9 +21,9 @@ def analyze(run_dir: Path) -> dict[str, object]:
     traces = sorted(run_dir.glob("real-*.json"))
     if not traces:
         raise SystemExit(f"no traces under {run_dir}")
-    cells: Counter[tuple[bool, bool]] = Counter()
+    cells: Counterfact[tuple[bool, bool]] = Counterfact()
     cost_total = 0.0
-    fixtures: Counter[str] = Counter()
+    fixtures: Counterfact[str] = Counterfact()
     for path in traces:
         run = json.loads(path.read_text())
         md = run["outcome"]["metadata"]

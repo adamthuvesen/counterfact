@@ -1,7 +1,7 @@
-"""Pydantic models for the native counter trace format.
+"""Pydantic models for the native counterfact trace format.
 
 The schema is the contract between trace producers (CounterBench, external
-adapters) and the rest of counter. Models are strict (`extra="forbid"`) and
+adapters) and the rest of counterfact. Models are strict (`extra="forbid"`) and
 support full JSON round-trip preservation.
 """
 

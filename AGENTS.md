@@ -1,8 +1,8 @@
 # AGENTS.md
 
-Repo-local instructions for AI coding agents working in `counter`.
+Repo-local instructions for AI coding agents working in `counterfact`.
 
-`counter` is a Python research library for causal attribution over LLM-agent
+`counterfact` is a Python research library for causal attribution over LLM-agent
 decision traces. Its product taste is simple: make causal claims only when the
 logged data, graph, support, and assumptions can actually support them. A useful
 `unidentified` result is better than a confident fake counterfactual.
@@ -25,14 +25,14 @@ logged data, graph, support, and assumptions can actually support them. A useful
 
 ## Repo Map
 
-- `src/counter/schema/` - strict trace schema. This is the producer/consumer
+- `src/counterfact/schema/` - strict trace schema. This is the producer/consumer
   contract for CounterBench and external adapters.
-- `src/counter/dag/` - inspectable per-trace graph construction.
-- `src/counter/outcome/` - transparent outcome modeling.
-- `src/counter/intervene/` - intervention API, identifiability labels,
+- `src/counterfact/dag/` - inspectable per-trace graph construction.
+- `src/counterfact/outcome/` - transparent outcome modeling.
+- `src/counterfact/intervene/` - intervention API, identifiability labels,
   sensitivity/bounds, and structured `next_step` guidance.
-- `src/counter/attribute/` - failure attribution ranking.
-- `src/counter/baselines.py` - descriptive baselines such as pass-rate tables.
+- `src/counterfact/attribute/` - failure attribution ranking.
+- `src/counterfact/baselines.py` - descriptive baselines such as pass-rate tables.
 - `bench/synthetic/` - deterministic SCM benchmark. Safe for CI and local work.
 - `bench/real/coding_agent/` - real-agent trace harness. Can call external LLMs
   and spend money; treat it as gated infrastructure.
@@ -68,18 +68,18 @@ make ci
 Useful local demos:
 
 ```bash
-uv run counter demo
-uv run counter demo --runs-dir /tmp/missing --synthetic-n 500 --target sonnet
-uv run counter bench synthetic --n 500 --seed 42 --output-dir /tmp/counter-syn
+uv run counterfact demo
+uv run counterfact demo --runs-dir /tmp/missing --synthetic-n 500 --target sonnet
+uv run counterfact bench synthetic --n 500 --seed 42 --output-dir /tmp/counterfact-syn
 ```
 
 ## Safety Rules For Real-Agent Benchmarks
 
-- `uv run counter bench real ...` can make external LLM API calls and incur USD
+- `uv run counterfact bench real ...` can make external LLM API calls and incur USD
   spend. Do not run it casually as a validation step.
-- The harness is intentionally protected by `.counter/approved`. Do not create
+- The harness is intentionally protected by `.counterfact/approved`. Do not create
   that marker for the user, do not bypass the first-run gate, and do not commit
-  `.counter/` artifacts.
+  `.counterfact/` artifacts.
 - If real traces must be generated, ask first and state the exact command,
   fixture set, output directory, and budget cap.
 - Keep budget behavior conservative. `BudgetTracker` halts at 80% of the cap by
@@ -136,7 +136,7 @@ uv run counter bench synthetic --n 500 --seed 42 --output-dir /tmp/counter-syn
 ## Documentation Rules
 
 - Keep `README.md` aligned with the real CLI and API, not aspirational features.
-- Do not claim `counter` supports Pearl L3 structural counterfactuals, DAG
+- Do not claim `counterfact` supports Pearl L3 structural counterfactuals, DAG
   learning, provider replay guarantees, an observability UI, or calibrated
   universal success probabilities unless those are actually implemented.
 - When changing demo behavior, update `docs/demo-excerpt.md` and rebuild or
