@@ -58,9 +58,10 @@ def render(report: dict[str, object]) -> str:
     cost = report["cost_usd"]
     fixtures = report["fixtures"]
     gate = "PASS" if report["gate_passed"] else "FAIL"
+    label = "/".join(sorted(fixtures)) if fixtures else "unknown"
     return "\n".join(
         [
-            f"# csv_dedupe pilot — n={n}",
+            f"# {label} pilot — n={n}",
             f"Cost: ${cost:.4f}  ({cost / n:.4f} / trace)",
             f"Fixtures: {fixtures}",
             "",
