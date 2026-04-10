@@ -33,6 +33,7 @@ htmlcov/
 
 # Claude / agent local state
 .claude/
+.codex/
 .claude/settings.local.json
 .claude/projects/
 .claude/commands/opsx/
