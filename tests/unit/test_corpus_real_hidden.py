@@ -274,3 +274,64 @@ def test_run_pytest_public_targets_only_tests_public(tmp_path: Path) -> None:
     # No collected node should reference tests_hidden.
     assert "tests_hidden" not in proc.stdout, proc.stdout
     assert "test_dedupe_hidden" not in proc.stdout, proc.stdout
+
+
+# --- Phase C: prompt content discipline ------------------------------------
+
+
+def test_hidden_fixture_prompt_contains_spec_md_and_public_test(tmp_path: Path) -> None:
+    """Req: Agent prompt references spec.md and public tests only
+    WHEN the agent constructs the fix prompt for a hidden-test fixture
+    THEN the prompt contains the full contents of spec.md and the full
+         contents of every file under tests_public/."""
+    from bench.real.coding_agent.agent import build_fix_prompt
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES, snapshot_fixture
+
+    csv_dedupe = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
+    sandbox = snapshot_fixture(csv_dedupe, tmp_path)
+    prompt = build_fix_prompt(csv_dedupe, sandbox)
+    spec_text = (csv_dedupe.root / "spec.md").read_text()
+    public_text = (
+        csv_dedupe.root / "tests_public" / csv_dedupe.public_tests_relpath  # type: ignore[arg-type]
+    ).read_text()
+    src_text = csv_dedupe.source_path.read_text()
+    # Pick a few stable substrings that must survive whatever framing the
+    # builder adds; full-text equality would be brittle to wrapping.
+    for needle in ("BOM strip", "case fold", "Unicode NFC"):
+        assert needle in prompt, f"spec.md content missing from prompt: {needle!r}"
+    assert "test_exact_duplicates_collapse_to_one" in prompt
+    assert "test_first_occurrence_is_preserved" in prompt
+    # Sanity: at least the bulk of each document made it in.
+    assert len(spec_text) >= 500 and spec_text[:200] in prompt
+    assert public_text[:200] in prompt
+    assert src_text[:200] in prompt
+
+
+def test_hidden_fixture_prompt_does_not_mention_tests_hidden(tmp_path: Path) -> None:
+    """Req: Agent prompt references spec.md and public tests only
+    WHEN the agent constructs the fix prompt for a hidden-test fixture
+    THEN the prompt does not contain the substring 'tests_hidden', does
+         not contain any filename from tests_hidden/, and does not contain
+         the body of any test under tests_hidden/."""
+    from bench.real.coding_agent.agent import build_fix_prompt
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES, snapshot_fixture
+
+    csv_dedupe = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
+    sandbox = snapshot_fixture(csv_dedupe, tmp_path)
+    prompt = build_fix_prompt(csv_dedupe, sandbox)
+    assert "tests_hidden" not in prompt
+    hidden_path = csv_dedupe.hidden_test_path
+    assert hidden_path is not None
+    assert hidden_path.name not in prompt
+    # Hidden test bodies must not appear. Pick stable substrings from the
+    # actual hidden test file.
+    hidden_text = hidden_path.read_text()
+    for needle in (
+        "test_whitespace_rule_strips_outer_whitespace",
+        "test_nfc_rule_treats_nfc_and_nfd_as_equal",
+        "test_combined_rules_treat_full_normalization_as_equal",
+    ):
+        assert needle in hidden_text, "test fixture self-check (hidden file unchanged)"
+        assert needle not in prompt, (
+            f"hidden test name leaked into prompt: {needle}"
+        )
