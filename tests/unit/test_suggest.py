@@ -109,7 +109,18 @@ def test_increase_n_command_uses_estimated_required_n() -> None:
     )
     assert cmd is not None
     assert "--n 180" in cmd
-    assert "--fixture-set hidden_v1" in cmd
+    assert "--fixture-set hard_hidden_v1" in cmd
+
+
+def test_broaden_arm_support_command_uses_hard_hidden_fixture_set() -> None:
+    cmd = suggest_harness_command(
+        decision_type="model_call",
+        intervention_kind="model_choice",
+        action="broaden_arm_support",
+        arm_name="small",
+    )
+    assert cmd is not None
+    assert "--fixture-set hard_hidden_v1" in cmd
 
 
 def test_increase_n_command_floors_at_minimum() -> None:

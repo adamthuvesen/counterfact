@@ -35,7 +35,9 @@ small            2     2 1.000  [0.342, 1.000]
 intervene(model_call -> large)
 identifiability: unidentified
 reason: real corpus is causally degenerate: every trace has Outcome.value=True; no outcome variation exists for an outcome model or back-door adjustment to leverage
+warning: fit_outcome_model is intentionally skipped for single-class real corpora
 next_step: broaden_arm_support - Collect or construct traces with both pass and fail outcomes before estimating decision-level effects on the real corpus.
+suggested_command: uv run counterfact bench real --n 30 --fixture-set hard_hidden_v1 --model-greedy large --model-epsilon 0.5
 ```
 
 See [docs/demo-excerpt.md](docs/demo-excerpt.md) for the rendered notebook-style excerpt. For how the `csv_dedupe` corpus in `bench/real/runs_v1/` was piloted, see [docs/pilot-csv-dedupe.md](docs/pilot-csv-dedupe.md).
@@ -129,7 +131,7 @@ uv run counterfact demo --runs-dir /tmp/missing --synthetic-n 500 --target sonne
 The real-agent harness is available behind an explicit budget and first-run approval gate:
 
 ```bash
-uv run counterfact bench real --n 30 --budget-cap 50 --fixture-set hidden_v1
+uv run counterfact bench real --n 30 --budget-cap 50 --fixture-set hard_hidden_v1
 ```
 
 That command can call external LLM APIs. The showcase demo and CI never run it.

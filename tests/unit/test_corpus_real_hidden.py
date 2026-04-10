@@ -19,6 +19,16 @@ def test_csv_dedupe_is_registered() -> None:
     assert "csv_dedupe" in ids
 
 
+def test_date_window_is_registered() -> None:
+    """Req: date_window is registered as a hard hidden-test fixture
+    WHEN the hidden-fixture registry is queried
+    THEN date_window is among the registered fixtures."""
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    ids = [fx.fixture_id for fx in HIDDEN_FIXTURES]
+    assert "date_window" in ids
+
+
 def test_hidden_fixture_root_has_four_required_entries() -> None:
     """Req: Hidden-test fixtures use a public/hidden split layout
     WHEN a hidden-test fixture is registered
@@ -210,6 +220,117 @@ def test_csv_dedupe_buggy_src_fails_hidden_passes_public(tmp_path: Path) -> None
     )
 
 
+def _date_window_known_good_source() -> str:
+    return '''"""Known-good date_window implementation for fixture self-tests."""
+
+from __future__ import annotations
+
+from datetime import date
+import re
+
+_DATE_RE = re.compile(r"^\\d{4}-\\d{2}-\\d{2}$")
+
+
+def _parse(value: str) -> date:
+    if not _DATE_RE.match(value):
+        raise ValueError(f"invalid date: {value!r}")
+    return date.fromisoformat(value)
+
+
+def in_any_window(target_date: str, windows: list[tuple[str, str]]) -> bool:
+    target = _parse(target_date)
+    for start_raw, end_raw in windows:
+        start = _parse(start_raw)
+        end = _parse(end_raw)
+        if start > end:
+            raise ValueError("window start must be <= end")
+        if start <= target <= end:
+            return True
+    return False
+'''
+
+
+def test_date_window_spec_md_names_hidden_categories() -> None:
+    """Req: date_window is registered as a hard hidden-test fixture
+    WHEN the fixture's spec.md is inspected
+    THEN it names the hidden-test categories."""
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    date_window = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "date_window")
+    text = (date_window.root / "spec.md").read_text().lower()
+    for keyword in (
+        "yyyy-mm-dd",
+        "inclusive",
+        "any order",
+        "start > end",
+        "leap",
+        "malformed",
+    ):
+        assert keyword in text, f"date_window spec.md must mention {keyword!r}"
+
+
+def test_date_window_buggy_src_fails_hidden_passes_public(tmp_path: Path) -> None:
+    """Req: date_window is registered as a hard hidden-test fixture
+    WHEN the pristine date_window source is tested
+    THEN public tests pass and hidden tests fail."""
+    import shutil
+    import subprocess
+    import sys
+
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    date_window = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "date_window")
+    workspace = tmp_path / "date_window"
+    shutil.copytree(date_window.root, workspace)
+
+    proc_pub = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests_public/", "-q"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc_pub.returncode == 0, (
+        f"buggy src must satisfy public tests:\n{proc_pub.stdout}\n{proc_pub.stderr}"
+    )
+    proc_hid = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests_hidden/", "-q"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc_hid.returncode != 0, "buggy src must fail hidden tests"
+
+
+def test_date_window_known_good_source_passes_hidden(tmp_path: Path) -> None:
+    """Req: date_window is registered as a hard hidden-test fixture
+    WHEN source is replaced with a known-good implementation
+    THEN hidden tests pass."""
+    import shutil
+    import subprocess
+    import sys
+
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    date_window = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "date_window")
+    workspace = tmp_path / "date_window"
+    shutil.copytree(date_window.root, workspace)
+    target = workspace / "src" / date_window.source_relpath
+    target.write_text(_date_window_known_good_source())
+
+    proc_hid = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests_hidden/", "-q"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc_hid.returncode == 0, (
+        f"known-good source fails hidden tests:\n{proc_hid.stdout}\n{proc_hid.stderr}"
+    )
+
+
 # --- Phase B: sandbox + public-pytest isolation ----------------------------
 
 
@@ -279,6 +400,21 @@ def test_run_pytest_public_targets_only_tests_public(tmp_path: Path) -> None:
     assert "test_dedupe_hidden" not in proc.stdout, proc.stdout
 
 
+def test_date_window_sandbox_omits_hidden_tests(tmp_path: Path) -> None:
+    """Req: date_window is registered as a hard hidden-test fixture
+    WHEN snapshot_fixture is called on date_window
+    THEN tests_hidden/ is absent from the sandbox."""
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES, snapshot_fixture
+
+    date_window = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "date_window")
+    sandbox = snapshot_fixture(date_window, tmp_path)
+    assert (sandbox / "src").is_dir()
+    assert (sandbox / "tests_public").is_dir()
+    assert (sandbox / "spec.md").is_file()
+    assert not (sandbox / "tests_hidden").exists()
+    assert [p for p in sandbox.rglob("*date_window_hidden*")] == []
+
+
 # --- Phase C: prompt content discipline ------------------------------------
 
 
@@ -338,6 +474,40 @@ def test_hidden_fixture_prompt_does_not_mention_tests_hidden(tmp_path: Path) -> 
         assert needle not in prompt, (
             f"hidden test name leaked into prompt: {needle}"
         )
+
+
+def test_date_window_prompt_contains_spec_and_public_only(tmp_path: Path) -> None:
+    """Req: Agent prompt references spec.md and public tests only
+    WHEN the agent constructs the fix prompt for date_window
+    THEN it includes spec/public/source text and omits hidden-test text."""
+    from bench.real.coding_agent.agent import build_fix_prompt
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES, snapshot_fixture
+
+    date_window = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "date_window")
+    sandbox = snapshot_fixture(date_window, tmp_path)
+    prompt = build_fix_prompt(date_window, sandbox)
+    spec_text = (date_window.root / "spec.md").read_text()
+    public_path = date_window.public_test_path
+    hidden_path = date_window.hidden_test_path
+    assert public_path is not None
+    assert hidden_path is not None
+    public_text = public_path.read_text()
+    src_text = date_window.source_path.read_text()
+
+    for needle in ("YYYY-MM-DD", "inclusive", "Leap days"):
+        assert needle in prompt
+    assert public_text[:200] in prompt
+    assert src_text[:200] in prompt
+    assert spec_text[:200] in prompt
+    assert "tests_hidden" not in prompt
+    assert hidden_path.name not in prompt
+    for needle in (
+        "test_end_boundary_is_inclusive",
+        "test_unsorted_windows_are_all_checked",
+        "test_non_leap_day_is_rejected",
+    ):
+        assert needle in hidden_path.read_text()
+        assert needle not in prompt
 
 
 # --- Phase D: hidden eval + Outcome metadata wiring ------------------------
@@ -670,3 +840,45 @@ def test_cli_real_subcommand_accepts_fixtures_flag(tmp_path: Path) -> None:
     # message; the gate refusal does not. Distinguish.
     assert "unrecognized arguments" not in (proc.stdout + proc.stderr)
     assert "HUMAN GATE" in (proc.stdout + proc.stderr)
+
+
+def test_hard_hidden_v1_fixture_set_resolves_to_date_window() -> None:
+    """Req: hard hidden fixture set is selectable
+    WHEN fixture_set='hard_hidden_v1' is resolved
+    THEN date_window is included."""
+    from bench.real.coding_agent.runner import resolve_fixtures
+
+    fixtures = resolve_fixtures(fixture_set="hard_hidden_v1")
+    ids = [fx.fixture_id for fx in fixtures]
+    assert ids == ["date_window"]
+
+
+def test_hidden_v1_fixture_set_stays_csv_dedupe_only() -> None:
+    """Req: hard hidden fixture set is selectable
+    WHEN fixture_set='hidden_v1' is resolved
+    THEN it remains the historical csv_dedupe calibration set."""
+    from bench.real.coding_agent.runner import resolve_fixtures
+
+    fixtures = resolve_fixtures(fixture_set="hidden_v1")
+    ids = [fx.fixture_id for fx in fixtures]
+    assert ids == ["csv_dedupe"]
+
+
+def test_cli_real_subcommand_accepts_hard_hidden_v1() -> None:
+    """Req: hard hidden fixture set is selectable
+    WHEN the CLI parser sees --fixture-set hard_hidden_v1
+    THEN argparse accepts it."""
+    from counterfact.cli import build_parser
+
+    parser = build_parser()
+    ns = parser.parse_args(
+        [
+            "bench",
+            "real",
+            "--n",
+            "1",
+            "--fixture-set",
+            "hard_hidden_v1",
+        ]
+    )
+    assert ns.fixture_set == "hard_hidden_v1"

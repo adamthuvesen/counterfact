@@ -64,13 +64,17 @@ the convention. The analyzer never auto-renames anything.
 ## Existing fixtures
 
 - `csv_dedupe/` — the canonical hidden-test fixture. Modern models one-shot
-  it (see pilot 3); kept as the lower-bound difficulty calibration.
+  it (see pilot 3); kept as the lower-bound difficulty calibration and exposed
+  as `hidden_v1`.
+- `date_window/` — the first hard hidden-test fixture for future corpus pilots.
+  Public tests cover sorted-window basics; hidden tests cover stated edge
+  semantics around inclusive boundaries, unsorted windows, invalid ranges,
+  leap days, and malformed dates. Exposed as `hard_hidden_v1`.
 - `csv-stats/`, `string-utils/`, `date-utils/` — easy v0 fixtures, retained
   for harness-integration testing.
 - `regex-anchors/`, `iso-week-dates/`, `agg-with-groups/` — harder v0
   fixtures.
 
-Candidate next fixtures (see proposal in
-`openspec/changes/.../` follow-on changes): `date_window`, `rate_limit`,
-`unicode_normalize`. None of these are authored yet — they are intentionally
-left as named placeholders for the next change.
+Candidate next fixtures: `rate_limit`, `unicode_normalize`. They should follow
+the same rule as `date_window`: deterministic local verifier, naturally lossy
+spec, and hidden tests that stay derivable from the prose.

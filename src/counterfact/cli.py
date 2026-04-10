@@ -405,11 +405,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--fixture-set",
         type=str,
         default=None,
-        choices=["v0", "easy", "hidden_v1"],
+        choices=["v0", "easy", "hidden_v1", "hard_hidden_v1"],
         help=(
             "Named fixture-set shortcut. 'v0' is the original hard fixtures "
             "(default behavior), 'easy' is the original easy fixtures, "
-            "'hidden_v1' is the public/hidden split fixture set."
+            "'hidden_v1' is the csv_dedupe calibration fixture set, "
+            "'hard_hidden_v1' is the harder hidden fixture set for corpus pilots."
         ),
     )
     real.set_defaults(func=_bench_real)

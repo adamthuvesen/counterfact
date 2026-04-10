@@ -14,7 +14,9 @@ from bench.real.coding_agent.budget import BudgetExceeded, BudgetTracker
 from bench.real.coding_agent.fixtures import (
     EASY_FIXTURES,
     FIXTURES,
+    HARD_HIDDEN_V1_FIXTURES,
     HIDDEN_FIXTURES,
+    HIDDEN_V1_FIXTURES,
     FixtureSpec,
 )
 from bench.real.coding_agent.llm import (
@@ -194,7 +196,8 @@ def _fixture_for_index(index: int, fixtures: tuple[FixtureSpec, ...]) -> Fixture
 _FIXTURE_SETS: dict[str, tuple[FixtureSpec, ...]] = {
     "v0": FIXTURES,
     "easy": EASY_FIXTURES,
-    "hidden_v1": HIDDEN_FIXTURES,
+    "hidden_v1": HIDDEN_V1_FIXTURES,
+    "hard_hidden_v1": HARD_HIDDEN_V1_FIXTURES,
 }
 
 
