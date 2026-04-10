@@ -320,8 +320,8 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument(
         "--runs-dir",
         type=Path,
-        default=Path("bench/real/runs_v1"),
-        help="Directory of committed real traces (default: bench/real/runs_v1)",
+        default=Path("bench/real/runs_v2"),
+        help="Directory of committed real traces (default: bench/real/runs_v2)",
     )
     demo.add_argument(
         "--decision-type",
