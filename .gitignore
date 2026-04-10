@@ -34,6 +34,7 @@ htmlcov/
 # Claude / agent local state
 .claude/settings.local.json
 .claude/projects/
+openspec/
 worktrees/
 
 # Data + experiment outputs

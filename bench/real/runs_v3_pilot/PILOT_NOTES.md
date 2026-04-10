@@ -92,15 +92,14 @@ shelved as "implementation works, signal too weak to drive the corpus."
 
 ---
 
-## Postscript (2026-05-02): pilot informed `identifiability-first-pivot`
+## Postscript (2026-05-02): pilot informed the identifiability-first pivot
 
-This pilot's null result drove the `identifiability-first-pivot` change
-(`openspec/changes/identifiability-first-pivot/`). Three pilots in a row
-producing 30/30 pass — across Sonnet 4.6 and Haiku 4.5, with and without
+This pilot's null result drove the identifiability-first pivot. Three pilots in
+a row producing 30/30 pass — across Sonnet 4.6 and Haiku 4.5, with and without
 hidden tests — was the empirical basis for retiring v0's class-balance and
-CI-width ship-gate criteria. The reframed v0 ships with a smaller, honest
-corpus and a demo whose headline is "naive vs honest" rather than
-"identified effect = X".
+CI-width ship-gate criteria. The reframed v0 ships with a smaller, honest corpus
+and a demo whose headline is "naive vs honest" rather than "identified effect =
+X".
 
 The 30 csv_dedupe traces here are now part of the demo notebook's "real
 corpus" story: the notebook loads from `bench/real/runs_v1/` if present,

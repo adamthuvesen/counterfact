@@ -1,9 +1,4 @@
-"""Acceptance tests for the hidden-test-fixtures change.
-
-Scenarios are sourced verbatim from
-`openspec/changes/hidden-test-fixtures/specs/corpus-harness/spec.md`.
-Each test name encodes the requirement and scenario it pins.
-"""
+"""Acceptance tests for hidden real-agent fixture behavior."""
 
 from __future__ import annotations
 

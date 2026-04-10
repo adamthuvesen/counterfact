@@ -117,7 +117,6 @@ That command can call external LLM APIs. The showcase demo and CI never run it.
 ```bash
 uv run ruff check .
 uv run pytest
-openspec validate --all --strict
 ```
 
 Current local gate: `139 passed, 2 skipped`; the skipped tests are human-gated attribution checks.
