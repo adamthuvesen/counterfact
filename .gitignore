@@ -32,6 +32,7 @@ htmlcov/
 *.local.json
 
 # Claude / agent local state
+.agents/
 .claude/
 .codex/
 .claude/settings.local.json
