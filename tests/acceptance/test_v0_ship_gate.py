@@ -45,12 +45,12 @@ from counterfact.intervene.estimate import (
 from counterfact.schema import Run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RUNS_V1_DIR = REPO_ROOT / "bench" / "real" / "runs_v1"
+REAL_CORPUS_DIR = REPO_ROOT / "bench" / "real" / "runs_v2"
 DEMO_NOTEBOOK = REPO_ROOT / "notebooks" / "demo.ipynb"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 SRC_DIR = REPO_ROOT / "src"
 
-MIN_REAL_TRACES = 30  # csv_dedupe pilot 3 baseline; raised by future corpora
+MIN_REAL_TRACES = 30  # runs_v2 baseline; raised by future corpora
 SCM_RECOVERY_TOLERANCE = 0.05
 
 # Every action documented in the NextStep contract that counts as
@@ -67,23 +67,22 @@ FORBIDDEN_IMPORTS = ("dowhy", "causalml", "pyro", "langchain", "langgraph")
 # --- fixtures ---------------------------------------------------------------
 
 
-def _load_runs_v1() -> list[Run]:
-    if not RUNS_V1_DIR.exists():
+def _load_real_corpus() -> list[Run]:
+    if not REAL_CORPUS_DIR.exists():
         return []
     return [
         Run.model_validate_json(p.read_text())
-        for p in sorted(RUNS_V1_DIR.glob("*.json"))
+        for p in sorted(REAL_CORPUS_DIR.glob("*.json"))
     ]
 
 
 @pytest.fixture(scope="module")
 def real_corpus() -> list[Run]:
-    runs = _load_runs_v1()
+    runs = _load_real_corpus()
     if not runs:
         pytest.skip(
-            f"runs_v1 corpus absent at {RUNS_V1_DIR}. Generate via "
-            f"`counterfact bench real --fixture-set hidden_v1 --output-dir bench/real/runs_v1` "
-            f"before §15 runs."
+            f"runs_v2 corpus absent at {REAL_CORPUS_DIR}. "
+            f"Promote a real corpus per bench/real/README.md before §15 runs."
         )
     return runs
 

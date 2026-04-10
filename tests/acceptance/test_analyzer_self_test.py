@@ -18,6 +18,7 @@ from counterfact.schema import Run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNS_V1_DIR = REPO_ROOT / "bench" / "real" / "runs_v1"
+RUNS_V2_DIR = REPO_ROOT / "bench" / "real" / "runs_v2"
 
 
 def _load_runs_v1() -> list[Run]:
@@ -26,6 +27,15 @@ def _load_runs_v1() -> list[Run]:
     return [
         Run.model_validate_json(p.read_text())
         for p in sorted(RUNS_V1_DIR.glob("*.json"))
+    ]
+
+
+def _load_runs_v2() -> list[Run]:
+    if not RUNS_V2_DIR.exists():
+        pytest.skip(f"runs_v2 corpus absent at {RUNS_V2_DIR}")
+    return [
+        Run.model_validate_json(p.read_text())
+        for p in sorted(RUNS_V2_DIR.glob("*.json"))
     ]
 
 
@@ -45,7 +55,7 @@ def test_runs_v1_anchor_scores_unidentified_only() -> None:
 
 def test_synthetic_anchor_promotes_with_identified_coverage() -> None:
     """The synthetic SCM does not produce memory_read decisions, so `bounded`
-    is not reachable here. Reaching all three is a `runs_v2` goal."""
+    is not reachable here. Reaching all three is a future-corpus goal."""
     runs = [Run.model_validate(t) for t in generate_traces(n=500, seed=42)]
     report = analyze_corpus(runs)
     assert report.promote is True
@@ -54,6 +64,20 @@ def test_synthetic_anchor_promotes_with_identified_coverage() -> None:
     assert all(c.passed for c in report.criteria), [
         (c.name, c.reason) for c in report.criteria if not c.passed
     ]
+
+
+def test_runs_v2_anchor_promotes_with_identified_coverage() -> None:
+    """`runs_v2` is the canonical mixed-outcome real corpus. It must promote
+    on the default rubric and reach `identified` + `unidentified`. If this
+    breaks, either the corpus drifted or the rubric tightened — investigate."""
+    runs = _load_runs_v2()
+    report = analyze_corpus(runs)
+    assert report.promote is True, [
+        (c.name, c.reason) for c in report.criteria if not c.passed
+    ]
+    assert "identified" in report.identifiability_coverage.reachable
+    assert "unidentified" in report.identifiability_coverage.reachable
+    assert report.identifiability_coverage.unfittable_outcome_model is False
 
 
 def test_synthetic_smoke_60_traces_runs_quickly() -> None:
