@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from agg import group_sum  # noqa: E402
+from agg import group_sum
 
 
 def test_decimal_only_group_preserves_decimal_precision() -> None:

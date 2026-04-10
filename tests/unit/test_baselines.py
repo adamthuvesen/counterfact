@@ -61,7 +61,11 @@ def test_pass_rate_equals_pass_count_over_n() -> None:
 
 def test_ci_brackets_pass_rate() -> None:
     corpus = [
-        _make_run(run_id=f"r{i}", arms_for_decision=[("model_call", "large")], outcome_pass=(i % 3 != 0))
+        _make_run(
+            run_id=f"r{i}",
+            arms_for_decision=[("model_call", "large")],
+            outcome_pass=(i % 3 != 0),
+        )
         for i in range(30)
     ]
     table = pass_rate_by_arm(corpus, "model_call")

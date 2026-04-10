@@ -10,10 +10,10 @@ from counter.power import PowerReport, power_analysis
 __version__ = "0.0.0"
 
 __all__ = [
-    "__version__",
     "PassRateRow",
     "PassRateTable",
     "PowerReport",
+    "__version__",
     "attribute_failure",
     "build_dag",
     "fit_outcome_model",

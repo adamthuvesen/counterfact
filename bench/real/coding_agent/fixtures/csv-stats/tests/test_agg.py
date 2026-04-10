@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from agg import mean_ignore_missing  # noqa: E402
+from agg import mean_ignore_missing
 
 
 def test_simple_mean() -> None:

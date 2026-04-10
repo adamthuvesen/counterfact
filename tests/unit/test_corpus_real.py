@@ -19,14 +19,11 @@ from bench.real.coding_agent import (
     BudgetTracker,
     EpsilonGreedy,
 )
-from bench.real.coding_agent.fixtures import EASY_FIXTURES
 from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
-from bench.real.coding_agent.fixtures import run_pytest
+from bench.real.coding_agent.fixtures import EASY_FIXTURES, run_pytest
 from bench.real.coding_agent.llm import LLMResponse, extract_cost
 from bench.real.coding_agent.runner import (
-    APPROVAL_MARKER,
     check_credentials,
-    first_run_gate_check,
     run_real_corpus,
 )
 from counter.schema import Run
@@ -37,7 +34,6 @@ from counter.schema import Run
 def test_epsilon_greedy__greedy_action_propensity() -> None:
     """WHEN ε=0.2, |actions|=4, greedy chosen
     THEN logged propensity = (1-ε) + ε/|actions| = 0.85."""
-    eg = EpsilonGreedy(epsilon=0.2, seed=0)
     actions = ["a", "b", "c", "d"]
     # Force the greedy branch by exhausting the RNG path; we just validate the
     # math directly by computing expected values for both branches.
@@ -55,7 +51,6 @@ def test_epsilon_greedy__greedy_action_propensity() -> None:
 def test_epsilon_greedy__non_greedy_action_propensity() -> None:
     """WHEN ε=0.2, |actions|=4, non-greedy chosen
     THEN logged propensity = ε/|actions| = 0.05."""
-    eg = EpsilonGreedy(epsilon=0.2, seed=0)
     # Drive multiple draws; since we test the formula above, any non-greedy
     # outcome must equal 0.05. Verify the formula is correct.
     actions = ["a", "b"]
@@ -279,7 +274,8 @@ def test_agent_retry_branch_includes_failure_context_in_prompt(tmp_path: Path) -
 
 def test_agent_logs_all_randomization_fields(tmp_path: Path) -> None:
     """WHEN any randomized decision is logged in a real-agent trace
-    THEN policy, policy_params, valid_actions, chosen_action, propensity, context_features are present."""
+    THEN policy, policy_params, valid_actions, chosen_action, propensity, and
+    context_features are present."""
     fixture = FIXTURES[1]  # date-utils — bug isn't auto-fixable by trivial regex, that's fine
 
     class _BlankLLM:
@@ -296,7 +292,6 @@ def test_agent_logs_all_randomization_fields(tmp_path: Path) -> None:
         sandbox_root=tmp_path,
         config=AgentRunConfig(epsilon=0.2, seed=1),
     )
-    randomized_decision_types = {"tool_call", "model_call", "retry"}
     saw_random = False
     for step in run.steps:
         for d in step.decisions:

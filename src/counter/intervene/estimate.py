@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class IdentifiabilityStatus(str, Enum):
+class IdentifiabilityStatus(StrEnum):
     IDENTIFIED = "identified"
     BOUNDED = "bounded"
     UNIDENTIFIED = "unidentified"
@@ -76,7 +76,7 @@ class NextStep(_Strict):
     human_text: str
 
     @model_validator(mode="after")
-    def _check_payload_contract(self) -> "NextStep":
+    def _check_payload_contract(self) -> NextStep:
         required = _REQUIRED_PAYLOAD_KEYS[self.action]
         missing = [k for k in required if k not in self.payload]
         if missing:

@@ -153,6 +153,5 @@ def test_doubling_n_roughly_halves_predicted_ci_width() -> None:
     assert rep_60.current_ci_width is not None
     # √2 ≈ 1.414; tolerance is loose because rounding to integer trace counts
     # introduces noise in p_a / p_b at small n.
-    assert rep_30.current_ci_width / rep_60.current_ci_width == \
-        math.isclose(math.sqrt(2), rep_30.current_ci_width / rep_60.current_ci_width, rel_tol=0.05) \
-        or 1.30 < rep_30.current_ci_width / rep_60.current_ci_width < 1.55
+    ratio = rep_30.current_ci_width / rep_60.current_ci_width
+    assert math.isclose(math.sqrt(2), ratio, rel_tol=0.05) or 1.30 < ratio < 1.55

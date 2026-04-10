@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 
-
 # --- Phase A: csv_dedupe fixture content + registry ------------------------
 
 
@@ -99,7 +98,16 @@ def test_csv_dedupe_public_covers_only_exact_string_dedup() -> None:
     assert len(test_files) >= 1
     text = "\n".join(p.read_text() for p in test_files)
     # Public tests must NOT reference normalization concerns by name.
-    forbidden = ["whitespace", "casefold", "lower(", ".upper(", "nfc", "unicodedata", "bom", "\\ufeff"]
+    forbidden = [
+        "whitespace",
+        "casefold",
+        "lower(",
+        ".upper(",
+        "nfc",
+        "unicodedata",
+        "bom",
+        "\\ufeff",
+    ]
     for kw in forbidden:
         assert kw.lower() not in text.lower(), (
             f"public tests must not test normalization rule: found {kw!r}"

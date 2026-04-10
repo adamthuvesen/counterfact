@@ -9,6 +9,7 @@ attribute_failure, E-value, stacked uncertainty, and no-silent-L3.
 from __future__ import annotations
 
 import math
+from typing import ClassVar
 
 import numpy as np
 import pytest
@@ -16,10 +17,9 @@ import pytest
 from bench.synthetic import generate_traces
 from counter import attribute_failure, build_dag, fit_outcome_model, intervene
 from counter.errors import InvalidInterventionError, UnsupportedOutcomeError
-from counter.intervene import CausalEstimate, IdentifiabilityStatus
+from counter.intervene import IdentifiabilityStatus
 from counter.schema import Decision, Outcome, Run, Step
 from counter.sensitivity import e_value
-
 
 # --- shared fixtures ---------------------------------------------------------
 
@@ -313,7 +313,8 @@ def test_stacked_uncertainty__bootstrap_ci_does_not_absorb_bounds(
     small_corpus: list[Run], fitted: object
 ) -> None:
     """WHEN an estimate is bounded (or identified)
-    THEN it has BOTH non-null outcome_delta AND non-null bounds, and they are not the same object."""
+    THEN it has BOTH non-null outcome_delta AND non-null bounds, and they are not
+    the same object."""
     est = intervene(
         dag=_dag(small_corpus[0]),
         model=fitted,
@@ -398,7 +399,7 @@ def test_unsupported_outcome__non_binary_model_rejected_at_intervene(
 
     class _ContinuousModel:
         outcome_kind = "continuous"
-        feature_index: dict = {}
+        feature_index: ClassVar[dict] = {}
 
     with pytest.raises(UnsupportedOutcomeError):
         intervene(

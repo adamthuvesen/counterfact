@@ -7,7 +7,7 @@ outcome under the most-different sibling arm. The absolute difference is the
 
 Identifiability is inherited from the underlying `intervene` call:
 
-* identified  → influence is the |g-formula counterfactual − actual|
+* identified  → influence is the |g-formula counterfactual - actual|
 * bounded     → influence is reported with the bound; ranking still shown
 * unidentified → influence is 0.0 and the entry is labeled unidentified
 

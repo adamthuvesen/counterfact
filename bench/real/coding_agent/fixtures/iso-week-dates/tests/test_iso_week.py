@@ -8,8 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from iso_week import date_to_iso_week, iso_week_to_date  # noqa: E402
-
+from iso_week import date_to_iso_week, iso_week_to_date
 
 # --- iso_week_to_date ------------------------------------------------------
 

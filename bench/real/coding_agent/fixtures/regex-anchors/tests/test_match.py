@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from match import is_phone_number  # noqa: E402
+from match import is_phone_number
 
 
 def test_exact_phone_number_accepted() -> None:

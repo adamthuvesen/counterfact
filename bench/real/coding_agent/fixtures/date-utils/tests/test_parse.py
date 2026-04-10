@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from parse import parse_date_or_none  # noqa: E402
+from parse import parse_date_or_none
 
 
 def test_valid_iso_date() -> None:

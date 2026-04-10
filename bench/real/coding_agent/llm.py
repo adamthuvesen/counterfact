@@ -49,7 +49,7 @@ def extract_cost(resp: object) -> float:
     if hasattr(resp, "get"):
         raw = resp.get("response_cost")  # type: ignore[union-attr]
     elif hasattr(resp, "response_cost"):
-        raw = getattr(resp, "response_cost")
+        raw = resp.response_cost
     cost = float(raw or 0.0)
     if cost > 0.0:
         return cost
