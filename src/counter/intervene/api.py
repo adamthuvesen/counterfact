@@ -107,6 +107,11 @@ def _decision_type_at_step(dag: DAG, step: int) -> str:
         if s.step_index == step:
             if not s.decisions:
                 raise InvalidInterventionError(f"step {step} has no decisions")
+            if len(s.decisions) > 1:
+                raise InvalidInterventionError(
+                    f"step {step} has multiple decisions; the v0 step-scoped "
+                    "intervene API cannot target it unambiguously"
+                )
             return s.decisions[0].decision_type
     raise InvalidInterventionError(f"step {step} not found in trace")
 
@@ -256,9 +261,12 @@ def intervene(
         # Estimate the additional traces needed to bring CI width below the
         # tight-enough threshold. Binomial-Wald scales as 1/√n, so:
         #     n_required ≈ current_n * (current_width / target_width)^2
-        # We don't know the *exact* n_total contributing to this estimator
-        # without re-walking the corpus; approximate via the bootstrap n.
-        current_n = max(int(getattr(model, "train_n", 0)) or delta.n_bootstrap, 1)
+        current_n = int(
+            getattr(model, "train_n", 0)
+            or getattr(getattr(model, "train_X", None), "shape", [0])[0]
+            or delta.n_bootstrap
+        )
+        current_n = max(current_n, 1)
         scale = (ci_width / _IDENTIFIED_TIGHT_CI_WIDTH) ** 2
         estimated_required_n = max(int(round(current_n * scale)), current_n + 1)
         next_step = NextStep(

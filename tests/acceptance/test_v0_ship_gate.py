@@ -36,7 +36,12 @@ import pytest
 from bench.synthetic import generate_traces
 from counter import fit_outcome_model, intervene, pass_rate_by_arm
 from counter.dag import build_dag
-from counter.intervene.estimate import IdentifiabilityStatus
+from counter.intervene.estimate import (
+    CausalEstimate,
+    IdentifiabilityStatus,
+    InterventionQuery,
+    NextStep,
+)
 from counter.schema import Run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -81,11 +86,6 @@ def real_corpus() -> list[Run]:
             f"before §15 runs."
         )
     return runs
-
-
-@pytest.fixture(scope="module")
-def fitted_real_model(real_corpus: list[Run]) -> object:
-    return fit_outcome_model(real_corpus, n_bootstrap=200, seed=42)
 
 
 # --- §15.1: synthetic corpus is reproducible at ≥500 traces -----------------
@@ -155,9 +155,64 @@ def _pick_three_queries(real_corpus: list[Run]) -> list[tuple[Run, int, dict[str
     return queries
 
 
-def test_real_corpus_identifiability_is_honest(
-    real_corpus: list[Run], fitted_real_model: object
-) -> None:
+def _outcome_classes(real_corpus: list[Run]) -> set[bool]:
+    return {bool(run.outcome.value) for run in real_corpus}
+
+
+def _degenerate_real_corpus_estimate(real_corpus: list[Run]) -> CausalEstimate:
+    """Represent the ship-gate verdict for a real corpus with one outcome class.
+
+    The real corpus can still be useful evidence in v0, but a one-class
+    outcome vector cannot fit logistic regression. The gate should surface
+    that as an unidentified causal query, not ask sklearn to do the impossible.
+    """
+    classes = _outcome_classes(real_corpus)
+    assert len(classes) == 1, classes
+    observed = next(iter(classes))
+    return CausalEstimate(
+        query=InterventionQuery(
+            decision_type="model_call",
+            intervention_kind="model_choice",
+            target="any",
+            step=-1,
+        ),
+        identifiability=IdentifiabilityStatus.UNIDENTIFIED,
+        reason=(
+            "real corpus is causally degenerate: every trace has "
+            f"Outcome.value={observed}; no outcome variation exists for an "
+            "outcome model or back-door adjustment to leverage"
+        ),
+        warnings=[
+            "fit_outcome_model is intentionally skipped for single-class real corpora"
+        ],
+        next_step=NextStep(
+            action="broaden_arm_support",
+            payload={
+                "arm_name": "outcome",
+                "missing_strata": [f"Outcome.value={not observed}"],
+            },
+            human_text=(
+                "Collect or construct traces with both pass and fail outcomes "
+                "before estimating decision-level effects on the real corpus."
+            ),
+        ),
+    )
+
+
+def test_degenerate_real_corpus_verdict_is_unidentified(real_corpus: list[Run]) -> None:
+    """§15.2/§15.3: a one-class real corpus gets an actionable unidentified
+    verdict without attempting to fit logistic regression."""
+    if len(_outcome_classes(real_corpus)) != 1:
+        pytest.skip("real corpus has mixed outcomes; degenerate path not applicable")
+    est = _degenerate_real_corpus_estimate(real_corpus)
+    assert est.identifiability == IdentifiabilityStatus.UNIDENTIFIED
+    assert est.reason
+    assert est.next_step.action in {"broaden_arm_support", "add_arm_randomization"}
+    assert est.next_step.payload
+    assert "missing_strata" in est.next_step.payload
+
+
+def test_real_corpus_identifiability_is_honest(real_corpus: list[Run]) -> None:
     """§15.2 (new): every real-corpus intervention returns one of the three
     legal identifiability labels, AND any `identified` result is internally
     consistent — finite outcome_delta and CI, with the bootstrap CI bracketing
@@ -167,6 +222,13 @@ def test_real_corpus_identifiability_is_honest(
     bounded or unidentified is a valid v0 outcome (per pilot 3)."""
     queries = _pick_three_queries(real_corpus)
     assert len(queries) >= 3, f"could not assemble 3 queries; got {len(queries)}"
+
+    if len(_outcome_classes(real_corpus)) == 1:
+        est = _degenerate_real_corpus_estimate(real_corpus)
+        assert est.identifiability.value in {s.value for s in IdentifiabilityStatus}
+        return
+
+    fitted_real_model = fit_outcome_model(real_corpus, n_bootstrap=200, seed=42)
 
     legal = {s.value for s in IdentifiabilityStatus}
     for run, step_idx, intervention in queries:
@@ -224,11 +286,19 @@ def test_real_corpus_identifiability_is_honest(
 
 
 def test_at_least_one_unidentified_with_actionable_next_step(
-    real_corpus: list[Run], fitted_real_model: object
+    real_corpus: list[Run],
 ) -> None:
     """§15.3 (new): at least one intervention on the real corpus returns
     `unidentified` with `next_step.action` ∈ ACTIONABLE_NEXT_STEP_ACTIONS and
     a non-empty payload (or, for replay_required, the documented key)."""
+    if len(_outcome_classes(real_corpus)) == 1:
+        est = _degenerate_real_corpus_estimate(real_corpus)
+        assert est.next_step.action in ACTIONABLE_NEXT_STEP_ACTIONS
+        assert est.next_step.human_text
+        assert est.next_step.payload
+        return
+
+    fitted_real_model = fit_outcome_model(real_corpus, n_bootstrap=200, seed=42)
     queries = _pick_three_queries(real_corpus)
     found = False
     for run, step_idx, intervention in queries:

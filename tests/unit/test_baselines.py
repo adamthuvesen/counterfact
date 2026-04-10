@@ -77,6 +77,51 @@ def test_empty_corpus_returns_empty_table() -> None:
     assert table.rows == []
 
 
+def test_actionless_decision_is_skipped() -> None:
+    corpus = [
+        Run(
+            schema_version="0.1.0",
+            run_id="r0",
+            steps=[
+                Step(
+                    step_index=0,
+                    decisions=[
+                        Decision(decision_id="r0-d0", decision_type="model_call"),
+                        Decision(
+                            decision_id="r0-d1",
+                            decision_type="model_call",
+                            chosen_action="large",
+                        ),
+                    ],
+                )
+            ],
+            outcome=Outcome(kind="binary", value=True, verifier="stub"),
+        )
+    ]
+    table = pass_rate_by_arm(corpus, "model_call")
+    assert [row.arm for row in table.rows] == ["large"]
+
+
+def test_all_actionless_matching_decisions_return_empty_table() -> None:
+    corpus = [
+        Run(
+            schema_version="0.1.0",
+            run_id="r0",
+            steps=[
+                Step(
+                    step_index=0,
+                    decisions=[
+                        Decision(decision_id="r0-d0", decision_type="model_call"),
+                    ],
+                )
+            ],
+            outcome=Outcome(kind="binary", value=True, verifier="stub"),
+        )
+    ]
+    table = pass_rate_by_arm(corpus, "model_call")
+    assert table.rows == []
+
+
 def test_decision_type_filter_excludes_other_types() -> None:
     """A run with both retry and model_call decisions should only count one
     when queried for a single decision_type."""

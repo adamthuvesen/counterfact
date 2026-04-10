@@ -82,6 +82,8 @@ def pass_rate_by_arm(
             for d in step.decisions:
                 if d.decision_type != decision_type:
                     continue
+                if d.chosen_action is None:
+                    continue
                 bucket_n[d.chosen_action] = bucket_n.get(d.chosen_action, 0) + 1
                 if outcome_pass:
                     bucket_pass[d.chosen_action] = (
