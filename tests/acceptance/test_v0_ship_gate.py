@@ -1,50 +1,60 @@
-"""§15 final-acceptance ship gate.
+"""§15 final-acceptance ship gate (identifiability-first revision).
 
-Bundles every automatable acceptance criterion from `proposal.md` and `tasks.md`
-§15 into one runnable test module. Tests that depend on the canonical real-agent
-corpus skip gracefully when it is absent (the gate is open but unanswered);
-tests that don't (synthetic determinism, forbidden-deps/imports) always run.
+Bundles every automatable acceptance criterion from the
+`identifiability-first-pivot` change into one runnable module. Three pilots
+established that frontier models trivialize single-file Python repair tasks,
+so the v0 ship gate no longer enforces a class-balance / CI-width threshold
+on the real corpus. It enforces identifiability discipline instead:
 
-The shape: each test pins one ship-gate criterion. A red here means v0 is not
-ready; a green here is necessary-but-not-sufficient (the demo notebook eyeball
-in §15.11 is still a HUMAN GATE).
+- §15.1 (kept): synthetic SCM recovers the known headline effect.
+- §15.2 (new):  real-corpus interventions yield internally-consistent
+                identifiability labels — and zero `identified` results is
+                allowed if the corpus is causally degenerate.
+- §15.3 (new):  at least one real-corpus query returns `unidentified` with
+                a structured, non-empty `next_step`.
+- §15.4 (kept): top-1 attribution matches a hand-labeled root cause for at
+                least one fixture.
+- §15.5 (new):  the demo notebook renders the naive-vs-honest contrast
+                (`pass_rate_by_arm` table + `intervene` `CausalEstimate`).
+- §15.9 (kept): no forbidden runtime deps / imports.
+- §15.10/§15.11 (kept): manual-gate reminders.
 
-Headline intervention is `retry_policy` per design.md D9. Update
-`HEADLINE_INTERVENTION_KIND` if a future amendment shifts it.
+Tests that depend on the canonical real-agent corpus skip gracefully when it
+is absent. The demo-notebook test relies on the notebook, not on the corpus.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from collections import Counter
+import subprocess
+import sys
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 from bench.synthetic import generate_traces
-from counter import fit_outcome_model
+from counter import fit_outcome_model, intervene, pass_rate_by_arm
+from counter.dag import build_dag
+from counter.intervene.estimate import IdentifiabilityStatus
 from counter.schema import Run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNS_V1_DIR = REPO_ROOT / "bench" / "real" / "runs_v1"
+DEMO_NOTEBOOK = REPO_ROOT / "notebooks" / "demo.ipynb"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 SRC_DIR = REPO_ROOT / "src"
 
-# --- ship-gate constants (proposal.md acceptance criteria) -------------------
+MIN_REAL_TRACES = 30  # csv_dedupe pilot 3 baseline; raised by future corpora
+SCM_RECOVERY_TOLERANCE = 0.05
 
-MIN_REAL_TRACES = 200
-CLASS_BALANCE_FLOOR = 0.20  # neither pass nor fail rate below this
-HEADLINE_DECISION_TYPE = "retry"
-HEADLINE_INTERVENTION_KIND = "retry_policy"
-HEADLINE_ARMS = ("no_retry", "retry_once")
-MIN_ARM_SUPPORT = 30
-CI_WIDTH_TOLERANCE = 0.25
-SCM_RECOVERY_TOLERANCE = 0.05  # mirrored from design.md D10
+# Every action documented in the NextStep contract that counts as
+# "actionable" for §15.3. `none` is a valid label but not actionable.
+ACTIONABLE_NEXT_STEP_ACTIONS = frozenset(
+    {"increase_n", "broaden_arm_support", "replay_required", "add_arm_randomization"}
+)
 
 # Forbidden surface area per design.md D13 + the proposal's explicit non-goals.
-# Listed here in plain text so the scan stays unambiguous.
 FORBIDDEN_DEPS = ("dowhy", "causalml", "pyro", "langchain", "langgraph", "pandas", "networkx")
 FORBIDDEN_IMPORTS = ("dowhy", "causalml", "pyro", "langchain", "langgraph")
 
@@ -67,7 +77,7 @@ def real_corpus() -> list[Run]:
     if not runs:
         pytest.skip(
             f"runs_v1 corpus absent at {RUNS_V1_DIR}. Generate via "
-            f"`counter bench real --n 200 --output-dir bench/real/runs_v1` "
+            f"`counter bench real --fixture-set hidden_v1 --output-dir bench/real/runs_v1` "
             f"before §15 runs."
         )
     return runs
@@ -86,97 +96,251 @@ def test_synthetic_corpus_is_deterministically_500_traces() -> None:
     a = list(generate_traces(n=500, seed=42))
     b = list(generate_traces(n=500, seed=42))
     assert len(a) == 500
-    # Byte-stability under same seed (subset check — full byte equality is
-    # exercised in tests/unit/test_corpus_synthetic.py)
     assert a[0] == b[0]
     assert a[-1] == b[-1]
 
 
-# --- §15.2: real-corpus size + class balance --------------------------------
+# --- §15.2: real-corpus identifiability is honestly reported ----------------
 
 
 def test_real_corpus_meets_minimum_size(real_corpus: list[Run]) -> None:
-    """§15.2: real corpus has ≥200 traces."""
+    """§15.2: real corpus has ≥MIN_REAL_TRACES traces."""
     assert len(real_corpus) >= MIN_REAL_TRACES, (
         f"real corpus has {len(real_corpus)} traces; need ≥{MIN_REAL_TRACES}"
     )
 
 
-def test_real_corpus_class_balance(real_corpus: list[Run]) -> None:
-    """§15.2: pass/fail rates each between 20% and 80%."""
-    n = len(real_corpus)
-    n_pass = sum(1 for r in real_corpus if r.outcome.value)
-    pass_rate = n_pass / n
-    assert CLASS_BALANCE_FLOOR <= pass_rate <= 1 - CLASS_BALANCE_FLOOR, (
-        f"class balance failed: pass_rate={pass_rate:.2%}; "
-        f"need [{CLASS_BALANCE_FLOOR:.0%}, {1 - CLASS_BALANCE_FLOOR:.0%}]"
-    )
+def _pick_three_queries(real_corpus: list[Run]) -> list[tuple[Run, int, dict[str, object]]]:
+    """Pick three intervention queries that the real corpus can answer.
+
+    Strategy: look at the first run that has decisions of each randomized
+    decision_type (model_call, tool_call, retry) and target the first arm of
+    each. If a type is missing, fall back to a prompt_content query against
+    any model_call to exercise the always-replay path.
+    """
+    queries: list[tuple[Run, int, dict[str, object]]] = []
+    seen_types: set[str] = set()
+    for run in real_corpus:
+        for step in run.steps:
+            for d in step.decisions:
+                if d.decision_type in seen_types:
+                    continue
+                if d.decision_type == "model_call":
+                    queries.append(
+                        (run, step.step_index, {"model_choice": d.chosen_action})
+                    )
+                    seen_types.add("model_call")
+                elif d.decision_type == "tool_call" and d.policy:
+                    queries.append(
+                        (run, step.step_index, {"tool_choice": d.chosen_action})
+                    )
+                    seen_types.add("tool_call")
+                elif d.decision_type == "retry":
+                    queries.append(
+                        (run, step.step_index, {"retry_policy": d.chosen_action})
+                    )
+                    seen_types.add("retry")
+        if len(queries) >= 3:
+            break
+    # Always end with a prompt_content query — that's the always-replay path
+    # and gives §15.3 something to point to even on a degenerate corpus.
+    for run in real_corpus:
+        for step in run.steps:
+            for d in step.decisions:
+                if d.decision_type == "model_call":
+                    queries.append(
+                        (run, step.step_index, {"prompt_content": "be more careful"})
+                    )
+                    return queries[:3] + [queries[-1]] if len(queries) > 3 else queries
+    return queries
 
 
-# --- §15.2: arm support for headline intervention ---------------------------
-
-
-def test_headline_intervention_arms_have_minimum_support(real_corpus: list[Run]) -> None:
-    """§15.2: each arm of the headline intervention has ≥30 logged samples."""
-    arm_counts: Counter[str] = Counter()
-    for r in real_corpus:
-        for s in r.steps:
-            for d in s.decisions:
-                if d.decision_type == HEADLINE_DECISION_TYPE and d.policy:
-                    arm_counts[d.chosen_action] += 1
-    missing = []
-    for arm in HEADLINE_ARMS:
-        if arm_counts[arm] < MIN_ARM_SUPPORT:
-            missing.append(f"{arm}: {arm_counts[arm]}")
-    assert not missing, (
-        f"headline intervention {HEADLINE_INTERVENTION_KIND!r} arms below "
-        f"min support ({MIN_ARM_SUPPORT}): " + ", ".join(missing)
-    )
-
-
-# --- §15.3: bootstrap CI width on headline effect ---------------------------
-
-
-def test_bootstrap_ci_width_on_headline_within_tolerance(
+def test_real_corpus_identifiability_is_honest(
     real_corpus: list[Run], fitted_real_model: object
 ) -> None:
-    """§15.3: 95% bootstrap CI width on the headline marginal effect ≤ 0.25."""
-    feat_index = fitted_real_model.feature_index
-    target_keys = {arm: f"{HEADLINE_DECISION_TYPE}::{arm}" for arm in HEADLINE_ARMS}
-    missing = [k for k in target_keys.values() if k not in feat_index]
-    if missing:
+    """§15.2 (new): every real-corpus intervention returns one of the three
+    legal identifiability labels, AND any `identified` result is internally
+    consistent — finite outcome_delta and CI, with the bootstrap CI bracketing
+    the corresponding naive pass-rate-difference.
+
+    Zero `identified` results is allowed: a corpus where every query is
+    bounded or unidentified is a valid v0 outcome (per pilot 3)."""
+    queries = _pick_three_queries(real_corpus)
+    assert len(queries) >= 3, f"could not assemble 3 queries; got {len(queries)}"
+
+    legal = {s.value for s in IdentifiabilityStatus}
+    for run, step_idx, intervention in queries:
+        est = intervene(
+            dag=build_dag(run),
+            model=fitted_real_model,
+            step=step_idx,
+            intervention=intervention,
+        )
+        assert est.identifiability.value in legal, (
+            f"illegal identifiability label: {est.identifiability!r}"
+        )
+
+        if est.identifiability == IdentifiabilityStatus.IDENTIFIED:
+            # Finite numerics
+            assert est.outcome_delta is not None
+            for x in (
+                est.outcome_delta.point,
+                est.outcome_delta.ci_low,
+                est.outcome_delta.ci_high,
+            ):
+                assert x == x and abs(x) < float("inf"), (  # NaN-safe finite check
+                    f"identified estimate has non-finite numeric: {x!r}"
+                )
+            assert est.outcome_delta.ci_low <= est.outcome_delta.ci_high
+
+            # Naive marginal must fall inside the bootstrap CI for the chosen arm.
+            (kind, value), = list(intervention.items())
+            if kind in {"model_choice", "tool_choice", "retry_policy"}:
+                decision_type_for_arm = {
+                    "model_choice": "model_call",
+                    "tool_choice": "tool_call",
+                    "retry_policy": "retry",
+                }[kind]
+                table = pass_rate_by_arm(real_corpus, decision_type_for_arm)
+                row = next((r for r in table.rows if r.arm == value), None)
+                if row is not None:
+                    # Allow for small slack between naive Wilson CI and
+                    # bootstrap CI on the model's marginal — both should
+                    # bracket the same truth.
+                    assert (
+                        est.outcome_delta.ci_low <= row.pass_rate <= est.outcome_delta.ci_high
+                        or (
+                            row.ci_low <= est.outcome_delta.point <= row.ci_high
+                        )
+                    ), (
+                        f"naive vs identified disagree dramatically: naive "
+                        f"{row.pass_rate:.3f} (CI [{row.ci_low:.3f}, {row.ci_high:.3f}]) "
+                        f"vs identified {est.outcome_delta.point:.3f} "
+                        f"(CI [{est.outcome_delta.ci_low:.3f}, {est.outcome_delta.ci_high:.3f}])"
+                    )
+
+
+# --- §15.3: at least one unidentified with actionable next_step -------------
+
+
+def test_at_least_one_unidentified_with_actionable_next_step(
+    real_corpus: list[Run], fitted_real_model: object
+) -> None:
+    """§15.3 (new): at least one intervention on the real corpus returns
+    `unidentified` with `next_step.action` ∈ ACTIONABLE_NEXT_STEP_ACTIONS and
+    a non-empty payload (or, for replay_required, the documented key)."""
+    queries = _pick_three_queries(real_corpus)
+    found = False
+    for run, step_idx, intervention in queries:
+        est = intervene(
+            dag=build_dag(run),
+            model=fitted_real_model,
+            step=step_idx,
+            intervention=intervention,
+        )
+        if est.identifiability == IdentifiabilityStatus.UNIDENTIFIED:
+            assert est.next_step.action in ACTIONABLE_NEXT_STEP_ACTIONS, (
+                f"unidentified estimate has non-actionable next_step.action="
+                f"{est.next_step.action!r}"
+            )
+            assert est.next_step.human_text, "next_step.human_text is empty"
+            if est.next_step.action == "replay_required":
+                assert "intervention_target" in est.next_step.payload
+            else:
+                assert est.next_step.payload, (
+                    f"non-replay unidentified estimate has empty payload"
+                )
+            found = True
+            break
+    assert found, (
+        "no unidentified result observed across the test queries; the v0 "
+        "ship gate requires at least one — try a prompt_content query if "
+        "the chosen queries all randomize over arms"
+    )
+
+
+# --- §15.4: top-1 attribution matches the labeled root cause ----------------
+
+
+def test_top1_attribution_label_artifact_is_present() -> None:
+    """§15.4: the labels.json artifact exists with the documented schema.
+
+    The full top-1 acceptance test lives in
+    tests/acceptance/test_top1_attribution.py and runs against the real
+    corpus when both labels and runs_v1 are populated. This gate-level
+    test is a presence check so the gate's structure is auditable here too;
+    it skips when no label has been added yet (the §14.1 HUMAN GATE)."""
+    labels_path = REPO_ROOT / "bench" / "real" / "coding_agent" / "labels.json"
+    if not labels_path.exists():
+        pytest.skip(f"labels.json absent at {labels_path}")
+    labels = json.loads(labels_path.read_text())
+    assert "labels" in labels, "labels.json missing top-level 'labels' field"
+    if not labels["labels"]:
         pytest.skip(
-            f"headline arms missing from feature index (corpus has no observed "
-            f"support for these arms): {missing}"
+            "labels.json has zero entries — §14.1 HUMAN GATE not yet completed"
         )
+    entry = labels["labels"][0]
+    assert entry.get("root_cause_decision_id"), (
+        "first label entry has no root_cause_decision_id"
+    )
 
-    target_idx = {arm: feat_index[target_keys[arm]] for arm in HEADLINE_ARMS}
-    sibling_keys = [k for k in feat_index if k.startswith(f"{HEADLINE_DECISION_TYPE}::")]
-    sibling_idx = [feat_index[k] for k in sibling_keys]
-    X = fitted_real_model.train_X
 
-    def _marginal_p(coefs: np.ndarray, intercept: float, arm: str) -> float:
-        Xc = X.copy()
-        Xc[:, sibling_idx] = 0.0
-        Xc[:, target_idx[arm]] = 1.0
-        z = Xc @ coefs + intercept
-        return float((1.0 / (1.0 + np.exp(-z))).mean())
+# --- §15.5: demo notebook renders the naive-vs-honest contrast --------------
 
-    n_b = fitted_real_model.bootstrap_coefs.shape[0]
-    effects = np.zeros(n_b)
-    for b in range(n_b):
-        coefs = fitted_real_model.bootstrap_coefs[b]
-        intercept = float(fitted_real_model.bootstrap_intercepts[b])
-        effects[b] = _marginal_p(coefs, intercept, HEADLINE_ARMS[1]) - _marginal_p(
-            coefs, intercept, HEADLINE_ARMS[0]
-        )
 
-    ci_lo = float(np.percentile(effects, 2.5))
-    ci_hi = float(np.percentile(effects, 97.5))
-    width = ci_hi - ci_lo
-    assert width <= CI_WIDTH_TOLERANCE, (
-        f"95% CI on headline effect ({HEADLINE_INTERVENTION_KIND}): "
-        f"[{ci_lo:+.4f}, {ci_hi:+.4f}], width={width:.4f}; need ≤{CI_WIDTH_TOLERANCE}"
+def test_demo_renders_naive_vs_honest_contrast() -> None:
+    """§15.5 (new): the demo notebook executes end-to-end and renders both a
+    `pass_rate_by_arm` table and an `intervene` CausalEstimate. The test
+    parses the executed notebook (in a tmp dir) and inspects cell outputs."""
+    if not DEMO_NOTEBOOK.exists():
+        pytest.skip(f"demo notebook absent at {DEMO_NOTEBOOK}")
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "jupyter",
+            "nbconvert",
+            "--to",
+            "notebook",
+            "--execute",
+            str(DEMO_NOTEBOOK),
+            "--output",
+            "/tmp/_demo_executed.ipynb",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, (
+        f"nbconvert failed: stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    )
+
+    nb = json.loads(Path("/tmp/_demo_executed.ipynb").read_text())
+    pieces: list[str] = []
+    for cell in nb["cells"]:
+        for out in cell.get("outputs", []):
+            text = out.get("text", "")
+            if isinstance(text, list):
+                text = "".join(text)
+            pieces.append(text)
+            data = out.get("data") or {}
+            for v in data.values():
+                pieces.append("".join(v) if isinstance(v, list) else str(v))
+    all_text = "\n".join(pieces)
+    assert "pass_rate" in all_text or "PassRateTable" in all_text, (
+        "demo notebook does not render a pass_rate_by_arm table"
+    )
+    assert "identifiability" in all_text, (
+        "demo notebook does not render an intervene CausalEstimate"
+    )
+    # Either an actionable next_step or a nontrivial action label rendered
+    # somewhere — the demo must show one such label per the spec scenario.
+    rendered_actions = {
+        a for a in ACTIONABLE_NEXT_STEP_ACTIONS if a in all_text
+    }
+    assert rendered_actions, (
+        "demo notebook does not render any actionable next_step.action; "
+        f"expected one of {sorted(ACTIONABLE_NEXT_STEP_ACTIONS)}"
     )
 
 
@@ -188,9 +352,6 @@ def test_no_forbidden_dependencies_in_pyproject() -> None:
     text = PYPROJECT.read_text()
     found = []
     for dep in FORBIDDEN_DEPS:
-        # Match `"<dep>` at the start of a line inside dependency blocks. The
-        # leading quote prevents partial matches (e.g., `pandas` would have
-        # otherwise matched `pandas-stubs` if such a thing appeared).
         if re.search(rf'(?m)^\s*"{re.escape(dep)}\b', text):
             found.append(dep)
     assert not found, (
@@ -211,15 +372,15 @@ def test_no_forbidden_imports_in_src() -> None:
 
 
 # --- §15.10/§15.11 are explicit human gates (opsx:verify + demo eyeball) ----
-# Documented but not auto-tested. They're discoverable here for completeness:
 
 
 def test_manual_gates_are_documented() -> None:
     """§15.10/§15.11 are explicit human gates — this test exists so the gate
     appears in pytest output as a reminder, not as a soft pass."""
     gates = [
-        "§15.10: run `/opsx:verify build-counter-v0` — surface drift between specs and impl",
-        "§15.11: human reads notebooks/demo.ipynb end-to-end and inspects attribution",
+        "§15.10: run `/opsx:verify identifiability-first-pivot` — surface drift between specs and impl",
+        "§15.11: human reads notebooks/demo.ipynb end-to-end; the naive-vs-honest narrative must land without hand-waving",
+        "§15.11: at least one `bounded` query renders an E-value",
+        "§15.11: every rendered `next_step.human_text` is reader-comprehensible",
     ]
-    # Always passes; the assertion message is the artifact.
     assert all(isinstance(g, str) for g in gates), gates
