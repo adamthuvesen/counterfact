@@ -20,7 +20,8 @@ them post-hoc and the demo points at one as its evidence base.
 
 The promotion path is deliberately human-gated:
 
-1. Run a pilot to a fresh `runs_pilot_<YYYY-MM-DD>/` directory.
+1. Run a pilot to a fresh `runs_pilot_<YYYY-MM-DD>/` directory, preferably
+   using `--fixture-set hard_hidden_v1` for the current hard hidden fixture set.
 2. Run `counterfact analyze corpus bench/real/runs_pilot_<YYYY-MM-DD>/`.
 3. Read the report. If `promote: True`, decide whether to promote.
 4. If yes, `mv bench/real/runs_pilot_<YYYY-MM-DD> bench/real/runs_v2`,

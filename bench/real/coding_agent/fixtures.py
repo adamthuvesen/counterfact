@@ -88,6 +88,21 @@ HIDDEN_FIXTURES: tuple[FixtureSpec, ...] = (
         public_tests_relpath="test_dedupe.py",
         hidden_tests_relpath="test_dedupe_hidden.py",
     ),
+    FixtureSpec(
+        "date_window",
+        source_relpath="date_window.py",
+        test_relpath="",  # unused for hidden fixtures
+        public_tests_relpath="test_date_window.py",
+        hidden_tests_relpath="test_date_window_hidden.py",
+    ),
+)
+
+HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = (
+    fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe"
+)
+
+HARD_HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = (
+    fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "date_window"
 )
 
 

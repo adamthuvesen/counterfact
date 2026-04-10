@@ -35,6 +35,10 @@ _RANDOMIZATION_EPSILON = 0.5
 # math is too noisy to be useful.
 _MIN_BENCH_N = 30
 
+# Hidden-v1 (`csv_dedupe`) is the calibration fixture; future data-collection
+# suggestions target the harder set intended for mixed-outcome pilots.
+_SUGGESTED_FIXTURE_SET = "hard_hidden_v1"
+
 
 def _model_flags(arm_name: str | None) -> list[str]:
     arm = arm_name if arm_name in {"small", "large"} else "large"
@@ -107,7 +111,7 @@ def suggest_harness_command(
         parts = [
             "uv run counterfact bench real",
             f"--n {n}",
-            "--fixture-set hidden_v1",
+            f"--fixture-set {_SUGGESTED_FIXTURE_SET}",
         ]
         return " ".join(parts)
 
@@ -120,7 +124,7 @@ def suggest_harness_command(
     parts = [
         "uv run counterfact bench real",
         f"--n {n}",
-        "--fixture-set hidden_v1",
+        f"--fixture-set {_SUGGESTED_FIXTURE_SET}",
         *arm_flags,
     ]
     return " ".join(parts)
