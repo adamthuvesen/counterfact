@@ -53,6 +53,7 @@ def test_fit_outcome_model__fits_on_synthetic_corpus_and_returns_a_model(
     pred = fitted.predict_proba(sample_X)
     assert pred.shape == (5,)
     assert np.all((pred >= 0) & (pred <= 1))
+    assert fitted.train_n == 120
 
 
 def test_fit_outcome_model__bootstrap_cis_surround_point_estimate(fitted: object) -> None:
@@ -156,6 +157,52 @@ def test_intervene__invalid_intervention_for_decision_type_raises(
         )
 
 
+def test_intervene__increase_n_uses_training_trace_count(
+    small_corpus: list[Run], fitted: object
+) -> None:
+    est = intervene(
+        dag=_dag(small_corpus[0]),
+        model=fitted,
+        step=1,
+        intervention={"tool_choice": "run_tests"},
+    )
+    assert est.next_step.action == "increase_n"
+    assert est.next_step.payload["current_n"] == len(small_corpus)
+    assert est.next_step.payload["current_n"] != est.outcome_delta.n_bootstrap
+
+
+def test_intervene__multi_decision_step_raises_clear_error(fitted: object) -> None:
+    run = Run(
+        schema_version="0.1.0",
+        run_id="multi",
+        steps=[
+            Step(
+                step_index=0,
+                decisions=[
+                    Decision(
+                        decision_id="d-tool",
+                        decision_type="tool_call",
+                        chosen_action="run_tests",
+                    ),
+                    Decision(
+                        decision_id="d-model",
+                        decision_type="model_call",
+                        chosen_action="haiku",
+                    ),
+                ],
+            )
+        ],
+        outcome=Outcome(kind="binary", value=True, verifier="stub"),
+    )
+    with pytest.raises(InvalidInterventionError, match="multiple decisions"):
+        intervene(
+            dag=build_dag(run),
+            model=fitted,
+            step=0,
+            intervention={"model_choice": "sonnet"},
+        )
+
+
 # --- attribute_failure spec scenarios ----------------------------------------
 
 
@@ -193,6 +240,37 @@ def test_attribute_failure__empty_corpus_yields_empty_ranking(fitted: object) ->
     )
     attribution = attribute_failure(dag=build_dag(empty_run), model=fitted)
     assert attribution.top_k(5) == []
+
+
+def test_attribute_failure__multi_decision_step_is_unidentified(
+    fitted: object,
+) -> None:
+    run = Run(
+        schema_version="0.1.0",
+        run_id="multi-attr",
+        steps=[
+            Step(
+                step_index=0,
+                decisions=[
+                    Decision(
+                        decision_id="d-tool",
+                        decision_type="tool_call",
+                        chosen_action="run_tests",
+                    ),
+                    Decision(
+                        decision_id="d-model",
+                        decision_type="model_call",
+                        chosen_action="haiku",
+                    ),
+                ],
+            )
+        ],
+        outcome=Outcome(kind="binary", value=False, verifier="stub"),
+    )
+    entries = attribute_failure(dag=build_dag(run), model=fitted).top_k(10)
+    assert entries
+    assert {e.identifiability for e in entries} == {IdentifiabilityStatus.UNIDENTIFIED}
+    assert all(e.influence == 0.0 for e in entries)
 
 
 # --- E-value spec scenarios --------------------------------------------------

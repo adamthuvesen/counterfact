@@ -112,6 +112,17 @@ def attribute_failure(
                     )
                 )
                 continue
+            if len(step.decisions) > 1:
+                entries.append(
+                    AttributionEntry(
+                        decision_id=d.decision_id,
+                        decision_type=d.decision_type,
+                        chosen_action=d.chosen_action,
+                        influence=0.0,
+                        identifiability=IdentifiabilityStatus.UNIDENTIFIED,
+                    )
+                )
+                continue
 
             actual = _intervene(
                 dag=dag,

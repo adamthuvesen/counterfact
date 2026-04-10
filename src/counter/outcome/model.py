@@ -38,6 +38,7 @@ class OutcomeModel:
     bootstrap_intercepts: np.ndarray  # shape (B,)
     train_X: np.ndarray
     train_y: np.ndarray
+    train_n: int
     feature_index: dict[str, int] = field(default_factory=dict)
     outcome_kind: str = "binary"
 
@@ -153,6 +154,7 @@ def fit_outcome_model(
         bootstrap_intercepts=boot_intercepts,
         train_X=X,
         train_y=y,
+        train_n=len(runs),
         feature_index=index,
         outcome_kind="binary",
     )
