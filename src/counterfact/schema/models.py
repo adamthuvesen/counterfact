@@ -76,6 +76,33 @@ class Decision(_Strict):
     context_features: dict[str, Any] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def _randomization_metadata_is_complete(self) -> Decision:
+        randomization_fields = {
+            "policy": self.policy,
+            "policy_params": self.policy_params,
+            "valid_actions": self.valid_actions,
+            "propensity": self.propensity,
+            "context_features": self.context_features,
+        }
+        if not any(value is not None for value in randomization_fields.values()):
+            return self
+
+        missing = [name for name, value in randomization_fields.items() if value is None]
+        if self.chosen_action is None:
+            missing.append("chosen_action")
+        if missing:
+            raise ValueError(
+                "randomized decisions must log complete metadata; missing: "
+                + ", ".join(sorted(missing))
+            )
+        if self.valid_actions is not None and self.chosen_action not in self.valid_actions:
+            raise ValueError(
+                f"chosen_action={self.chosen_action!r} must be present in "
+                f"valid_actions={self.valid_actions!r}"
+            )
+        return self
+
 
 class Observation(_Strict):
     observation_id: str
@@ -112,3 +139,19 @@ class Run(_Strict):
                 f"unrecognized schema_version={v!r}; supported versions: {supported}"
             )
         return v
+
+    @model_validator(mode="after")
+    def _decision_ids_are_unique(self) -> Run:
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for step in self.steps:
+            for decision in step.decisions:
+                if decision.decision_id in seen:
+                    duplicates.add(decision.decision_id)
+                seen.add(decision.decision_id)
+        if duplicates:
+            raise ValueError(
+                "decision_id values must be unique within a run; duplicates: "
+                + ", ".join(sorted(duplicates))
+            )
+        return self

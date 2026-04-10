@@ -17,7 +17,12 @@ from bench.real.coding_agent.fixtures import (
     HIDDEN_FIXTURES,
     FixtureSpec,
 )
-from bench.real.coding_agent.llm import ROLE_TO_MODEL, LiteLLMClient, LLMClient
+from bench.real.coding_agent.llm import (
+    ROLE_TO_MODEL,
+    CostUnknownError,
+    LiteLLMClient,
+    LLMClient,
+)
 
 APPROVAL_MARKER = Path(".counterfact") / "approved"
 
@@ -108,6 +113,54 @@ def _checkpoint_dir(output_dir: Path) -> Path:
     return d
 
 
+def _run_identity(
+    *,
+    fixtures: tuple[FixtureSpec, ...],
+    config: AgentRunConfig,
+    role_to_model: dict[str, str],
+) -> dict[str, object]:
+    return {
+        "fixtures": [fx.fixture_id for fx in fixtures],
+        "config": {
+            "seed": config.seed,
+            "max_steps": config.max_steps,
+            "tool_greedy": config.tool_greedy,
+            "tool_epsilon": config.resolved_tool_epsilon(),
+            "model_greedy": config.model_greedy,
+            "model_epsilon": config.resolved_model_epsilon(),
+            "retry_greedy": config.retry_greedy,
+            "retry_epsilon": config.resolved_retry_epsilon(),
+        },
+        "role_to_model": dict(sorted(role_to_model.items())),
+    }
+
+
+def _identity_error(
+    checkpoint_dir: Path,
+    identity: dict[str, object],
+    *,
+    has_completed_traces: bool,
+) -> str | None:
+    identity_path = checkpoint_dir / "identity.json"
+    if not identity_path.exists():
+        if has_completed_traces:
+            return (
+                "Existing real-agent traces do not have resume identity metadata. "
+                "Use a new output directory, or regenerate the corpus with this "
+                "version before resuming."
+            )
+        identity_path.write_text(json.dumps(identity, indent=2, sort_keys=True) + "\n")
+        return None
+    existing = json.loads(identity_path.read_text())
+    if existing == identity:
+        return None
+    return (
+        "Existing real-agent corpus was created with a different fixture or "
+        "randomization configuration. Use a new output directory, or rerun with "
+        f"the original identity recorded in {identity_path}."
+    )
+
+
 def _completed_indices(output_dir: Path) -> set[int]:
     """Indices of already-written traces, for resume."""
     out: set[int] = set()
@@ -119,6 +172,19 @@ def _completed_indices(output_dir: Path) -> set[int]:
         except ValueError:
             continue
     return out
+
+
+def _completed_spend(output_dir: Path) -> float:
+    """Sum cost observations from already-written traces."""
+    spent = 0.0
+    for path in output_dir.glob("real-*.json"):
+        run = json.loads(path.read_text())
+        for step in run.get("steps", []):
+            for obs in step.get("observations", []) or []:
+                cost = obs.get("content", {}).get("cost_usd")
+                if cost is not None:
+                    spent += float(cost)
+    return spent
 
 
 def _fixture_for_index(index: int, fixtures: tuple[FixtureSpec, ...]) -> FixtureSpec:
@@ -192,15 +258,37 @@ def run_real_corpus(
             print(cred_error, file=sys.stderr)
             return 4
 
-    output_dir.mkdir(parents=True, exist_ok=True)
     config = config or AgentRunConfig()
+    fixtures = resolve_fixtures(fixture_ids, fixture_set)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir = _checkpoint_dir(output_dir)
+    done = _completed_indices(output_dir)
+    identity = _run_identity(fixtures=fixtures, config=config, role_to_model=ROLE_TO_MODEL)
+    identity_error = _identity_error(
+        checkpoint_dir,
+        identity,
+        has_completed_traces=bool(done),
+    )
+    if identity_error is not None:
+        print(identity_error, file=sys.stderr)
+        return 6
+
     sandbox = sandbox_root or Path(tempfile.mkdtemp(prefix="counterfact-real-"))
-    budget = BudgetTracker(cap_usd=budget_cap_usd)
+    budget = BudgetTracker(
+        cap_usd=budget_cap_usd,
+        spent_usd=_completed_spend(output_dir),
+    )
+    if budget.spent_usd >= budget.halt_threshold:
+        print(
+            f"Budget cap {int(budget.halt_fraction * 100)}% reached: "
+            f"${budget.spent_usd:.4f} of ${budget.cap_usd:.2f}\n"
+            "Wrote 0 traces; resume to continue.",
+            file=sys.stderr,
+        )
+        return 3
     llm = (llm_client_factory or LiteLLMClient)()
 
-    fixtures = resolve_fixtures(fixture_ids, fixture_set)
-    done = _completed_indices(output_dir)
-    progress_path = _checkpoint_dir(output_dir) / "progress.jsonl"
+    progress_path = checkpoint_dir / "progress.jsonl"
 
     written = 0
     try:
@@ -229,6 +317,9 @@ def run_real_corpus(
             file=sys.stderr,
         )
         return 3
+    except CostUnknownError as exc:
+        print(f"Cost accounting failed: {exc}", file=sys.stderr)
+        return 5
 
     print(f"Wrote {written} new traces to {output_dir}", file=write_to_stream)
     return 0

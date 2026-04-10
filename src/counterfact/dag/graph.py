@@ -113,17 +113,19 @@ def build_dag(trace: Run, schema: Any | None = None) -> DAG:
         for pos, d in enumerate(step.decisions):
             flat.append((step.step_index, pos, d))
             nodes.append(d)
+    ids = [d.decision_id for _, _, d in flat]
+    duplicate_ids = sorted({decision_id for decision_id in ids if ids.count(decision_id) > 1})
+    if duplicate_ids:
+        raise ValueError(
+            "cannot build DAG with duplicate decision_id values: "
+            + ", ".join(duplicate_ids)
+        )
 
     edges: list[tuple[str, str]] = []
-    seen_ids: set[str] = set()
 
     # For each decision, look back through `flat` and connect the most recent
     # decision whose type appears in this decision's parent_types.
     for i, (s_i, p_i, d) in enumerate(flat):
-        if d.decision_id in seen_ids:
-            # Duplicate id: skip silently — schema layer should already prevent.
-            continue
-        seen_ids.add(d.decision_id)
         wanted = set(parent_types(d.decision_type))
         if not wanted:
             continue

@@ -23,7 +23,7 @@ import numpy as np
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import LogisticRegression
 
-from counterfact.errors import UnsupportedOutcomeError
+from counterfact.errors import InsufficientOutcomeSupportError, UnsupportedOutcomeError
 from counterfact.schema import Run
 
 
@@ -128,6 +128,14 @@ def fit_outcome_model(
         raise ValueError("fit_outcome_model requires at least one trace")
 
     X, y, names, index = _featurize(runs)
+    classes = set(y.tolist())
+    if len(classes) < 2:
+        observed = sorted(classes)
+        raise InsufficientOutcomeSupportError(
+            "fit_outcome_model requires at least two outcome classes for binary "
+            f"outcomes; observed classes={observed}. Collect or construct traces "
+            "with both pass and fail outcomes before fitting an outcome model."
+        )
     base = _fit_lr(X, y)
 
     rng = np.random.default_rng(seed)

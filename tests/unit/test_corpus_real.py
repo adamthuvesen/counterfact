@@ -7,6 +7,7 @@ corpus is a HUMAN GATE (§12.3) and is not exercised here.
 from __future__ import annotations
 
 import random
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -21,7 +22,12 @@ from bench.real.coding_agent import (
 )
 from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
 from bench.real.coding_agent.fixtures import EASY_FIXTURES, run_pytest
-from bench.real.coding_agent.llm import LLMResponse, extract_cost
+from bench.real.coding_agent.llm import (
+    CostUnknownError,
+    LiteLLMClient,
+    LLMResponse,
+    extract_cost,
+)
 from bench.real.coding_agent.runner import (
     check_credentials,
     run_real_corpus,
@@ -392,6 +398,183 @@ def test_resume_after_partial_run(tmp_path: Path) -> None:
     assert set(first_files).issubset(final_files)
 
 
+def test_run_real_corpus__cost_unknown_exits_before_writing_trace(tmp_path: Path) -> None:
+    output = tmp_path / "out"
+    marker = tmp_path / ".counterfact" / "approved"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+
+    class _UnknownCostLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            raise CostUnknownError("price table miss")
+
+    rc = run_real_corpus(
+        n=1,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        llm_client_factory=lambda: _UnknownCostLLM(),
+        marker_path=marker,
+    )
+    assert rc == 5
+    assert list(output.glob("real-*.json")) == []
+
+
+def test_resume_counts_existing_spend_before_new_calls(tmp_path: Path) -> None:
+    output = tmp_path / "out"
+    marker = tmp_path / ".counterfact" / "approved"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+
+    class _CostLLM:
+        def __init__(self, cost: float) -> None:
+            self.cost = cost
+
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text="(no patch)", cost_usd=self.cost)
+
+    rc = run_real_corpus(
+        n=1,
+        budget_cap_usd=10.0,
+        output_dir=output,
+        llm_client_factory=lambda: _CostLLM(0.6),
+        marker_path=marker,
+    )
+    assert rc == 0
+    assert len(list(output.glob("real-*.json"))) == 1
+
+    rc2 = run_real_corpus(
+        n=2,
+        budget_cap_usd=1.0,
+        output_dir=output,
+        llm_client_factory=lambda: _CostLLM(0.3),
+        marker_path=marker,
+    )
+    assert rc2 == 3
+    assert len(list(output.glob("real-*.json"))) == 1
+
+
+def test_resume_halts_before_call_when_existing_spend_exceeds_threshold(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "out"
+    marker = tmp_path / ".counterfact" / "approved"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+
+    class _CostLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text="(no patch)", cost_usd=1.0)
+
+    rc = run_real_corpus(
+        n=1,
+        budget_cap_usd=10.0,
+        output_dir=output,
+        llm_client_factory=lambda: _CostLLM(),
+        marker_path=marker,
+    )
+    assert rc == 0
+
+    class _ExplodingLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            raise AssertionError("resume should halt before a new LLM call")
+
+    rc2 = run_real_corpus(
+        n=2,
+        budget_cap_usd=1.0,
+        output_dir=output,
+        llm_client_factory=lambda: _ExplodingLLM(),
+        marker_path=marker,
+    )
+    assert rc2 == 3
+
+
+def test_resume_rejects_changed_fixture_selection(tmp_path: Path) -> None:
+    output = tmp_path / "out"
+    marker = tmp_path / ".counterfact" / "approved"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+
+    class _NullLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text="(no patch)", cost_usd=0.0)
+
+    assert (
+        run_real_corpus(
+            n=1,
+            budget_cap_usd=5.0,
+            output_dir=output,
+            llm_client_factory=lambda: _NullLLM(),
+            marker_path=marker,
+        )
+        == 0
+    )
+    rc = run_real_corpus(
+        n=2,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        llm_client_factory=lambda: _NullLLM(),
+        marker_path=marker,
+        fixture_ids=("csv_dedupe",),
+    )
+    assert rc == 6
+
+
+def test_resume_rejects_changed_randomization_config(tmp_path: Path) -> None:
+    output = tmp_path / "out"
+    marker = tmp_path / ".counterfact" / "approved"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+
+    class _NullLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text="(no patch)", cost_usd=0.0)
+
+    assert (
+        run_real_corpus(
+            n=1,
+            budget_cap_usd=5.0,
+            output_dir=output,
+            llm_client_factory=lambda: _NullLLM(),
+            marker_path=marker,
+            config=AgentRunConfig(epsilon=0.2, seed=0),
+        )
+        == 0
+    )
+    rc = run_real_corpus(
+        n=2,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        llm_client_factory=lambda: _NullLLM(),
+        marker_path=marker,
+        config=AgentRunConfig(epsilon=0.4, seed=0),
+    )
+    assert rc == 6
+
+
+def test_resume_rejects_existing_traces_without_identity(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    source = next((repo_root / "bench" / "real" / "runs_v1").glob("real-*.json"))
+    output = tmp_path / "out"
+    output.mkdir()
+    shutil.copy(source, output / source.name)
+    marker = tmp_path / ".counterfact" / "approved"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+
+    class _ExplodingLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            raise AssertionError("resume should reject before a new LLM call")
+
+    rc = run_real_corpus(
+        n=2,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        llm_client_factory=lambda: _ExplodingLLM(),
+        marker_path=marker,
+    )
+    assert rc == 6
+
+
 def test_extract_cost__prefers_response_cost_when_present() -> None:
     """If litellm populated response_cost on the response, use it directly."""
     resp = {"choices": [{"message": {"content": "x"}}], "response_cost": 0.0237}
@@ -407,10 +590,10 @@ def test_extract_cost__falls_back_to_completion_cost(monkeypatch: pytest.MonkeyP
     assert extract_cost(resp) == pytest.approx(0.0123)
 
 
-def test_extract_cost__returns_zero_when_both_paths_fail(
+def test_extract_cost__raises_when_both_paths_fail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Last-resort: cost=0 if both response_cost and completion_cost are unavailable."""
+    """Production cost accounting fails closed if both cost paths are unavailable."""
     import litellm  # type: ignore[import-not-found]
 
     resp = {"choices": [{"message": {"content": "x"}}]}
@@ -419,7 +602,28 @@ def test_extract_cost__returns_zero_when_both_paths_fail(
         raise RuntimeError("price table miss")
 
     monkeypatch.setattr(litellm, "completion_cost", _raise)
-    assert extract_cost(resp) == 0.0
+    with pytest.raises(CostUnknownError, match="could not determine"):
+        extract_cost(resp)
+
+
+def test_litellm_client__raises_when_response_cost_is_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import litellm  # type: ignore[import-not-found]
+
+    monkeypatch.setattr(
+        litellm,
+        "completion",
+        lambda **kw: {"choices": [{"message": {"content": "ok"}}]},
+    )
+
+    def _raise(**kw: object) -> float:
+        raise RuntimeError("price table miss")
+
+    monkeypatch.setattr(litellm, "completion_cost", _raise)
+    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"})
+    with pytest.raises(CostUnknownError):
+        client.call(role="small", prompt="fix this")
 
 
 def test_check_credentials__missing_anthropic_key_returns_error() -> None:
@@ -503,3 +707,23 @@ def test_cli_real_subcommand_first_run_prints_approval(tmp_path: Path) -> None:
     combined = proc.stdout + proc.stderr
     assert "HUMAN GATE" in combined
     assert "approved" in combined
+
+
+def test_analyze_pilot_cli_writes_notes_without_provider_calls(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    source_dir = repo_root / "bench" / "real" / "runs_v1"
+    run_dir = tmp_path / "runs"
+    run_dir.mkdir()
+    for path in sorted(source_dir.glob("real-*.json"))[:3]:
+        shutil.copy(path, run_dir / path.name)
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "bench.real.analyze_pilot", str(run_dir)],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode == 0, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    assert "2x2 contingency" in proc.stdout
+    assert (run_dir / "PILOT_NOTES.md").is_file()
