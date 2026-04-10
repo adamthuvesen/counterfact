@@ -1,8 +1,12 @@
 # csv_dedupe pilot (Pilot 3) — n=30
 
-**Date:** 2026-05-02
-**Command:** `counterfact bench real --fixtures csv_dedupe --n 30 --budget-cap 5 --output-dir bench/real/runs_v3_pilot --seed 0 --epsilon 0.2`
-**Cost:** $0.1896 ($0.0063 / trace)
+These notes explain how the hidden/public harness was exercised on `csv_dedupe`
+and why the committed showcase traces live under `bench/real/runs_v1/`.
+
+**Date:** 2026-05-02  
+**Command (historical output dir):**
+`counterfact bench real --fixtures csv_dedupe --n 30 --budget-cap 5 --output-dir bench/real/runs_v3_pilot --seed 0 --epsilon 0.2`  
+**Observed cost:** $0.1896 ($0.0063 / trace)
 
 ## 2×2 contingency (public_pass × hidden_pass)
 
@@ -48,7 +52,7 @@ tests also pass" risk (design.md D6) is the live failure mode. Per design.md:
 
 In this case the *other arms* also produce zero variation: even the small-model
 + unusual-tool branches one-shot a fix. So `csv_dedupe` with the current
-`spec.md` cannot supply the class balance §15.2 needs.
+`spec.md` cannot supply the class balance that internal section 15.2 once asked for.
 
 This is the same fundamental finding as Pilot 1 + Pilot 2 on the v0 hard
 fixtures: **single-file Python bug-fixes with a clear written spec are at
@@ -70,7 +74,7 @@ difficulty, not feedback transparency.
    when the rules are written down*. The harness already supports the
    layout; this is the natural next step.
 3. **(c) Pivot Path 2's framing.** Use the corpus as a "harness-correctness"
-   demo and explicitly drop the §15.2 class-balance criterion — the demo
+   demo and explicitly drop the class-balance criterion — the demo
    shows that `counterfact` produces honest `unidentified` results when
    intervention support is degenerate. Less compelling but ships sooner.
 
@@ -82,17 +86,14 @@ shelved as "implementation works, signal too weak to drive the corpus."
 
 ## What to keep from this pilot
 
-- The hidden/public split harness, all the schema fields, the verifier label
-  `pytest_hidden`, and the test invariants — none of those need changing.
-- `csv_dedupe` itself stays in the registry as a regression fixture for
-  harness-level tests; it just doesn't drive the demo corpus.
-- The 30 traces in `bench/real/runs_v3_pilot/` are not the demo corpus, but
-  they are honest evidence in the demo notebook: "we built the contract, ran
-  it, and the gap didn't materialize at this fixture's difficulty."
+- The hidden/public split harness, schema fields, the verifier label
+  `pytest_hidden`, and test invariants — none of those need changing.
+- `csv_dedupe` stays in the registry as a regression fixture for
+  harness-level tests; it drives the qualitative demo via the committed corpus.
+- These 30 traces are the **`bench/real/runs_v1/`** corpus: same content as was
+  produced during this pilot, kept as the canonical public artifact.
 
----
-
-## Postscript (2026-05-02): pilot informed the identifiability-first pivot
+## Identifiability-first pivot
 
 This pilot's null result drove the identifiability-first pivot. Three pilots in
 a row producing 30/30 pass — across Sonnet 4.6 and Haiku 4.5, with and without
@@ -101,12 +102,6 @@ CI-width ship-gate criteria. The reframed v0 ships with a smaller, honest corpus
 and a demo whose headline is "naive vs honest" rather than "identified effect =
 X".
 
-The 30 csv_dedupe traces here are now part of the demo notebook's "real
-corpus" story: the notebook loads from `bench/real/runs_v1/` if present,
-falling back to `bench/real/runs_v3_pilot/` otherwise. When loaded, they
-demonstrate exactly the failure mode the pivot was built to surface — a
-causally degenerate corpus where the back-door criterion cannot be
-evaluated and `intervene()` correctly refuses to claim a difference.
-
-In other words: this is no longer "Pilot 3 — gate failed". It is
-"Pilot 3 — the demo's evidence that `counterfact` says no when it should."
+The committed `runs_v1` traces demonstrate the failure mode the pivot was built
+to surface — a causally degenerate corpus where outcome variation is absent and
+`intervene()` correctly refuses to invent a causal difference between arms.

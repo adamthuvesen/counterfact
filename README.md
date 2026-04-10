@@ -38,7 +38,7 @@ reason: real corpus is causally degenerate: every trace has Outcome.value=True; 
 next_step: broaden_arm_support - Collect or construct traces with both pass and fail outcomes before estimating decision-level effects on the real corpus.
 ```
 
-See [docs/demo-excerpt.md](docs/demo-excerpt.md) for the rendered notebook-style excerpt.
+See [docs/demo-excerpt.md](docs/demo-excerpt.md) for the rendered notebook-style excerpt. For how the `csv_dedupe` corpus in `bench/real/runs_v1/` was piloted, see [docs/pilot-csv-dedupe.md](docs/pilot-csv-dedupe.md).
 
 ## Why This Matters
 
@@ -119,7 +119,7 @@ uv run ruff check .
 uv run pytest
 ```
 
-Current local gate: `139 passed, 2 skipped`; the skipped tests are human-gated attribution checks.
+CI and a clean checkout should pass all non-skipped tests (`ruff check` + full `pytest`). A small number of tests skip unless optional human labels are present.
 
 ## What v0 Does Not Claim
 
