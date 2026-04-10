@@ -48,6 +48,7 @@ data/interim/
 data/processed/
 runs/
 checkpoints/
+**/.checkpoints/
 *.parquet
 *.duckdb
 *.sqlite

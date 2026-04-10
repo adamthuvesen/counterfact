@@ -6,7 +6,7 @@ generalization gap exists and we replicate to date_window + rate_limit.
 Otherwise we stop and rethink.
 
 Run:
-    uv run python -m bench.real.analyze_pilot bench/real/runs_v3_pilot
+    uv run python -m bench.real.analyze_pilot bench/real/runs_v1
 """
 
 from __future__ import annotations
