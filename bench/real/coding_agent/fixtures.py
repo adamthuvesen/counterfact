@@ -97,11 +97,11 @@ HIDDEN_FIXTURES: tuple[FixtureSpec, ...] = (
     ),
 )
 
-HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = (
+HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = tuple(
     fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe"
 )
 
-HARD_HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = (
+HARD_HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = tuple(
     fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "date_window"
 )
 
