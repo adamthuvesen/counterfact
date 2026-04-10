@@ -18,29 +18,30 @@ uv run pytest
 uv run counterfact demo
 ```
 
-The demo command is local-only. It uses the committed `bench/real/runs_v1/` corpus when present and falls back to synthetic SCM traces when it is not. It does not call the real-agent LLM harness or require provider credentials.
+The demo command is local-only. It defaults to the committed `bench/real/runs_v2/` corpus (30 mixed-outcome `date_window` traces) and falls back to `runs_v1/` (single-class anchor) and then to synthetic SCM traces when neither real corpus is present. It does not call the real-agent LLM harness or require provider credentials.
 
 Example output:
 
 ```text
 counterfact demo: naive vs honest
-data: bench/real/runs_v1
-outcomes: 30 pass / 0 fail
+data: bench/real/runs_v2
+outcomes: 14 pass / 16 fail
 
 pass_rate_by_arm(model_call)
 arm              n  pass  rate    95% CI
-large           28    28 1.000  [0.879, 1.000]
-small            2     2 1.000  [0.342, 1.000]
+large            8     8 1.000  [0.676, 1.000]
+small           22     6 0.273  [0.132, 0.482]
 
-intervene(model_call -> large)
-identifiability: unidentified
-reason: real corpus is causally degenerate: every trace has Outcome.value=True; no outcome variation exists for an outcome model or back-door adjustment to leverage
-warning: fit_outcome_model is intentionally skipped for single-class real corpora
-next_step: broaden_arm_support - Collect or construct traces with both pass and fail outcomes before estimating decision-level effects on the real corpus.
-suggested_command: uv run counterfact bench real --n 30 --fixture-set hard_hidden_v1 --model-greedy large --model-epsilon 0.5
+intervene(model_call -> small)
+identifiability: identified
+outcome_delta: 0.332 [0.179, 0.493]
+next_step: increase_n - CI width 0.314 > 0.10; ~416 traces would tighten it.
+suggested_command: uv run counterfact bench real --n 416 --fixture-set hard_hidden_v1
 ```
 
-See [docs/demo-excerpt.md](docs/demo-excerpt.md) for the rendered notebook-style excerpt. For how the `csv_dedupe` corpus in `bench/real/runs_v1/` was piloted, see [docs/pilot-csv-dedupe.md](docs/pilot-csv-dedupe.md).
+Pointing the demo at `runs_v1` (`uv run counterfact demo --runs-dir bench/real/runs_v1`) reproduces the original "honest refusal" branch — the engine refuses to fit a single-class outcome model and emits an `unidentified` verdict with `next_step: broaden_arm_support`. Both branches are intended.
+
+See [docs/demo-excerpt.md](docs/demo-excerpt.md) for the rendered notebook-style excerpt and [bench/real/README.md](bench/real/README.md) for the corpus-promotion convention.
 
 ## Why This Matters
 
@@ -64,7 +65,7 @@ Sometimes `counterfact` can estimate that. Sometimes it can only bound it. Somet
 - `pass_rate_by_arm()` naive baseline table
 - `power_analysis()` rough sample-size guidance
 - Synthetic SCM benchmark with a known treatment effect
-- Real-agent coding harness with randomized decisions, budget gate, hidden/public fixture support, and a committed 30-trace `runs_v1` pilot corpus
+- Real-agent coding harness with randomized decisions, budget gate, hidden/public fixture support, and two committed pilot corpora: `runs_v1` (30 csv_dedupe traces, single-class anchor) and `runs_v2` (30 date_window traces, mixed outcomes, default for the demo)
 - Demo notebook and acceptance tests around the naive-vs-honest story
 
 ### NextStep payload contract
@@ -113,7 +114,7 @@ print(estimate.assumptions)
 print(estimate.next_step)
 ```
 
-The committed real corpus currently has one outcome class, so the CLI demo intentionally surfaces the degenerate case instead of fitting logistic regression. Use the synthetic SCM, as above, or a mixed-outcome real corpus for identified estimates.
+The default committed real corpus (`runs_v2`) has mixed outcomes, so the CLI demo fits the outcome model and returns an `identified` estimate. The legacy `runs_v1` corpus is single-class by construction and exists to keep the engine's "honest refusal" path exercised — point the demo at it explicitly to see that branch.
 
 ## CLI
 
