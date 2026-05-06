@@ -22,11 +22,14 @@ ROLE_TO_MODEL: dict[str, str] = {
     "large": "claude-sonnet-4-6",
 }
 
+DEFAULT_MAX_TOKENS = 4096
+
 
 @dataclass
 class LLMResponse:
     text: str
     cost_usd: float
+    finish_reason: str | None = None
 
 
 class CostUnknownError(RuntimeError):
@@ -98,8 +101,10 @@ class LiteLLMClient:
         resp = litellm.completion(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1024,
+            max_tokens=DEFAULT_MAX_TOKENS,
         )
-        text = resp["choices"][0]["message"]["content"]
+        choice = resp["choices"][0]
+        text = choice["message"]["content"]
+        finish_reason = choice.get("finish_reason")
         cost = extract_cost(resp)
-        return LLMResponse(text=text, cost_usd=cost)
+        return LLMResponse(text=text, cost_usd=cost, finish_reason=finish_reason)

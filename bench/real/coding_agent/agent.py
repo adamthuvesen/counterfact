@@ -88,40 +88,98 @@ corrected source file inside a fenced ```python``` block.
 _CODE_FENCE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
 
 
-def _defines_function(source: str, function_name: str) -> bool:
+@dataclass(frozen=True)
+class _ExpectedSymbol:
+    name: str
+    kind: str
+
+
+@dataclass(frozen=True)
+class _ExtractionResult:
+    code: str | None
+    status: str
+    reason: str | None
+
+
+def _defines_symbol(source: str, expected: _ExpectedSymbol) -> bool:
     try:
         module = ast.parse(source)
     except SyntaxError:
         return False
+    node_type = ast.ClassDef if expected.kind == "class" else ast.FunctionDef
     return any(
-        isinstance(node, ast.FunctionDef) and node.name == function_name
+        isinstance(node, node_type) and node.name == expected.name
         for node in module.body
     )
 
 
-def _first_public_function(source: str) -> str | None:
+def _first_public_symbol(source: str) -> _ExpectedSymbol | None:
     try:
         module = ast.parse(source)
     except SyntaxError:
         return None
     for node in module.body:
-        if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
-            return node.name
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and not node.name.startswith("_"):
+            kind = "class" if isinstance(node, ast.ClassDef) else "function"
+            return _ExpectedSymbol(name=node.name, kind=kind)
     return None
 
 
-def _extract_python_block(text: str, *, expected_function: str | None = None) -> str | None:
+def _extract_python_source(
+    text: str,
+    *,
+    expected_symbol: _ExpectedSymbol | None = None,
+) -> _ExtractionResult:
     m = _CODE_FENCE.search(text)
     if m:
-        return m.group(1).rstrip() + "\n"
-    if expected_function is None:
-        return None
+        code = m.group(1).rstrip() + "\n"
+        return _ExtractionResult(code=code, status="extracted", reason=None)
+    if expected_symbol is None:
+        return _ExtractionResult(
+            code=None,
+            status="failed",
+            reason="no_fenced_python_block_or_expected_symbol",
+        )
     source = text.strip()
     if not source:
-        return None
-    if not _defines_function(source, expected_function):
-        return None
-    return source.rstrip() + "\n"
+        return _ExtractionResult(code=None, status="failed", reason="empty_response")
+    try:
+        ast.parse(source)
+    except SyntaxError:
+        return _ExtractionResult(code=None, status="failed", reason="raw_response_not_python")
+    if not _defines_symbol(source, expected_symbol):
+        return _ExtractionResult(
+            code=None,
+            status="failed",
+            reason=f"missing_expected_{expected_symbol.kind}:{expected_symbol.name}",
+        )
+    return _ExtractionResult(code=source.rstrip() + "\n", status="extracted", reason=None)
+
+
+def _extract_python_block(text: str, *, expected_function: str | None = None) -> str | None:
+    expected_symbol = (
+        _ExpectedSymbol(name=expected_function, kind="function")
+        if expected_function is not None
+        else None
+    )
+    return _extract_python_source(text, expected_symbol=expected_symbol).code
+
+
+def _model_observation_content(
+    resp_text: str,
+    cost_usd: float,
+    extraction: _ExtractionResult,
+    finish_reason: str | None,
+) -> dict[str, object]:
+    return {
+        "response_chars": len(resp_text),
+        "raw_response_chars": len(resp_text),
+        "cost_usd": cost_usd,
+        "finish_reason": finish_reason,
+        "extraction_status": extraction.status,
+        "extraction_failure_reason": extraction.reason,
+        "extracted_code": extraction.code,
+    }
 
 
 def _charge(
@@ -231,7 +289,7 @@ def run_one_trace(
     sandbox = snapshot_fixture(fixture, sandbox_root)
     src_path = sandbox / "src" / fixture.source_relpath
     hidden = is_hidden_fixture(fixture)
-    expected_function = _first_public_function(src_path.read_text())
+    expected_symbol = _first_public_symbol(src_path.read_text())
 
     def _run_tests_in_loop() -> tuple[bool, str]:
         return run_pytest_public(sandbox) if hidden else run_pytest(sandbox)
@@ -319,7 +377,8 @@ def run_one_trace(
     prompt = build_fix_prompt(fixture, sandbox)
     resp = llm.call(role=model_action, prompt=prompt)
     _charge(budget, resp.cost_usd, ledger_path)
-    patched = _extract_python_block(resp.text, expected_function=expected_function)
+    extraction = _extract_python_source(resp.text, expected_symbol=expected_symbol)
+    patched = extraction.code
     steps.append(
         Step(
             step_index=step_index,
@@ -338,11 +397,12 @@ def run_one_trace(
             observations=[
                 Observation(
                     observation_id=f"o-{run_index:06d}-model-1",
-                    content={
-                        "response_chars": len(resp.text),
-                        "cost_usd": resp.cost_usd,
-                        "extracted_code": patched,
-                    },
+                    content=_model_observation_content(
+                        resp.text,
+                        resp.cost_usd,
+                        extraction,
+                        resp.finish_reason,
+                    ),
                 )
             ],
         )
@@ -416,7 +476,8 @@ def run_one_trace(
     )
     resp2 = llm.call(role=model_action, prompt=retry_prompt)
     _charge(budget, resp2.cost_usd, ledger_path)
-    patched2 = _extract_python_block(resp2.text, expected_function=expected_function)
+    extraction2 = _extract_python_source(resp2.text, expected_symbol=expected_symbol)
+    patched2 = extraction2.code
     steps.append(
         Step(
             step_index=step_index,
@@ -439,11 +500,12 @@ def run_one_trace(
             observations=[
                 Observation(
                     observation_id=f"o-{run_index:06d}-model-2",
-                    content={
-                        "response_chars": len(resp2.text),
-                        "cost_usd": resp2.cost_usd,
-                        "extracted_code": patched2,
-                    },
+                    content=_model_observation_content(
+                        resp2.text,
+                        resp2.cost_usd,
+                        extraction2,
+                        resp2.finish_reason,
+                    ),
                 )
             ],
         )

@@ -936,6 +936,43 @@ def test_hidden_outcome_when_reference_passes_both(tmp_path: Path) -> None:
     assert md["generalization_gap"] is False
 
 
+def test_stateful_raw_class_response_is_extracted_and_evaluated(
+    tmp_path: Path,
+) -> None:
+    """Stateful fixtures expose a class, not a public function.
+
+    A valid full-file class response without a Markdown fence should still be
+    applied so pilots measure hidden semantics, not fence formatting.
+    """
+    from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
+    from bench.real.coding_agent.budget import BudgetTracker
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    fixture = next(
+        fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe"
+    )
+    reference = (fixture.root / "src" / "_watermark_dedupe_reference.py").read_text()
+    run = run_one_trace(
+        fixture,
+        run_index=0,
+        llm=_stub_llm_returning(reference),  # type: ignore[arg-type]
+        budget=BudgetTracker(cap_usd=1.0),
+        sandbox_root=tmp_path,
+        config=AgentRunConfig(epsilon=0.0, seed=42),
+    )
+
+    model_obs = next(
+        step.observations[0].content
+        for step in run.steps
+        if any(d.decision_type == "model_call" for d in step.decisions)
+    )
+    assert model_obs["extraction_status"] == "extracted"
+    assert "class WatermarkDeduper" in model_obs["extracted_code"]
+    assert run.outcome.value is True
+    assert run.outcome.metadata["public_pass"] is True
+    assert run.outcome.metadata["hidden_pass"] is True
+
+
 def test_hidden_outcome_records_generalization_gap(tmp_path: Path) -> None:
     """Req: Outcome metadata records public, hidden, and generalization gap
     Req: Hidden-test verifier runs once after the loop and defines Outcome
