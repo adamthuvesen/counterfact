@@ -56,6 +56,8 @@ checkpoints/
 # Counterfact runtime artifacts
 .counterfact/
 bench/real/runs/
+bench/real/runs_pilot_*/
+bench/real/_archive/
 bench/synthetic/_out/
 
 # uv
