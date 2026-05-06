@@ -1,6 +1,6 @@
 """Self-test anchors for the corpus-readiness analyzer.
 
-These two tests pin the analyzer's discriminating power: `runs_v1` is the
+These two tests pin the analyzer's discriminating power: `runs_single_class` is the
 canonical degenerate corpus and must never promote; the synthetic SCM is the
 canonical mixed-outcome corpus and must always promote. If either anchor
 breaks, the rubric or the analyzer is wrong, not the test.
@@ -17,16 +17,16 @@ from counterfact import analyze_corpus
 from counterfact.schema import Run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RUNS_V1_DIR = REPO_ROOT / "bench" / "real" / "runs_v1"
+RUNS_SINGLE_CLASS_DIR = REPO_ROOT / "bench" / "real" / "runs_single_class"
 RUNS_V2_DIR = REPO_ROOT / "bench" / "real" / "runs_v2"
 
 
-def _load_runs_v1() -> list[Run]:
-    if not RUNS_V1_DIR.exists():
-        pytest.skip(f"runs_v1 corpus absent at {RUNS_V1_DIR}")
+def _load_runs_single_class() -> list[Run]:
+    if not RUNS_SINGLE_CLASS_DIR.exists():
+        pytest.skip(f"runs_single_class corpus absent at {RUNS_SINGLE_CLASS_DIR}")
     return [
         Run.model_validate_json(p.read_text())
-        for p in sorted(RUNS_V1_DIR.glob("*.json"))
+        for p in sorted(RUNS_SINGLE_CLASS_DIR.glob("*.json"))
     ]
 
 
@@ -39,8 +39,8 @@ def _load_runs_v2() -> list[Run]:
     ]
 
 
-def test_runs_v1_anchor_scores_unidentified_only() -> None:
-    runs = _load_runs_v1()
+def test_runs_single_class_anchor_scores_unidentified_only() -> None:
+    runs = _load_runs_single_class()
     report = analyze_corpus(runs)
     assert report.promote is False
     assert report.identifiability_coverage.unfittable_outcome_model is True

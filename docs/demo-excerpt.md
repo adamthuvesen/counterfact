@@ -1,57 +1,86 @@
-# Demo Excerpt: Naive vs Honest
+# Demo Excerpt: Naive vs Causal
 
-This excerpt mirrors the v0 notebook story in a compact GitHub-friendly form
-on the canonical `runs_v2` corpus (30 `date_window` traces, mixed outcomes
-from inverted-greedy randomization). The earlier `runs_v1` corpus
-(single-class) is still committed as a regression anchor for the engine's
-"honest refusal" branch — point the CLI at it with
-`--runs-dir bench/real/runs_v1` to see that branch instead.
+The canonical `counterfact` demo is the **confounded synthetic showcase** —
+a deterministic, no-spend corpus where the descriptive `pass_rate_by_arm`
+baseline overstates what the data supports and the engine's g-formula
+adjustment recovers the true do-calculus arm gap. The synthetic SCM is the
+right surface to teach the project's product stance: ground truth, controlled
+confounding, deterministic seeds, and a structure where the marginal table
+and the causal estimate disagree on purpose.
 
-## Naive Baseline
+```text
+counterfact demo: naive vs honest
+data: synthetic SCM (confounded, n=1000, seed=42)
+outcomes: 514 pass / 486 fail
 
-`pass_rate_by_arm(model_call)` on the committed `runs_v2` corpus:
+pass_rate_by_arm(model_call)
+arm              n  pass  rate    95% CI
+haiku          581   212 0.365  [0.327, 0.405]
+sonnet         419   302 0.721  [0.676, 0.762]
+
+intervene(model_call -> sonnet)
+identifiability: identified
+outcome_delta: 0.663 [0.619, 0.704]
+next_step: none - CI width 0.085 ≤ 0.10; no further action required.
+naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (do-calculus, g-formula) = +0.251; the marginal table overstates what the corpus supports — see DAG and assumptions.
+```
+
+## What the contrast says
+
+The naive `pass_rate_by_arm` table reports a **+0.356** arm gap between
+sonnet and haiku. The engine's g-formula adjustment, working off the same
+corpus, reports a **+0.251** causal arm gap — and that number matches the
+SCM's known do-calculus headline (`HEADLINE_TRUE_EFFECT ≈ 0.233`) within the
+project's `±0.05` recovery tolerance. The marginal table is descriptive and
+limited; it does not, by itself, license the causal claim because
+`tool_choice` is a back-door confounder for the `model_choice → outcome`
+relationship and the descriptive view does not adjust for it. The engine
+does, because `tool_choice` is in the outcome model's feature set and the
+g-formula marginalizes over the empirical `(tool, retry)` distribution.
+
+That is the product stance in one comparison: when the corpus supports the
+question and the back-door variables are observed, `counterfact` returns a
+labelled estimate with a bootstrap CI; when the descriptive view and the
+causal estimate disagree, the disagreement is the diagnostic.
+
+## The real-trace smoke test
+
+Without `--confound`, `counterfact demo` runs the same flow against the
+committed real corpus, `bench/real/runs_v2/` (30 `date_window` traces,
+mixed-outcome from inverted-greedy randomization). It is intentionally
+small — a smoke test that the engine works on real-agent traces, not the
+statistical headline. The CI is wide and the naive arm gap and the engine's
+estimate happen to point the same direction; the report is honest about that
+shape.
 
 | arm | n | pass | pass rate | 95% CI |
 | --- | ---: | ---: | ---: | --- |
 | large | 8 | 8 | 1.000 | [0.676, 1.000] |
 | small | 22 | 6 | 0.273 | [0.132, 0.482] |
 
-The descriptive read is clear: the small arm fails most of the time, the
-large arm is almost always right. But a marginal table cannot tell you
-whether that gap is causal — the agent's other randomized decisions covary
-with the model arm, and the per-arm CIs alone do not adjust for that.
+`intervene(model_call -> small)` on the same corpus returns
+`identifiability=identified` with `outcome_delta=0.332 [0.179, 0.493]` and a
+`next_step.action="increase_n"` recommending ~416 traces to tighten the CI.
 
-## Honest Causal Verdict
+## The single-class regression anchor
 
-`intervene(model_call -> small)` on the same corpus:
-
-| field | value |
-| --- | --- |
-| identifiability | `identified` |
-| outcome_delta | `0.332 [0.179, 0.493]` |
-| next step | `increase_n`: CI width 0.314 > 0.10; ~416 traces would tighten it |
-| suggested command | `uv run counterfact bench real --n 416 --fixture-set hard_hidden_v1` |
-
-That is the product stance: when the corpus supports the question,
-`counterfact` returns an estimate with a bootstrap CI *and* names the
-concrete sample size that would shrink it. When the corpus does not (the
-`runs_v1` branch), the same engine refuses to fit a one-class outcome model
-and returns `unidentified` with `next_step.action = broaden_arm_support`.
-
-The naive table and the honest verdict do not contradict each other here —
-the headline is that `counterfact` produces a labeled estimate alongside the
-descriptive baseline so consumers can tell which one to trust.
+A small companion corpus, `runs_single_class` (3 single-class traces from
+the original `csv_dedupe` pilot), is committed as the regression anchor for
+the engine's "honest refusal" branch. Pointed at it
+(`--runs-dir bench/real/runs_single_class`), the same engine refuses to fit
+a one-class outcome model and returns `unidentified` with
+`next_step.action=broaden_arm_support`. That refusal is itself the feature.
 
 ## Per-Trace HTML Report
 
 For a single trace, `counterfact explain <run-json>` renders a
-self-contained HTML report that mirrors this naive-vs-honest framing:
-the descriptive `pass_rate_by_arm` table at the top, the per-trace DAG
-inline as SVG with the top-attributed decision highlighted, and one
-`CausalEstimate` card per ranked decision below. Cards are colour-coded
-by `IdentifiabilityStatus`, and numeric `outcome_delta` blocks are
-structurally suppressed when a card is `unidentified` so the report
-cannot accidentally smuggle a fake estimate through. Pointing it at a
-single-class run (e.g. anything in `runs_v1`) renders exactly one
-`unidentified` card with the `broaden_arm_support` next-step callout
-and no point estimate anywhere on the page.
+self-contained HTML report that mirrors this naive-vs-causal framing: the
+descriptive `pass_rate_by_arm` table at the top, the per-trace DAG inline
+as SVG with the top-attributed decision highlighted, and one
+`CausalEstimate` card per ranked decision below. Cards are colour-coded by
+`IdentifiabilityStatus`, and numeric `outcome_delta` blocks are
+structurally suppressed when a card is `unidentified` so the report cannot
+emit an estimate the data does not support. Pointing it at a single-class
+run (e.g. anything in `runs_single_class`) renders exactly one
+`unidentified` card with the `broaden_arm_support` next-step callout and no
+point estimate anywhere on the page.

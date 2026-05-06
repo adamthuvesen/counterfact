@@ -621,7 +621,7 @@ def test_resume_rejects_changed_randomization_config(tmp_path: Path) -> None:
 
 def test_resume_rejects_existing_traces_without_identity(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    source = next((repo_root / "bench" / "real" / "runs_v1").glob("real-*.json"))
+    source = next((repo_root / "bench" / "real" / "runs_single_class").glob("real-*.json"))
     output = tmp_path / "out"
     output.mkdir()
     shutil.copy(source, output / source.name)
@@ -779,7 +779,7 @@ def test_cli_real_subcommand_first_run_prints_approval(tmp_path: Path) -> None:
 
 def test_analyze_pilot_cli_writes_notes_without_provider_calls(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    source_dir = repo_root / "bench" / "real" / "runs_v1"
+    source_dir = repo_root / "bench" / "real" / "runs_single_class"
     run_dir = tmp_path / "runs"
     run_dir.mkdir()
     for path in sorted(source_dir.glob("real-*.json"))[:3]:

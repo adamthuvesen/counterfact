@@ -6,17 +6,21 @@ them post-hoc and the demo points at one as its evidence base.
 
 ## Output directories
 
-- **`runs_v2/`** — the canonical mixed-outcome corpus. 30 `date_window`
+- **`runs_v2/`** — the messy real-trace smoke test. 30 `date_window`
   traces from the `hard_hidden_v1` set, generated with
   `--model-greedy small --model-epsilon 0.67 --seed 1`. Cleared
   `counterfact analyze corpus` with `promote: True` (pass rate 0.467, both
   `model_call` arms supported, `identified` and `unidentified` reachable).
-  This is the corpus the demo and the v0 ship gate point at by default.
-- **`runs_v1/`** — the original degenerate-case showcase. Single-class
-  outcomes (30/30 pass on `csv_dedupe`). Kept committed as a regression
-  anchor for the analyzer (it must never promote) and as evidence that the
-  demo's "honest refusal" branch still lands when handed a degenerate
-  corpus. Never modified.
+  This is the corpus `counterfact demo` (no `--confound` flag) points at by
+  default — proof the engine works on real-agent traces. The headline
+  showcase is the confounded synthetic demo (`counterfact demo --confound`);
+  this corpus is the smoke test that the engine still works on data the
+  project did not synthesize.
+- **`runs_single_class/`** — the single-class regression anchor. 3 csv_dedupe
+  traces (a trimmed subset of the original 30-trace `csv_dedupe` pilot)
+  kept committed as a regression anchor for the analyzer (it must never
+  promote) and as evidence that the demo's "honest refusal" branch still
+  lands when handed a degenerate corpus. Never modified.
 - **`runs_pilot_<YYYY-MM-DD>/`** — where new pilots write by default. Pilots
   are exploratory; they may or may not clear the analyzer. They are not
   committed unless they pass the promotion gate.

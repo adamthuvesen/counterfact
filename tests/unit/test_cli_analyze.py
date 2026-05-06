@@ -11,13 +11,13 @@ from counterfact.cli import main
 from counterfact.schema import Run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RUNS_V1_DIR = REPO_ROOT / "bench" / "real" / "runs_v1"
+RUNS_SINGLE_CLASS_DIR = REPO_ROOT / "bench" / "real" / "runs_single_class"
 
 
-def test_analyze_runs_v1_exits_1_with_outcome_balance_failure(capsys) -> None:
-    if not RUNS_V1_DIR.exists():
-        pytest.skip(f"runs_v1 corpus absent at {RUNS_V1_DIR}")
-    rc = main(["analyze", "corpus", str(RUNS_V1_DIR)])
+def test_analyze_runs_single_class_exits_1_with_outcome_balance_failure(capsys) -> None:
+    if not RUNS_SINGLE_CLASS_DIR.exists():
+        pytest.skip(f"runs_single_class corpus absent at {RUNS_SINGLE_CLASS_DIR}")
+    rc = main(["analyze", "corpus", str(RUNS_SINGLE_CLASS_DIR)])
     out = capsys.readouterr().out
     assert rc == 1
     assert "FAIL outcome_balance:" in out

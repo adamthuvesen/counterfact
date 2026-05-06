@@ -354,7 +354,7 @@ def test_top1_attribution_label_artifact_is_present() -> None:
 
     The full top-1 acceptance test lives in
     tests/acceptance/test_top1_attribution.py and runs against the real
-    corpus when both labels and runs_v1 are populated. This gate-level
+    corpus when both labels and runs_single_class are populated. This gate-level
     test is a presence check so the gate's structure is auditable here too;
     it skips when no label has been added yet (the §14.1 HUMAN GATE)."""
     labels_path = REPO_ROOT / "bench" / "real" / "coding_agent" / "labels.json"

@@ -42,10 +42,10 @@ def _synthetic_corpus(n: int = 24, seed: int = 7) -> list[Run]:
     return [Run.model_validate(t) for t in generate_traces(n=n, seed=seed)]
 
 
-def _runs_v1_corpus() -> list[Run]:
+def _runs_single_class_corpus() -> list[Run]:
     return [
         Run.model_validate_json(p.read_text())
-        for p in sorted(Path("bench/real/runs_v1").glob("*.json"))
+        for p in sorted(Path("bench/real/runs_single_class").glob("*.json"))
     ]
 
 
@@ -288,6 +288,22 @@ def test_render__identified_card_shows_outcome_delta_with_three_decimals() -> No
     assert "outcome_delta.point" in card
 
 
+def test_render__identified_card_renders_assumptions_list() -> None:
+    """Non-empty `CausalEstimate.assumptions` must surface in the rendered
+    card. Each assumption is a separate list item."""
+    identified = _identified_estimate()
+    unid = _unidentified_estimate()
+    attribution = _make_synthetic_attribution(identified, unid)
+    report = _hand_built_report(attribution)
+    html = render_html(report, now=FIXED_NOW)
+    card = _isolate_card(html, "identified")
+
+    # The fixture's assumption text appears verbatim inside the card.
+    assert "positivity holds for model_call" in card
+    # And it is rendered as a list item, not loose prose.
+    assert "<li>positivity holds for model_call</li>" in card
+
+
 def test_render__bounded_e_value_is_emitted_when_present_and_hidden_when_none() -> None:
     base_unid = _unidentified_estimate()
 
@@ -467,9 +483,9 @@ def test_render__byte_identical_for_fixed_inputs_and_clock() -> None:
 
 
 def test_render__single_class_corpus_produces_no_decimal_point_estimate() -> None:
-    """End-to-end: the runs_v1 single-class path must render the
+    """End-to-end: the runs_single_class single-class path must render the
     unidentified card with no card-level decimal estimate."""
-    corpus = _runs_v1_corpus()
+    corpus = _runs_single_class_corpus()
     focal = corpus[0]
     report = build_report(focal, corpus, bootstrap=20, seed=42)
     html = render_html(report, now=FIXED_NOW)
