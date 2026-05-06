@@ -629,12 +629,60 @@ def test_render__decision_card_unidentified_has_no_decimal_estimate() -> None:
     report = _hand_built_report(attribution)
     html = render_html(report, now=FIXED_NOW)
 
-    start = html.find('<article class="decision-card ident-unidentified"')
+    start = html.find('<details class="decision-card ident-unidentified"')
     assert start != -1
-    end = html.find("</article>", start)
+    end = html.find("</details>", start)
     card = html[start:end]
     assert re.search(r"\d+\.\d+\s*\[", card) is None
     assert "next_step.action=broaden_arm_support" in card
+
+
+def test_render__decision_cards_are_collapsible_details() -> None:
+    identified = _identified_estimate()
+    unid = _unidentified_estimate()
+    attribution = _make_synthetic_attribution(identified, unid)
+    report = _hand_built_report(attribution)
+    html = render_html(report, now=FIXED_NOW)
+
+    section = _extract_section(html, "Decision cards")
+    assert "<details" in section
+    assert "<summary>" in section
+    assert "https://" not in section
+
+
+def test_render__diagnosis_summary_renders_before_timeline() -> None:
+    report = _build_synthetic_report().model_copy(
+        update={
+            "diagnosis_summary": (
+                "Run syn-000000: most plausible supported failure point is d-model."
+            )
+        }
+    )
+    html = render_html(report, now=FIXED_NOW)
+
+    diagnosis_pos = html.find("<h2>Diagnosis summary</h2>")
+    timeline_pos = html.find("<h2>Trace timeline</h2>")
+    assert diagnosis_pos != -1
+    assert timeline_pos != -1
+    assert diagnosis_pos < timeline_pos
+    assert "most plausible supported failure point" in html
+
+
+def test_render__counterfactual_lookup_hides_unidentified_numbers() -> None:
+    identified = _identified_estimate()
+    unid = _unidentified_estimate()
+    report = _build_synthetic_report().model_copy(
+        update={"counterfactual_lookup": [identified, unid]}
+    )
+    html = render_html(report, now=FIXED_NOW)
+    section = _extract_section(html, "Counterfactual lookup")
+
+    assert "outcome_delta=0.332 [0.179, 0.493]" in section
+    assert "identifiability=unidentified" in section
+    unidentified_row_start = section.find("identifiability=unidentified")
+    unidentified_row_end = section.find("</div>", unidentified_row_start)
+    unidentified_row = section[unidentified_row_start:unidentified_row_end]
+    assert re.search(r"\d+\.\d+\s*\[", unidentified_row) is None
 
 
 def test_render__svg_node_set_matches_dag() -> None:

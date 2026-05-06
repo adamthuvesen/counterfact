@@ -24,6 +24,17 @@ Requires Python 3.11+.
 
 ## Quickstart
 
+Diagnose a failed trace against its corpus:
+
+```bash
+uv run counterfact diagnose bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000000.json \
+  --runs-dir bench/real/smoke_mixed_outcome
+```
+
+`diagnose` ranks likely load-bearing decisions, shows which counterfactual
+questions the corpus can honestly support, and gives the next data-collection
+step when the answer is `unidentified`.
+
 Run the deterministic local demo:
 
 ```bash
@@ -33,6 +44,29 @@ uv run counterfact demo --confound --synthetic-n 1000 --seed 42
 It prints a descriptive pass-rate table, a causal intervention estimate, and the contrast between the two. The table says what happened in the logged corpus. The intervention estimate asks what the model predicts under a declared decision edit. Those are different claims.
 
 ## CLI
+
+### Diagnose A Failed Trace
+
+```bash
+uv run counterfact diagnose bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000000.json \
+  --runs-dir bench/real/smoke_mixed_outcome \
+  --top-k 3
+```
+
+Use `--json` to emit the reusable diagnosis artifact. Numeric effects appear
+only when the underlying `CausalEstimate` is identified or bounded; unsupported
+entries carry concrete `next_step` guidance instead.
+
+### Compare Two Traces
+
+```bash
+uv run counterfact compare pass.json fail.json
+```
+
+This is a descriptive trace diff: outcome, steps, decision actions, and
+observation counts. Add `--runs-dir <corpus> --focal right` to overlay a
+corpus-backed diagnosis for one side. Without a corpus, `compare` does not make
+causal claims.
 
 ### Explain A Trace
 
@@ -73,7 +107,58 @@ Useful trace-level questions:
 uv run counterfact analyze corpus bench/real/smoke_mixed_outcome
 ```
 
-The analyzer checks whether a trace corpus has enough support to be useful as a committed real-trace corpus. It reports; it does not promote or rename anything.
+The analyzer checks whether a trace corpus has enough support for
+counterfactual trace diagnosis and intervention estimates. It reports; it does
+not promote, score, rank, or rename anything.
+
+### Ingest Generic JSONL
+
+```bash
+uv run counterfact ingest generic-jsonl source.jsonl \
+  --mapping mapping.json \
+  --output-dir traces/
+```
+
+The mapping file is explicit: `fields` maps native target paths to source paths,
+and `defaults` fills safe constants.
+
+```json
+{
+  "fields": {
+    "run_id": "id",
+    "steps": "steps",
+    "outcome.value": "passed"
+  },
+  "defaults": {
+    "schema_version": "0.1.0",
+    "outcome.kind": "binary",
+    "outcome.verifier": "imported"
+  }
+}
+```
+
+The command writes native `Run` JSON files plus `ingest-receipt.json` with
+warnings about dropped fields and missing randomization metadata. It does not
+loosen the native trace schema.
+
+### Export To eval-audit
+
+```bash
+uv run counterfact export-runs bench/real/smoke_mixed_outcome \
+  --to eval-audit-parquet \
+  --output /tmp/counterfact-runs.parquet
+```
+
+This writes an `eval-audit` RunRecord-shaped parquet and a receipt. Use it when
+you want to take a trace corpus into a separate population-level benchmark
+audit:
+
+```bash
+eval-audit validate /tmp/counterfact-runs.parquet study.yaml
+```
+
+`counterfact` does not render model-switch verdicts; `eval-audit` owns that
+question.
 
 ### Generate Synthetic Traces
 
@@ -130,4 +215,3 @@ Do not run real-agent benchmarks as routine validation. See `bench/real/README.m
 uv run ruff check .
 uv run pytest
 ```
-

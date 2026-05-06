@@ -21,7 +21,11 @@ from counterfact.schema import Decision, Run, Step
 def _load_trace_dir(path: Path) -> list[Run]:
     if not path.exists():
         return []
-    return [Run.model_validate_json(p.read_text()) for p in sorted(path.glob("*.json"))]
+    return [
+        Run.model_validate_json(p.read_text())
+        for p in sorted(path.glob("*.json"))
+        if not p.name.endswith("receipt.json")
+    ]
 
 
 def _load_run_file(path: Path, *, command: str) -> Run | None:
@@ -41,6 +45,8 @@ def _load_corpus_dir(path: Path, *, command: str) -> list[Run] | None:
         return None
     corpus: list[Run] = []
     for trace_path in sorted(path.glob("*.json")):
+        if trace_path.name.endswith("receipt.json"):
+            continue
         try:
             corpus.append(Run.model_validate_json(trace_path.read_text()))
         except (ValidationError, ValueError) as exc:
@@ -410,10 +416,11 @@ def _bench_synthetic(args: argparse.Namespace) -> int:
 def _format_report(report: Any, runs_dir: Path) -> str:
     """Plain-text rendering of a CorpusReadinessReport. Stable enough to grep."""
     from counterfact.corpus_analyzer import CorpusReadinessReport
+    from counterfact.intervene.suggest import suggest_harness_command
 
     assert isinstance(report, CorpusReadinessReport)
     lines: list[str] = [
-        f"counterfact analyze corpus: {runs_dir}",
+        f"counterfact analyze corpus support-readiness: {runs_dir}",
         f"n_traces: {report.n_traces}",
         (
             f"outcome_balance: pass={report.outcome_balance.n_pass} "
@@ -441,6 +448,44 @@ def _format_report(report: Any, runs_dir: Path) -> str:
         prefix = "PASS" if c.passed else "FAIL"
         lines.append(f"{prefix} {c.reason}")
     lines.append(f"promote: {report.promote}")
+    if report.promote:
+        lines.append(
+            "support_readiness: suitable for counterfactual-support workflows; "
+            "promotion remains a human decision."
+        )
+    else:
+        lines.append("next_collection_guidance:")
+        for c in report.criteria:
+            if c.passed:
+                continue
+            if c.name == "outcome_balance" or "unfittable" in c.reason:
+                lines.append(
+                    "  - outcome model is unfittable for counterfactual support "
+                    "without mixed pass/fail outcomes; collect mixed-outcome traces."
+                )
+            elif c.name == "model_arm_outcome_mix":
+                lines.append(
+                    "  - collect model_call support with both small and large arms "
+                    "and mixed outcomes per arm."
+                )
+                suggestion = suggest_harness_command(
+                    decision_type="model_call",
+                    intervention_kind="model_choice",
+                    action="broaden_arm_support",
+                    arm_name="large",
+                )
+                if suggestion:
+                    lines.append(f"    suggested_command: {suggestion}")
+            elif c.name == "arm_support":
+                lines.append(
+                    "  - broaden randomized arm support for the decision type named "
+                    "in the failed criterion."
+                )
+            elif c.name == "identifiability_coverage":
+                lines.append(
+                    "  - add support for at least one identifiable decision type "
+                    "before relying on diagnose/intervene output."
+                )
     return "\n".join(lines)
 
 
@@ -602,6 +647,201 @@ def _intervene_cli(args: argparse.Namespace) -> int:
     return 0
 
 
+def _format_diagnosis(report: Any) -> str:
+    from counterfact.diagnose import DiagnosisReport
+
+    assert isinstance(report, DiagnosisReport)
+    lines = [
+        report.summary,
+        f"run_id: {report.run_id}",
+        f"outcome: {report.outcome}",
+        f"corpus_size: {report.corpus_size}",
+    ]
+    if not report.entries:
+        lines.append("ranked_decisions: (none)")
+        return "\n".join(lines)
+    lines.append("ranked_decisions:")
+    for idx, entry in enumerate(report.entries, start=1):
+        step = entry.step if entry.step is not None else "?"
+        lines.append(
+            f"  {idx}. decision_id={entry.decision_id} step={step} "
+            f"type={entry.decision_type} chosen={entry.chosen_action} "
+            f"identifiability={entry.identifiability.value}"
+        )
+        if entry.outcome_delta is not None:
+            delta = entry.outcome_delta
+            lines.append(
+                "     outcome_delta: "
+                f"{delta.point:.3f} [{delta.ci_low:.3f}, {delta.ci_high:.3f}]"
+            )
+        if entry.reason:
+            lines.append(f"     reason: {entry.reason}")
+        lines.append(
+            f"     next_step: {entry.next_step.action} - {entry.next_step.human_text}"
+        )
+    return "\n".join(lines)
+
+
+def _diagnose_cli(args: argparse.Namespace) -> int:
+    from counterfact.diagnose import build_diagnosis
+
+    run_path: Path = args.run_json
+    focal = _load_run_file(run_path, command="diagnose")
+    if focal is None:
+        return 2
+
+    runs_dir: Path = args.runs_dir if args.runs_dir is not None else run_path.parent
+    corpus = _load_corpus_dir(runs_dir, command="diagnose")
+    if corpus is None:
+        return 2
+    if not _require_focal_in_corpus(focal, corpus, runs_dir, command="diagnose"):
+        return 2
+
+    try:
+        report = build_diagnosis(
+            focal,
+            corpus,
+            decision_type=args.decision_type,
+            top_k=args.top_k,
+            bootstrap=args.bootstrap,
+            seed=args.seed,
+            run_path=str(run_path),
+            corpus_dir=str(runs_dir),
+        )
+    except ValueError as exc:
+        print(f"counterfact diagnose: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(report.model_dump_json(indent=2, exclude_none=True))
+    else:
+        print(_format_diagnosis(report))
+    return 0
+
+
+def _format_comparison(comparison: Any) -> str:
+    from counterfact.compare import TraceComparison
+
+    assert isinstance(comparison, TraceComparison)
+    lines = [
+        "counterfact compare: descriptive trace diff",
+        (
+            f"left: {comparison.left_run_id} outcome={comparison.left_outcome} "
+            f"steps={comparison.left_step_count}"
+        ),
+        (
+            f"right: {comparison.right_run_id} outcome={comparison.right_outcome} "
+            f"steps={comparison.right_step_count}"
+        ),
+        f"note: {comparison.note}",
+    ]
+    if comparison.decision_diffs:
+        lines.append("decision_diffs:")
+        for diff in comparison.decision_diffs:
+            step = diff.step if diff.step is not None else "?"
+            lines.append(
+                f"  step={step} type={diff.decision_type} "
+                f"left={diff.left_chosen_action} ({diff.left_decision_id}) "
+                f"right={diff.right_chosen_action} ({diff.right_decision_id})"
+            )
+    else:
+        lines.append("decision_diffs: (none)")
+    if comparison.step_diffs:
+        lines.append("step_diffs:")
+        for diff in comparison.step_diffs:
+            lines.append(
+                f"  step={diff.step} decisions "
+                f"{diff.left_decision_count}->{diff.right_decision_count}; "
+                f"observations {diff.left_observation_count}->{diff.right_observation_count}"
+            )
+    if comparison.diagnosis is not None:
+        lines.append("diagnosis_overlay:")
+        for line in _format_diagnosis(comparison.diagnosis).splitlines():
+            lines.append(f"  {line}")
+    return "\n".join(lines)
+
+
+def _compare_cli(args: argparse.Namespace) -> int:
+    from counterfact.compare import compare_traces
+    from counterfact.diagnose import build_diagnosis
+
+    left = _load_run_file(args.left_run_json, command="compare")
+    if left is None:
+        return 2
+    right = _load_run_file(args.right_run_json, command="compare")
+    if right is None:
+        return 2
+
+    diagnosis = None
+    if args.runs_dir is not None:
+        corpus = _load_corpus_dir(args.runs_dir, command="compare")
+        if corpus is None:
+            return 2
+        focal = left if args.focal == "left" else right
+        if not _require_focal_in_corpus(focal, corpus, args.runs_dir, command="compare"):
+            return 2
+        diagnosis = build_diagnosis(
+            focal,
+            corpus,
+            decision_type=args.decision_type,
+            top_k=args.top_k,
+            bootstrap=args.bootstrap,
+            seed=args.seed,
+            run_path=str(args.left_run_json if args.focal == "left" else args.right_run_json),
+            corpus_dir=str(args.runs_dir),
+        )
+
+    comparison = compare_traces(left, right, diagnosis=diagnosis)
+    if args.json:
+        print(comparison.model_dump_json(indent=2, exclude_none=True))
+    else:
+        print(_format_comparison(comparison))
+    return 0
+
+
+def _ingest_generic_jsonl_cli(args: argparse.Namespace) -> int:
+    from counterfact.ingest import IngestError, ingest_generic_jsonl
+
+    try:
+        receipt = ingest_generic_jsonl(args.source_jsonl, args.mapping, args.output_dir)
+    except IngestError as exc:
+        print(f"counterfact ingest generic-jsonl: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(receipt.model_dump_json(indent=2))
+    else:
+        print(f"counterfact ingest generic-jsonl: wrote {receipt.generated_count} trace(s)")
+        print(str((args.output_dir / "ingest-receipt.json").resolve()))
+        for warning in receipt.warnings:
+            print(f"warning: {warning}")
+    return 0
+
+
+def _export_runs_cli(args: argparse.Namespace) -> int:
+    from counterfact.eval_audit_export import export_eval_audit_parquet
+
+    if args.to != "eval-audit-parquet":
+        print(f"counterfact export-runs: unsupported target {args.to!r}", file=sys.stderr)
+        return 2
+    corpus = _load_corpus_dir(args.runs_dir, command="export-runs")
+    if corpus is None:
+        return 2
+    output = args.output or (args.runs_dir / "eval-audit-runs.parquet")
+    receipt = export_eval_audit_parquet(corpus, source_corpus=args.runs_dir, output_path=output)
+    if args.json:
+        print(receipt.model_dump_json(indent=2))
+    else:
+        print(f"counterfact export-runs: wrote {Path(receipt.output_path).resolve()}")
+        receipt_path = Path(receipt.output_path).with_suffix(
+            Path(receipt.output_path).suffix + ".receipt.json"
+        )
+        print(f"receipt: {receipt_path.resolve()}")
+        print(f"rows: {receipt.row_count}")
+        if receipt.warnings:
+            print(f"warnings: {len(receipt.warnings)}")
+    return 0
+
+
 def _bench_real(args: argparse.Namespace) -> int:
     from bench.real.coding_agent.agent import AgentRunConfig
     from bench.real.coding_agent.runner import run_real_corpus
@@ -755,6 +995,80 @@ def build_parser() -> argparse.ArgumentParser:
     intervene_parser.add_argument("--bootstrap", type=_positive_int, default=200)
     intervene_parser.add_argument("--seed", type=int, default=42)
     intervene_parser.set_defaults(func=_intervene_cli)
+
+    diagnose = sub.add_parser(
+        "diagnose",
+        help="Rank likely load-bearing decisions for one trace",
+    )
+    diagnose.add_argument("run_json", type=Path, help="Path to the focal Run JSON")
+    diagnose.add_argument(
+        "--runs-dir",
+        type=Path,
+        default=None,
+        help="Trace corpus directory (defaults to the parent directory of run_json)",
+    )
+    diagnose.add_argument(
+        "--decision-type",
+        choices=["model_call", "tool_call", "retry"],
+        default="model_call",
+        help="Decision type to summarize when fitting diagnosis support",
+    )
+    diagnose.add_argument("--top-k", type=_positive_int, default=3)
+    diagnose.add_argument("--bootstrap", type=_positive_int, default=200)
+    diagnose.add_argument("--seed", type=int, default=42)
+    diagnose.add_argument("--json", action="store_true", help="Emit JSON only")
+    diagnose.set_defaults(func=_diagnose_cli)
+
+    compare = sub.add_parser(
+        "compare",
+        help="Compare two traces descriptively, with optional diagnosis overlay",
+    )
+    compare.add_argument("left_run_json", type=Path)
+    compare.add_argument("right_run_json", type=Path)
+    compare.add_argument(
+        "--runs-dir",
+        type=Path,
+        default=None,
+        help="Optional corpus directory for a diagnosis overlay",
+    )
+    compare.add_argument(
+        "--focal",
+        choices=["left", "right"],
+        default="right",
+        help="Which trace to diagnose when --runs-dir is supplied",
+    )
+    compare.add_argument(
+        "--decision-type",
+        choices=["model_call", "tool_call", "retry"],
+        default="model_call",
+    )
+    compare.add_argument("--top-k", type=_positive_int, default=3)
+    compare.add_argument("--bootstrap", type=_positive_int, default=200)
+    compare.add_argument("--seed", type=int, default=42)
+    compare.add_argument("--json", action="store_true", help="Emit JSON only")
+    compare.set_defaults(func=_compare_cli)
+
+    ingest = sub.add_parser("ingest", help="Convert external trace data to native Run JSON")
+    ingest_sub = ingest.add_subparsers(dest="ingest_kind", required=True)
+    generic_jsonl = ingest_sub.add_parser(
+        "generic-jsonl",
+        help="Convert JSONL records through an explicit mapping file",
+    )
+    generic_jsonl.add_argument("source_jsonl", type=Path)
+    generic_jsonl.add_argument("--mapping", type=Path, required=True)
+    generic_jsonl.add_argument("--output-dir", type=Path, required=True)
+    generic_jsonl.add_argument("--json", action="store_true", help="Emit receipt JSON")
+    generic_jsonl.set_defaults(func=_ingest_generic_jsonl_cli)
+
+    export_runs = sub.add_parser(
+        "export-runs",
+        help="Export native traces to another research artifact format",
+    )
+    export_runs.add_argument("runs_dir", type=Path, help="Directory of native trace JSON")
+    export_runs.add_argument("--to", required=True, choices=["eval-audit-parquet"])
+    export_runs.add_argument("--output", type=Path, default=None)
+    export_runs.add_argument("--json", action="store_true", help="Emit receipt JSON")
+    export_runs.set_defaults(func=_export_runs_cli)
 
     bench = sub.add_parser("bench", help="Generate CounterBench corpora")
     bench_sub = bench.add_subparsers(dest="bench_kind", required=True)

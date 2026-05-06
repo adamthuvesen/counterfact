@@ -20,8 +20,11 @@ def test_analyze_single_class_refusal_exits_1_with_outcome_balance_failure(capsy
     rc = main(["analyze", "corpus", str(SINGLE_CLASS_REFUSAL_DIR)])
     out = capsys.readouterr().out
     assert rc == 1
+    assert "support-readiness" in out
     assert "FAIL outcome_balance:" in out
     assert "promote: False" in out
+    assert "next_collection_guidance:" in out
+    assert "mixed pass/fail outcomes" in out
 
 
 def test_analyze_synthetic_corpus_exits_0(tmp_path: Path, capsys) -> None:
@@ -34,7 +37,9 @@ def test_analyze_synthetic_corpus_exits_0(tmp_path: Path, capsys) -> None:
     rc = main(["analyze", "corpus", str(out_dir)])
     out = capsys.readouterr().out
     assert rc == 0
+    assert "support-readiness" in out
     assert "promote: True" in out
+    assert "suitable for counterfactual-support workflows" in out
     # Every criterion should pass on the default rubric for synthetic SCM
     pass_lines = [line for line in out.splitlines() if line.startswith("PASS ")]
     fail_lines = [line for line in out.splitlines() if line.startswith("FAIL ")]
@@ -92,3 +97,4 @@ def test_analyze_thresholds_can_be_overridden_via_flags(tmp_path: Path, capsys) 
     assert rc_strict == 1
     assert "promote: False" in out_strict
     assert "FAIL outcome_balance:" in out_strict
+    assert "next_collection_guidance:" in out_strict
