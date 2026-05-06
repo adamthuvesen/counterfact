@@ -46,21 +46,21 @@ causal estimate disagree, the disagreement is the diagnostic.
 ## The real-trace smoke test
 
 Without `--confound`, `counterfact demo` runs the same flow against the
-committed real corpus, `bench/real/smoke_mixed_outcome/` (100 `date_window` traces,
-mixed-outcome from inverted-greedy randomization). It is intentionally
-small — a smoke test that the engine works on real-agent traces, not the
-statistical headline. The CI is wide and the naive arm gap and the engine's
-estimate happen to point the same direction; the report is honest about that
-shape.
+committed real corpus, `bench/real/smoke_mixed_outcome/` (120
+`streaming_watermark_dedupe` traces with mixed pass/fail outcomes in both model
+arms). It is intentionally small — a smoke test that the engine works on
+real-agent traces, not the statistical headline. The failures are hidden
+stateful-semantic misses, not patch-format misses, and the report is honest
+about the remaining CI width.
 
 | arm | n | pass | pass rate | 95% CI |
 | --- | ---: | ---: | ---: | --- |
-| large | 27 | 27 | 1.000 | [0.875, 1.000] |
-| small | 74 | 18 | 0.243 | [0.160, 0.352] |
+| large | 65 | 50 | 0.769 | [0.654, 0.855] |
+| small | 55 | 6 | 0.109 | [0.051, 0.218] |
 
-`intervene(model_call -> small)` on the same corpus returns
-`identifiability=identified` with `outcome_delta=0.270 [0.190, 0.355]` and a
-`next_step.action="increase_n"` recommending ~377 traces to tighten the CI.
+`intervene(model_call -> large)` on the same corpus returns
+`identifiability=identified` with `outcome_delta=0.747 [0.630, 0.831]` and a
+`next_step.action="increase_n"` recommending ~830 traces to tighten the CI.
 
 ## The single-class regression anchor
 

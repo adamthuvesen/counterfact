@@ -1,0 +1,189 @@
+{
+  "schema_version": "0.1.0",
+  "run_id": "real-streaming_watermark_dedupe-000105",
+  "steps": [
+    {
+      "step_index": 0,
+      "decisions": [
+        {
+          "decision_id": "d-000105-plan",
+          "decision_type": "plan_step",
+          "chosen_action": "begin",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    },
+    {
+      "step_index": 1,
+      "decisions": [
+        {
+          "decision_id": "d-000105-inspect",
+          "decision_type": "tool_call",
+          "chosen_action": "inspect_file",
+          "policy": "epsilon_greedy",
+          "policy_params": {
+            "epsilon": 0.0,
+            "greedy": "inspect_file"
+          },
+          "valid_actions": [
+            "inspect_file",
+            "run_tests",
+            "search_docs"
+          ],
+          "propensity": 1.0,
+          "context_features": {
+            "first_action": true
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000105-inspect",
+          "content": {
+            "source_chars": 1399,
+            "test_chars": 1082
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 2,
+      "decisions": [
+        {
+          "decision_id": "d-000105-retry",
+          "decision_type": "retry",
+          "chosen_action": "retry_once",
+          "policy": "epsilon_greedy",
+          "policy_params": {
+            "epsilon": 0.0,
+            "greedy": "retry_once"
+          },
+          "valid_actions": [
+            "no_retry",
+            "retry_once"
+          ],
+          "propensity": 1.0,
+          "context_features": {
+            "step_index": 2,
+            "upfront": true
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    },
+    {
+      "step_index": 3,
+      "decisions": [
+        {
+          "decision_id": "d-000105-model-1",
+          "decision_type": "model_call",
+          "chosen_action": "large",
+          "policy": "epsilon_greedy",
+          "policy_params": {
+            "epsilon": 1.0,
+            "greedy": "large"
+          },
+          "valid_actions": [
+            "small",
+            "large"
+          ],
+          "propensity": 0.5,
+          "context_features": {
+            "prompt_chars": 5652,
+            "attempt": 1
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000105-model-1",
+          "content": {
+            "response_chars": 4276,
+            "raw_response_chars": 4276,
+            "cost_usd": 0.022398,
+            "finish_reason": "stop",
+            "extraction_status": "extracted",
+            "extraction_failure_reason": null,
+            "extracted_code": "\"\"\"Stateful streaming dedupe fixture.\"\"\"\n\nfrom __future__ import annotations\n\nfrom copy import deepcopy\n\n\nclass WatermarkDeduper:\n    \"\"\"Deduplicate events by event_id with watermark, late-drop, and TTL eviction.\"\"\"\n\n    def __init__(self, *, allowed_lateness: int = 0, ttl: int = 100) -> None:\n        if allowed_lateness < 0:\n            raise ValueError(\"allowed_lateness must be >= 0\")\n        if ttl < 1:\n            raise ValueError(\"ttl must be >= 1\")\n        self.allowed_lateness = allowed_lateness\n        self.ttl = ttl\n        # watermark starts at negative infinity\n        self._watermark: int | float = float(\"-inf\")\n        # maps event_id -> last seen event_time\n        self._seen: dict[str, int] = {}\n\n    def _validate_event(self, event: dict[str, object]) -> None:\n        event_id = event.get(\"event_id\")\n        event_time = event.get(\"event_time\")\n        if not isinstance(event_id, str):\n            raise ValueError(\"event_id must be a string\")\n        if not isinstance(event_time, int):\n            raise ValueError(\"event_time must be an integer\")\n\n    def _evict(self) -> None:\n        \"\"\"Evict event IDs last seen at or before watermark - ttl.\"\"\"\n        if self._watermark == float(\"-inf\"):\n            return\n        evict_threshold = self._watermark - self.ttl\n        to_evict = [\n            eid for eid, et in self._seen.items() if et <= evict_threshold\n        ]\n        for eid in to_evict:\n            del self._seen[eid]\n\n    def process(self, events: list[dict[str, object]]) -> list[dict[str, object]]:\n        emitted: list[dict[str, object]] = []\n        for event in events:\n            self._validate_event(event)\n            event_id: str = event[\"event_id\"]  # type: ignore[assignment]\n            event_time: int = event[\"event_time\"]  # type: ignore[assignment]\n\n            # Check if late: event_time <= watermark means late\n            if self._watermark != float(\"-inf\") and event_time <= self._watermark:\n                # Late event: drop without changing state\n                continue\n\n            # Check for duplicate\n            if event_id in self._seen:\n                # Duplicate: drop, but still need to advance watermark?\n                # Per spec: \"After each non-late event, advance the watermark\"\n                # A duplicate that is not late is still a non-late event.\n                # But \"An event is emitted iff ... its event_id has not already been seen\"\n                # The watermark should still advance for non-late events even if duplicate.\n                # Advance watermark\n                new_watermark = event_time - self.allowed_lateness\n                if self._watermark == float(\"-inf\") or new_watermark > self._watermark:\n                    self._watermark = new_watermark\n                    self._evict()\n                # Update last seen time\n                self._seen[event_id] = event_time\n                continue\n\n            # Non-late, non-duplicate: emit\n            emitted.append(deepcopy(event))\n            self._seen[event_id] = event_time\n\n            # Advance watermark\n            new_watermark = event_time - self.allowed_lateness\n            if self._watermark == float(\"-inf\") or new_watermark > self._watermark:\n                self._watermark = new_watermark\n                self._evict()\n\n        return emitted\n\n    def snapshot(self) -> dict[str, object]:\n        return {\n            \"allowed_lateness\": self.allowed_lateness,\n            \"ttl\": self.ttl,\n            \"watermark\": self._watermark,\n            \"seen\": deepcopy(self._seen),\n        }\n\n    def restore(self, snapshot: dict[str, object]) -> None:\n        self.allowed_lateness = int(snapshot[\"allowed_lateness\"])\n        self.ttl = int(snapshot[\"ttl\"])\n        watermark = snapshot[\"watermark\"]\n        if watermark == float(\"-inf\") or watermark == \"-inf\":\n            self._watermark = float(\"-inf\")\n        else:\n            self._watermark = int(watermark)\n        seen = snapshot[\"seen\"]\n        if isinstance(seen, dict):\n            self._seen = {str(k): int(v) for k, v in seen.items()}\n        else:\n            # fallback for old format (list of ids) - shouldn't happen\n            self._seen = {}\n\n    def state_size(self) -> int:\n        return len(self._seen)\n"
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 4,
+      "decisions": [
+        {
+          "decision_id": "d-000105-runtests-1",
+          "decision_type": "tool_call",
+          "chosen_action": "run_tests",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000105-runtests-1",
+          "content": {
+            "passed": true,
+            "stdout_tail": "..                                                                       [100%]\n2 passed in 0.00s\n"
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 5,
+      "decisions": [
+        {
+          "decision_id": "d-000105-term",
+          "decision_type": "termination",
+          "chosen_action": "success",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    }
+  ],
+  "outcome": {
+    "kind": "binary",
+    "value": true,
+    "verifier": "pytest_hidden",
+    "metadata": {
+      "fixture_id": "streaming_watermark_dedupe",
+      "public_pass": true,
+      "hidden_pass": true,
+      "generalization_gap": false
+    }
+  },
+  "metadata": {
+    "agent_name": null,
+    "notes": null,
+    "extra": {}
+  }
+}

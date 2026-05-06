@@ -52,7 +52,7 @@ DEMO_NOTEBOOK = REPO_ROOT / "notebooks" / "demo.ipynb"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 SRC_DIR = REPO_ROOT / "src"
 
-MIN_REAL_TRACES = 100  # smoke_mixed_outcome baseline; raised by future corpora
+MIN_REAL_TRACES = 120  # promoted smoke_mixed_outcome baseline
 SCM_RECOVERY_TOLERANCE = 0.05
 
 # Every action documented in the NextStep contract that counts as
