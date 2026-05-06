@@ -11,17 +11,25 @@ Run from the repo root:
 
 from __future__ import annotations
 
+import hashlib
 import json
-import uuid
 from pathlib import Path
 
 NB_PATH = Path(__file__).resolve().parents[1] / "notebooks" / "demo.ipynb"
 
 
+def _cell_id(kind: str, index: int) -> str:
+    """Stable cell id derived from cell-type + position.
+
+    Deterministic builds keep `notebooks/demo.ipynb` diff-quiet when cell order
+    and type are unchanged.
+    """
+    return hashlib.sha1(f"{kind}::{index}".encode()).hexdigest()[:12]
+
+
 def _md(text: str) -> dict:
     return {
         "cell_type": "markdown",
-        "id": uuid.uuid4().hex[:12],
         "metadata": {},
         "source": text,
     }
@@ -30,7 +38,6 @@ def _md(text: str) -> dict:
 def _code(text: str) -> dict:
     return {
         "cell_type": "code",
-        "id": uuid.uuid4().hex[:12],
         "metadata": {},
         "execution_count": None,
         "outputs": [],
@@ -432,8 +439,13 @@ CELLS = [
 
 
 def main() -> None:
+    cells = []
+    for i, cell in enumerate(CELLS):
+        cell_with_id = {"cell_type": cell["cell_type"], "id": _cell_id(cell["cell_type"], i)}
+        cell_with_id.update({k: v for k, v in cell.items() if k != "cell_type"})
+        cells.append(cell_with_id)
     nb = {
-        "cells": CELLS,
+        "cells": cells,
         "metadata": {
             "kernelspec": {
                 "display_name": "Python 3",
@@ -446,7 +458,7 @@ def main() -> None:
         "nbformat_minor": 5,
     }
     NB_PATH.write_text(json.dumps(nb, indent=1) + "\n")
-    print(f"wrote {NB_PATH} ({len(CELLS)} cells)")
+    print(f"wrote {NB_PATH} ({len(cells)} cells)")
 
 
 if __name__ == "__main__":

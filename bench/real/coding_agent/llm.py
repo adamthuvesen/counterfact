@@ -59,12 +59,22 @@ def extract_cost(resp: object) -> float:
     try:
         import litellm  # type: ignore[import-not-found]
 
-        return float(litellm.completion_cost(completion_response=resp))
+        fallback = float(litellm.completion_cost(completion_response=resp))
     except Exception as exc:
         raise CostUnknownError(
             "could not determine LLM response cost from provider response or "
             "litellm.completion_cost; refusing to treat the call as free"
         ) from exc
+    if fallback <= 0.0:
+        # Production budget accounting fails closed: a zero / negative fallback
+        # almost always means litellm has no price for this model, not that the
+        # call was actually free. Mocked test clients never hit this path —
+        # they construct LLMResponse(cost_usd=0.0) directly.
+        raise CostUnknownError(
+            "litellm.completion_cost returned non-positive fallback "
+            f"({fallback!r}); refusing to treat the call as free"
+        )
+    return fallback
 
 
 class LiteLLMClient:

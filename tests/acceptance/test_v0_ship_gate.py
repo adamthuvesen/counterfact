@@ -27,8 +27,6 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -43,6 +41,10 @@ from counterfact.intervene.estimate import (
     NextStep,
 )
 from counterfact.schema import Run
+from tests.acceptance.demo_notebook_helpers import (
+    all_text_outputs,
+    execute_demo_notebook,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REAL_CORPUS_DIR = REPO_ROOT / "bench" / "real" / "runs_v2"
@@ -375,45 +377,14 @@ def test_top1_attribution_label_artifact_is_present() -> None:
 # --- §15.5: demo notebook renders the naive-vs-honest contrast --------------
 
 
-def test_demo_renders_naive_vs_honest_contrast() -> None:
+def test_demo_renders_naive_vs_honest_contrast(tmp_path: Path) -> None:
     """§15.5 (new): the demo notebook executes end-to-end and renders both a
     `pass_rate_by_arm` table and an `intervene` CausalEstimate. The test
     parses the executed notebook (in a tmp dir) and inspects cell outputs."""
     if not DEMO_NOTEBOOK.exists():
         pytest.skip(f"demo notebook absent at {DEMO_NOTEBOOK}")
 
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "jupyter",
-            "nbconvert",
-            "--to",
-            "notebook",
-            "--execute",
-            str(DEMO_NOTEBOOK),
-            "--output",
-            "/tmp/_demo_executed.ipynb",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    assert proc.returncode == 0, (
-        f"nbconvert failed: stdout={proc.stdout!r} stderr={proc.stderr!r}"
-    )
-
-    nb = json.loads(Path("/tmp/_demo_executed.ipynb").read_text())
-    pieces: list[str] = []
-    for cell in nb["cells"]:
-        for out in cell.get("outputs", []):
-            text = out.get("text", "")
-            if isinstance(text, list):
-                text = "".join(text)
-            pieces.append(text)
-            data = out.get("data") or {}
-            for v in data.values():
-                pieces.append("".join(v) if isinstance(v, list) else str(v))
-    all_text = "\n".join(pieces)
+    all_text = all_text_outputs(execute_demo_notebook(tmp_path))
     assert "pass_rate" in all_text or "PassRateTable" in all_text, (
         "demo notebook does not render a pass_rate_by_arm table"
     )

@@ -109,13 +109,23 @@ HARD_HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = tuple(
 def _run_pytest_at(
     fixture_root: Path, target: str, *, timeout_s: int = 30
 ) -> tuple[bool, str]:
-    proc = subprocess.run(
-        [sys.executable, "-m", "pytest", target, "-q", "--tb=line"],
-        cwd=fixture_root,
-        capture_output=True,
-        text=True,
-        timeout=timeout_s,
-    )
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", target, "-q", "--tb=line"],
+            cwd=fixture_root,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired as exc:
+        # An untrusted patch or test suite hung past `timeout_s`. Surface this
+        # as a normal verifier failure with diagnostic tail rather than letting
+        # it crash the corpus runner.
+        captured = exc.stdout or exc.stderr or b""
+        if isinstance(captured, bytes):
+            captured = captured.decode(errors="replace")
+        tail = f"<pytest timed out after {timeout_s}s>\n{captured[-2000:]}"
+        return False, tail
     tail = proc.stdout[-2000:] if proc.stdout else proc.stderr[-2000:]
     return proc.returncode == 0, tail
 

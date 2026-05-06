@@ -21,6 +21,22 @@ def _load_trace_dir(path: Path) -> list[Run]:
     return [Run.model_validate_json(p.read_text()) for p in sorted(path.glob("*.json"))]
 
 
+def _positive_int(raw: str) -> int:
+    """argparse type for ints that must be >= 1.
+
+    Used by every flag that drives bootstrap counts — passing 0 would have
+    `intervene` percentile over an empty array and a negative value would
+    crash NumPy at allocation.
+    """
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {raw!r}") from exc
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be >= 1; got {value}")
+    return value
+
+
 def _synthetic_runs(n: int, seed: int, confound: bool = False) -> list[Run]:
     from bench.synthetic import generate_traces
 
@@ -408,7 +424,7 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--target", default=None, help="Optional intervention arm")
     demo.add_argument("--synthetic-n", type=int, default=500)
     demo.add_argument("--seed", type=int, default=42)
-    demo.add_argument("--bootstrap", type=int, default=200)
+    demo.add_argument("--bootstrap", type=_positive_int, default=200)
     demo.add_argument(
         "--confound",
         action="store_true",
@@ -456,7 +472,7 @@ def build_parser() -> argparse.ArgumentParser:
             "<run-json-parent>/counterfact-explain-<run_id>.html)"
         ),
     )
-    explain.add_argument("--bootstrap", type=int, default=200)
+    explain.add_argument("--bootstrap", type=_positive_int, default=200)
     explain.add_argument("--seed", type=int, default=42)
     explain.set_defaults(func=_explain)
 

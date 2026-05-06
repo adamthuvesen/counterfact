@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -189,6 +190,29 @@ def _completed_spend(output_dir: Path) -> float:
     return spent
 
 
+def _ledger_spend(ledger_path: Path) -> float:
+    """Sum unflushed spend from the budget ledger.
+
+    The agent appends each priced LLM response to this file *before* calling
+    `budget.add`. After a trace JSON is successfully written, the runner
+    truncates the ledger — so any entries that survive represent costs that
+    never made it into a committed trace (typically because `BudgetExceeded`
+    fired). Resume initializes spend from `_completed_spend() + _ledger_spend()`
+    so the budget gate cannot be re-crossed for free.
+    """
+    spent = 0.0
+    try:
+        with ledger_path.open() as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                spent += float(json.loads(line)["cost_usd"])
+    except FileNotFoundError:
+        return 0.0
+    return spent
+
+
 def _fixture_for_index(index: int, fixtures: tuple[FixtureSpec, ...]) -> FixtureSpec:
     return fixtures[index % len(fixtures)]
 
@@ -276,10 +300,10 @@ def run_real_corpus(
         print(identity_error, file=sys.stderr)
         return 6
 
-    sandbox = sandbox_root or Path(tempfile.mkdtemp(prefix="counterfact-real-"))
+    ledger_path = checkpoint_dir / "budget_ledger.jsonl"
     budget = BudgetTracker(
         cap_usd=budget_cap_usd,
-        spent_usd=_completed_spend(output_dir),
+        spent_usd=_completed_spend(output_dir) + _ledger_spend(ledger_path),
     )
     if budget.spent_usd >= budget.halt_threshold:
         print(
@@ -294,35 +318,50 @@ def run_real_corpus(
     progress_path = checkpoint_dir / "progress.jsonl"
 
     written = 0
-    try:
-        for i in range(n):
-            if i in done:
-                continue
-            fixture = _fixture_for_index(i, fixtures)
-            run = run_one_trace(
-                fixture,
-                run_index=i,
-                llm=llm,
-                budget=budget,
-                sandbox_root=sandbox,
-                config=config,
+    with contextlib.ExitStack() as stack:
+        if sandbox_root is None:
+            sandbox = Path(
+                stack.enter_context(
+                    tempfile.TemporaryDirectory(prefix="counterfact-real-")
+                )
             )
-            out_path = output_dir / f"real-{fixture.fixture_id}-{i:06d}.json"
-            out_path.write_text(run.model_dump_json(indent=2))
-            written += 1
-            with progress_path.open("a") as f:
-                f.write(json.dumps({"index": i, "fixture": fixture.fixture_id}) + "\n")
-    except BudgetExceeded as exc:
-        print(
-            f"Budget cap {int(exc.halt_fraction * 100)}% reached: "
-            f"${exc.spent:.4f} of ${exc.cap:.2f}\n"
-            f"Wrote {written} traces; resume to continue.",
-            file=sys.stderr,
-        )
-        return 3
-    except CostUnknownError as exc:
-        print(f"Cost accounting failed: {exc}", file=sys.stderr)
-        return 5
+        else:
+            sandbox = sandbox_root
+        try:
+            for i in range(n):
+                if i in done:
+                    continue
+                fixture = _fixture_for_index(i, fixtures)
+                run = run_one_trace(
+                    fixture,
+                    run_index=i,
+                    llm=llm,
+                    budget=budget,
+                    sandbox_root=sandbox,
+                    config=config,
+                    ledger_path=ledger_path,
+                )
+                out_path = output_dir / f"real-{fixture.fixture_id}-{i:06d}.json"
+                out_path.write_text(run.model_dump_json(indent=2))
+                # Trace owns its costs now; drop the unflushed-spend ledger so
+                # the next iteration starts with a clean slate.
+                ledger_path.unlink(missing_ok=True)
+                written += 1
+                with progress_path.open("a") as f:
+                    f.write(
+                        json.dumps({"index": i, "fixture": fixture.fixture_id}) + "\n"
+                    )
+        except BudgetExceeded as exc:
+            print(
+                f"Budget cap {int(exc.halt_fraction * 100)}% reached: "
+                f"${exc.spent:.4f} of ${exc.cap:.2f}\n"
+                f"Wrote {written} traces; resume to continue.",
+                file=sys.stderr,
+            )
+            return 3
+        except CostUnknownError as exc:
+            print(f"Cost accounting failed: {exc}", file=sys.stderr)
+            return 5
 
     print(f"Wrote {written} new traces to {output_dir}", file=write_to_stream)
     return 0

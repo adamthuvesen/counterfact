@@ -248,6 +248,26 @@ def _decision_type_at_step(dag: DAG, step: int) -> str:
     raise InvalidInterventionError(f"step {step} not found in trace")
 
 
+def _duplicate_decision_steps(dag: DAG, step: int, decision_type: str) -> list[int]:
+    """Other steps in `dag.run` whose decisions include `decision_type`.
+
+    The g-formula adjustment over `model.train_X` is corpus-wide and treats
+    a (decision_type, action) one-hot as a single feature, so it cannot
+    disambiguate between repeated occurrences of the same decision_type in a
+    single trace. Callers use this to surface an honest `unidentified`
+    verdict instead of returning a corpus-wide estimate that pretends to be
+    step-local.
+    """
+    if dag.run is None:
+        return []
+    return [
+        s.step_index
+        for s in dag.run.steps
+        if s.step_index != step
+        and any(d.decision_type == decision_type for d in s.decisions)
+    ]
+
+
 def _resolve_intervention(intervention: dict[str, Any]) -> tuple[str, Any]:
     if not intervention or len(intervention) != 1:
         raise InvalidInterventionError(
@@ -290,6 +310,47 @@ def intervene(
         target=target_value,
         step=step,
     )
+
+    # Honesty check: a step-scoped intervention on a decision type that
+    # repeats elsewhere in the same trace is not licensed by the v0 g-formula
+    # (which is corpus-wide on a single one-hot feature). Surface as
+    # unidentified rather than answering the broader "set everywhere" query.
+    duplicate_steps = _duplicate_decision_steps(dag, step, decision_type)
+    if duplicate_steps:
+        return CausalEstimate(
+            query=query,
+            identifiability=IdentifiabilityStatus.UNIDENTIFIED,
+            reason=(
+                f"step {step} targets decision_type={decision_type!r}, but the "
+                f"focal trace also has it at step(s) {duplicate_steps}; the v0 "
+                "step-scoped intervene API cannot disambiguate which occurrence "
+                "to intervene on, and the corpus-wide g-formula would answer "
+                "'set everywhere' instead"
+            ),
+            assumptions=[
+                "step-scoped intervene requires the targeted decision_type to "
+                "appear at most once per trace under the v0 outcome-model schema"
+            ],
+            warnings=[
+                "an estimate here would silently broaden a step-local query to a "
+                "trace-wide one; promoting requires step-aware features"
+            ],
+            next_step=NextStep(
+                action="add_arm_randomization",
+                payload={
+                    "arm_name": decision_type,
+                    "current_policy": (
+                        "outcome model uses a single (decision_type, action) "
+                        "one-hot per trace; no step index in features"
+                    ),
+                    "duplicate_steps": duplicate_steps,
+                },
+                human_text=(
+                    f"{decision_type!r} occurs at multiple steps in this trace; "
+                    "v0 cannot answer step-local without step-aware features."
+                ),
+            ),
+        )
 
     stance = identifiability_stance(decision_type, intervention_kind)
 
