@@ -28,6 +28,7 @@ from bench.real.coding_agent.agent import (
 )
 from bench.real.coding_agent.fixtures import EASY_FIXTURES, run_pytest
 from bench.real.coding_agent.llm import (
+    DEFAULT_MAX_TOKENS,
     CostUnknownError,
     LiteLLMClient,
     LLMResponse,
@@ -394,6 +395,38 @@ def test_agent_observation_extracted_code_is_none_when_parse_fails(tmp_path: Pat
 
     obs = _first_model_call_observation(run)
     assert obs["extracted_code"] is None
+    assert obs["extraction_status"] == "failed"
+    assert obs["extraction_failure_reason"] == "raw_response_not_python"
+
+
+def test_agent_observation_records_finish_reason_and_raw_response_chars(
+    tmp_path: Path,
+) -> None:
+    """WHEN the LLM response includes provider finish metadata
+    THEN the trace keeps it next to extraction diagnostics."""
+    fixture = FIXTURES[1]
+
+    class _StoppedLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(
+                text="I don't know how to fix this.",
+                cost_usd=0.0,
+                finish_reason="length",
+            )
+
+    run = run_one_trace(
+        fixture,
+        run_index=0,
+        llm=_StoppedLLM(),
+        budget=BudgetTracker(cap_usd=1.0),
+        sandbox_root=tmp_path,
+        config=AgentRunConfig(epsilon=0.0, seed=0),
+    )
+
+    obs = _first_model_call_observation(run)
+    assert obs["finish_reason"] == "length"
+    assert obs["raw_response_chars"] == len("I don't know how to fix this.")
+    assert obs["response_chars"] == obs["raw_response_chars"]
 
 
 def test_extract_python_block_prefers_fenced_code() -> None:
@@ -406,6 +439,24 @@ def test_extract_python_block_prefers_fenced_code() -> None:
 def test_extract_python_block_accepts_parseable_full_response() -> None:
     text = "from __future__ import annotations\n\n\ndef target() -> int:\n    return 1\n"
     assert _extract_python_block(text, expected_function="target") == text
+
+
+def test_extract_python_block_accepts_parseable_class_full_response() -> None:
+    from bench.real.coding_agent.agent import _ExpectedSymbol, _extract_python_source
+
+    text = (
+        "from __future__ import annotations\n\n\n"
+        "class Target:\n"
+        "    def value(self) -> int:\n"
+        "        return 1\n"
+    )
+    result = _extract_python_source(
+        text,
+        expected_symbol=_ExpectedSymbol(name="Target", kind="class"),
+    )
+    assert result.code == text
+    assert result.status == "extracted"
+    assert result.reason is None
 
 
 def test_extract_python_block_rejects_unparseable_commentary() -> None:
@@ -728,6 +779,33 @@ def test_litellm_client__raises_when_response_cost_is_unknown(
     client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"})
     with pytest.raises(CostUnknownError):
         client.call(role="small", prompt="fix this")
+
+
+def test_litellm_client__requests_large_enough_patch_budget_and_records_finish_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import litellm  # type: ignore[import-not-found]
+
+    captured: dict[str, object] = {}
+
+    def _completion(**kw: object) -> dict[str, object]:
+        captured.update(kw)
+        return {
+            "choices": [
+                {
+                    "message": {"content": "ok"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "response_cost": 0.01,
+        }
+
+    monkeypatch.setattr(litellm, "completion", _completion)
+    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"})
+    response = client.call(role="small", prompt="fix this")
+
+    assert captured["max_tokens"] == DEFAULT_MAX_TOKENS
+    assert response.finish_reason == "stop"
 
 
 def test_check_credentials__missing_anthropic_key_returns_error() -> None:
