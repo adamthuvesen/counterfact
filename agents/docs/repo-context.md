@@ -4,7 +4,7 @@ This file is the deeper routing map for agents. `AGENTS.md` stays short; this fi
 
 ## Product Posture
 
-`counterfact` should make causal attribution useful by refusing fake certainty. A descriptive pass-rate table can be decisive-looking and still not support a causal claim. Every change should preserve the distinction between observed associations, model predictions under declared interventions, support gaps, sensitivity bounds, and replay requirements.
+`counterfact` should make agent decision traces understandable through honest counterfactual questions: if a logged decision had been different, would the run have been more likely to complete the task? A descriptive pass-rate table can be decisive-looking and still not support a causal claim. Every change should preserve the distinction between observed associations, model predictions under declared interventions, support gaps, sensitivity bounds, and replay requirements.
 
 ## Start Here By Task
 
