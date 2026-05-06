@@ -7,18 +7,61 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
+from counterfact.errors import InvalidInterventionError
 from counterfact.intervene.degenerate import (
     degenerate_estimate as _shared_degenerate_estimate,
 )
 from counterfact.intervene.degenerate import outcome_classes as _shared_outcome_classes
 from counterfact.intervene.estimate import CausalEstimate
-from counterfact.schema import Run
+from counterfact.schema import Decision, Run, Step
 
 
 def _load_trace_dir(path: Path) -> list[Run]:
     if not path.exists():
         return []
     return [Run.model_validate_json(p.read_text()) for p in sorted(path.glob("*.json"))]
+
+
+def _load_run_file(path: Path, *, command: str) -> Run | None:
+    if not path.exists() or not path.is_file():
+        print(f"counterfact {command}: run JSON not found: {path}", file=sys.stderr)
+        return None
+    try:
+        return Run.model_validate_json(path.read_text())
+    except (ValidationError, ValueError) as exc:
+        print(f"counterfact {command}: failed to parse {path}: {exc}", file=sys.stderr)
+        return None
+
+
+def _load_corpus_dir(path: Path, *, command: str) -> list[Run] | None:
+    if not path.exists() or not path.is_dir():
+        print(f"counterfact {command}: corpus directory not found: {path}", file=sys.stderr)
+        return None
+    corpus: list[Run] = []
+    for trace_path in sorted(path.glob("*.json")):
+        try:
+            corpus.append(Run.model_validate_json(trace_path.read_text()))
+        except (ValidationError, ValueError) as exc:
+            print(
+                f"counterfact {command}: failed to parse {trace_path}: {exc}",
+                file=sys.stderr,
+            )
+            return None
+    return corpus
+
+
+def _require_focal_in_corpus(
+    focal: Run, corpus: list[Run], runs_dir: Path, *, command: str
+) -> bool:
+    if focal.run_id in {run.run_id for run in corpus}:
+        return True
+    print(
+        f"counterfact {command}: focal run_id={focal.run_id!r} not found in {runs_dir}",
+        file=sys.stderr,
+    )
+    return False
 
 
 def _positive_int(raw: str) -> int:
@@ -98,6 +141,142 @@ def _degenerate_estimate(
         intervention_kind=intervention_kind,
         target=target,
     )
+
+
+def _decision_by_id(run: Run, decision_id: str) -> tuple[Step, Decision] | None:
+    for step in run.steps:
+        for decision in step.decisions:
+            if decision.decision_id == decision_id:
+                return step, decision
+    return None
+
+
+def _resolve_intervention_target(
+    args: argparse.Namespace, focal: Run
+) -> tuple[Step, Decision] | None:
+    if args.decision_id is not None and args.step is not None:
+        print(
+            "counterfact intervene: only one targeting mode is allowed: "
+            "--decision-id or --step",
+            file=sys.stderr,
+        )
+        return None
+    if args.decision_id is None and args.step is None:
+        print(
+            "counterfact intervene: specify --decision-id or --step",
+            file=sys.stderr,
+        )
+        return None
+    if args.decision_id is not None:
+        resolved = _decision_by_id(focal, args.decision_id)
+        if resolved is None:
+            print(
+                f"counterfact intervene: decision_id not found: {args.decision_id}",
+                file=sys.stderr,
+            )
+            return None
+        return resolved
+
+    for step in focal.steps:
+        if step.step_index != args.step:
+            continue
+        if not step.decisions:
+            print(
+                f"counterfact intervene: step {args.step} has no decisions",
+                file=sys.stderr,
+            )
+            return None
+        if len(step.decisions) > 1:
+            ids = ", ".join(decision.decision_id for decision in step.decisions)
+            print(
+                f"counterfact intervene: step {args.step} has multiple decisions "
+                f"({ids}); rerun with --decision-id",
+                file=sys.stderr,
+            )
+            return None
+        return step, step.decisions[0]
+
+    print(f"counterfact intervene: step not found: {args.step}", file=sys.stderr)
+    return None
+
+
+def _parse_decision_edit(raw: str | None) -> tuple[str, str] | None:
+    if raw is None or "=" not in raw:
+        print(
+            "counterfact intervene: --set expects key=value",
+            file=sys.stderr,
+        )
+        return None
+    key, value = raw.split("=", 1)
+    key = key.strip()
+    value = value.strip()
+    if not key or not value:
+        print(
+            "counterfact intervene: --set expects non-empty key=value",
+            file=sys.stderr,
+        )
+        return None
+    return key, value
+
+
+def _add_cli_diagnostics(
+    estimate: CausalEstimate,
+    *,
+    decision: Decision,
+    step: Step,
+    targeting_mode: str,
+) -> CausalEstimate:
+    payload = dict(estimate.next_step.payload)
+    payload.update(
+        {
+            "targeting_mode": targeting_mode,
+            "decision_id": decision.decision_id,
+            "step": step.step_index,
+            "decision_type": decision.decision_type,
+        }
+    )
+    next_step = estimate.next_step.model_copy(update={"payload": payload})
+    return estimate.model_copy(update={"next_step": next_step})
+
+
+def _format_intervention_estimate(
+    *,
+    estimate: CausalEstimate,
+    run: Run,
+    decision: Decision,
+    step: Step,
+    intervention_kind: str,
+    target: str,
+) -> str:
+    lines = [
+        f"counterfact intervene: {run.run_id}",
+        (
+            f"decision: {decision.decision_id} step={step.step_index} "
+            f"type={decision.decision_type} chosen={decision.chosen_action}"
+        ),
+        f"edit: {intervention_kind}={target}",
+        f"identifiability: {estimate.identifiability.value}",
+    ]
+    if estimate.outcome_delta is not None:
+        delta = estimate.outcome_delta
+        lines.append(
+            "outcome_delta: "
+            f"{delta.point:.3f} [{delta.ci_low:.3f}, {delta.ci_high:.3f}]"
+        )
+    if estimate.reason:
+        lines.append(f"reason: {estimate.reason}")
+    if estimate.warnings:
+        lines.append(f"warning: {estimate.warnings[0]}")
+    missing_arms = estimate.next_step.payload.get("missing_arms")
+    if missing_arms:
+        lines.append(f"missing_arms: {', '.join(str(arm) for arm in missing_arms)}")
+    localization_limit = estimate.next_step.payload.get("localization_limit")
+    if localization_limit:
+        lines.append(f"localization_limit: {localization_limit}")
+    lines.append(
+        f"next_step: {estimate.next_step.action} - {estimate.next_step.human_text}"
+    )
+    return "\n".join(lines)
 
 
 def _format_pass_rate_table(runs: list[Run], decision_type: str) -> list[str]:
@@ -308,51 +487,18 @@ def _analyze_corpus(args: argparse.Namespace) -> int:
 
 
 def _explain(args: argparse.Namespace) -> int:
-    from pydantic import ValidationError
-
     from counterfact.explain import build_report, render_html
 
     run_path: Path = args.run_json
-    if not run_path.exists() or not run_path.is_file():
-        print(
-            f"counterfact explain: run JSON not found: {run_path}",
-            file=sys.stderr,
-        )
-        return 2
-
-    try:
-        focal = Run.model_validate_json(run_path.read_text())
-    except (ValidationError, ValueError) as exc:
-        print(
-            f"counterfact explain: failed to parse {run_path}: {exc}",
-            file=sys.stderr,
-        )
+    focal = _load_run_file(run_path, command="explain")
+    if focal is None:
         return 2
 
     runs_dir: Path = args.runs_dir if args.runs_dir is not None else run_path.parent
-    if not runs_dir.exists() or not runs_dir.is_dir():
-        print(
-            f"counterfact explain: corpus directory not found: {runs_dir}",
-            file=sys.stderr,
-        )
+    corpus = _load_corpus_dir(runs_dir, command="explain")
+    if corpus is None:
         return 2
-
-    corpus: list[Run] = []
-    for path in sorted(runs_dir.glob("*.json")):
-        try:
-            corpus.append(Run.model_validate_json(path.read_text()))
-        except (ValidationError, ValueError) as exc:
-            print(
-                f"counterfact explain: failed to parse {path}: {exc}",
-                file=sys.stderr,
-            )
-            return 2
-
-    if focal.run_id not in {r.run_id for r in corpus}:
-        print(
-            f"counterfact explain: focal run_id={focal.run_id!r} not found in {runs_dir}",
-            file=sys.stderr,
-        )
+    if not _require_focal_in_corpus(focal, corpus, runs_dir, command="explain"):
         return 2
 
     output: Path = args.output if args.output is not None else (
@@ -365,10 +511,94 @@ def _explain(args: argparse.Namespace) -> int:
         decision_type=args.decision_type,
         bootstrap=args.bootstrap,
         seed=args.seed,
+        run_path=str(run_path),
+        corpus_dir=str(runs_dir),
     )
     html = render_html(report)
     output.write_text(html)
     print(str(output.resolve()))
+    return 0
+
+
+def _intervene_cli(args: argparse.Namespace) -> int:
+    from counterfact import fit_outcome_model, intervene
+    from counterfact.dag import build_dag
+    from counterfact.taxonomy import is_valid_intervention
+
+    run_path: Path = args.run_json
+    focal = _load_run_file(run_path, command="intervene")
+    if focal is None:
+        return 2
+
+    runs_dir: Path = args.runs_dir if args.runs_dir is not None else run_path.parent
+    corpus = _load_corpus_dir(runs_dir, command="intervene")
+    if corpus is None:
+        return 2
+    if not _require_focal_in_corpus(focal, corpus, runs_dir, command="intervene"):
+        return 2
+
+    target = _resolve_intervention_target(args, focal)
+    if target is None:
+        return 2
+    step, decision = target
+
+    parsed_edit = _parse_decision_edit(args.set_value)
+    if parsed_edit is None:
+        return 2
+    intervention_kind, target_value = parsed_edit
+    if not is_valid_intervention(decision.decision_type, intervention_kind):
+        print(
+            "counterfact intervene: intervention "
+            f"{intervention_kind!r} is not valid on decision type "
+            f"{decision.decision_type!r}",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        if len(_outcome_classes(corpus)) == 1:
+            estimate = _degenerate_estimate(
+                corpus,
+                decision_type=decision.decision_type,
+                intervention_kind=intervention_kind,
+                target=target_value,
+            )
+        else:
+            model = fit_outcome_model(corpus, n_bootstrap=args.bootstrap, seed=args.seed)
+            estimate = intervene(
+                dag=build_dag(focal),
+                model=model,
+                step=step.step_index,
+                intervention={intervention_kind: target_value},
+            )
+    except InvalidInterventionError as exc:
+        print(f"counterfact intervene: {exc}", file=sys.stderr)
+        return 2
+    estimate = _add_cli_diagnostics(
+        estimate,
+        decision=decision,
+        step=step,
+        targeting_mode="decision_id" if args.decision_id is not None else "step",
+    )
+
+    estimate_json = estimate.model_dump_json(indent=2)
+    if args.output is not None:
+        args.output.write_text(estimate_json + "\n")
+        print(str(args.output.resolve()), file=sys.stderr)
+
+    if args.json:
+        print(estimate_json)
+    else:
+        print(
+            _format_intervention_estimate(
+                estimate=estimate,
+                run=focal,
+                decision=decision,
+                step=step,
+                intervention_kind=intervention_kind,
+                target=target_value,
+            )
+        )
     return 0
 
 
@@ -475,6 +705,56 @@ def build_parser() -> argparse.ArgumentParser:
     explain.add_argument("--bootstrap", type=_positive_int, default=200)
     explain.add_argument("--seed", type=int, default=42)
     explain.set_defaults(func=_explain)
+
+    intervene_parser = sub.add_parser(
+        "intervene",
+        help="Estimate one decision edit on a trace and emit a CausalEstimate",
+    )
+    intervene_parser.add_argument(
+        "run_json",
+        type=Path,
+        help="Path to a single Run JSON file (the focal trace)",
+    )
+    intervene_parser.add_argument(
+        "--runs-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Trace corpus directory (defaults to the parent directory of run_json). "
+            "Must contain the focal run."
+        ),
+    )
+    intervene_parser.add_argument(
+        "--decision-id",
+        default=None,
+        help="Target a specific Decision.decision_id",
+    )
+    intervene_parser.add_argument(
+        "--step",
+        type=int,
+        default=None,
+        help="Target a single-decision step by step_index",
+    )
+    intervene_parser.add_argument(
+        "--set",
+        dest="set_value",
+        required=True,
+        help="Decision edit as key=value, e.g. model_choice=sonnet",
+    )
+    intervene_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit only CausalEstimate JSON to stdout",
+    )
+    intervene_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Write the CausalEstimate JSON artifact to this path",
+    )
+    intervene_parser.add_argument("--bootstrap", type=_positive_int, default=200)
+    intervene_parser.add_argument("--seed", type=int, default=42)
+    intervene_parser.set_defaults(func=_intervene_cli)
 
     bench = sub.add_parser("bench", help="Generate CounterBench corpora")
     bench_sub = bench.add_subparsers(dest="bench_kind", required=True)

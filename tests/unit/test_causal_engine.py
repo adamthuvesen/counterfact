@@ -352,6 +352,49 @@ def test_intervene__multi_decision_step_raises_clear_error(fitted: object) -> No
         )
 
 
+def test_intervene__repeated_decision_type_reports_localization_limit(
+    fitted: object,
+) -> None:
+    run = Run(
+        schema_version="0.1.0",
+        run_id="repeat-model",
+        steps=[
+            Step(
+                step_index=0,
+                decisions=[
+                    Decision(
+                        decision_id="d-model-0",
+                        decision_type="model_call",
+                        chosen_action="haiku",
+                    )
+                ],
+            ),
+            Step(
+                step_index=1,
+                decisions=[
+                    Decision(
+                        decision_id="d-model-1",
+                        decision_type="model_call",
+                        chosen_action="sonnet",
+                    )
+                ],
+            ),
+        ],
+        outcome=Outcome(kind="binary", value=False, verifier="stub"),
+    )
+
+    est = intervene(
+        dag=build_dag(run),
+        model=fitted,
+        step=0,
+        intervention={"model_choice": "sonnet"},
+    )
+
+    assert est.identifiability == IdentifiabilityStatus.UNIDENTIFIED
+    assert est.outcome_delta is None
+    assert "localization_limit" in est.next_step.payload
+
+
 # --- attribute_failure spec scenarios ----------------------------------------
 
 

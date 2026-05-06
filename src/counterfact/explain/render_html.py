@@ -9,6 +9,7 @@ emits no numeric outcome_delta or influence — the spec requirement
 
 from __future__ import annotations
 
+import shlex
 from collections.abc import Iterable
 from datetime import UTC, datetime
 
@@ -101,6 +102,40 @@ tr:last-child td { border-bottom: none; }
   border: 1px solid var(--rule);
   border-left: 4px solid var(--rule);
 }
+.timeline-list,
+.decision-card-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.timeline-step,
+.decision-card {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  padding: 12px;
+}
+.timeline-step .step-head,
+.decision-card .decision-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-weight: 600;
+}
+.timeline-step .obs-count,
+.decision-card .subtle {
+  color: var(--muted);
+  font-size: 12px;
+}
+.decision-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  margin-top: 8px;
+}
+.decision-row {
+  font-size: 13px;
+}
 .dag-wrapper {
   background: var(--card);
   border: 1px solid var(--rule);
@@ -179,6 +214,7 @@ tr:last-child td { border-bottom: none; }
   border-left: 3px solid #889;
 }
 .callout.next-step { background: #eef2f7; border-left-color: #1e40af; }
+.callout.support { background: #f6f7f9; border-left-color: #64748b; }
 code, pre {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
@@ -283,6 +319,225 @@ def _render_story(report: ExplainReport) -> str:
                 f"identifiability={top.identifiability.value}."
             )
     return tag("p", {"class": "story"}, sentence)
+
+
+# --------------------------------------------------------------------------
+# Trace timeline and decision cards
+# --------------------------------------------------------------------------
+
+
+def _render_timeline(report: ExplainReport) -> str:
+    steps: list[str] = []
+    for step in sorted(report.run.steps, key=lambda s: s.step_index):
+        decisions: list[str] = []
+        for decision in step.decisions:
+            action = decision.chosen_action or "n/a"
+            decisions.append(
+                tag(
+                    "div",
+                    {"class": "decision-row"},
+                    raw(
+                        tag("code", {"class": "inline"}, decision.decision_id)
+                        + " "
+                        + tag("span", None, decision.decision_type)
+                        + " "
+                        + tag("span", None, f"chosen={action}")
+                    ),
+                )
+            )
+        if not decisions:
+            decisions.append(
+                tag("div", {"class": "decision-row placeholder"}, "(no decisions)")
+            )
+        step_body = tag("div", {"class": "decision-list"}, raw("".join(decisions)))
+        steps.append(
+            tag(
+                "article",
+                {"class": "timeline-step", "data-step-index": step.step_index},
+                raw(
+                    tag(
+                        "div",
+                        {"class": "step-head"},
+                        raw(
+                            tag("span", None, f"step {step.step_index}")
+                            + tag(
+                                "span",
+                                {"class": "obs-count"},
+                                f"observations={len(step.observations)}",
+                            )
+                        ),
+                    )
+                    + step_body
+                ),
+            )
+        )
+    if not steps:
+        steps.append(tag("p", {"class": "placeholder"}, "(empty trace)"))
+    return tag(
+        "section",
+        {"class": "timeline"},
+        raw(tag("h2", None, "Trace timeline")),
+        raw(
+            tag(
+                "p",
+                {"class": "section-subtitle"},
+                "Step-level decision metadata only. Raw observation and model "
+                "contents are intentionally omitted.",
+            )
+        ),
+        raw(tag("div", {"class": "timeline-list"}, raw("".join(steps)))),
+    )
+
+
+def _step_index_for_decision(report: ExplainReport, decision_id: str) -> int | None:
+    for step in report.run.steps:
+        if any(decision.decision_id == decision_id for decision in step.decisions):
+            return step.step_index
+    return None
+
+
+def _arm_names(rows: object) -> list[str]:
+    if not isinstance(rows, list):
+        return []
+    names: list[str] = []
+    for row in rows:
+        if isinstance(row, dict) and row.get("arm") is not None:
+            names.append(str(row["arm"]))
+        elif isinstance(row, str):
+            names.append(row)
+    return names
+
+
+def _render_support_block(estimate: CausalEstimate) -> str | None:
+    payload = estimate.next_step.payload
+    observed = _arm_names(payload.get("observed_arms"))
+    missing = [str(arm) for arm in payload.get("missing_arms", [])]
+    localization = payload.get("localization_limit")
+    replay_inputs = payload.get("replay_inputs_required")
+    parts: list[str] = []
+    if observed:
+        parts.append(tag("li", None, "observed arms: " + ", ".join(observed)))
+    if missing:
+        parts.append(tag("li", None, "missing arms: " + ", ".join(missing)))
+    if isinstance(localization, str) and localization:
+        parts.append(tag("li", None, "localization limit: " + localization))
+    if isinstance(replay_inputs, list) and replay_inputs:
+        parts.append(
+            tag(
+                "li",
+                None,
+                "replay inputs required: "
+                + ", ".join(str(item) for item in replay_inputs),
+            )
+        )
+    if not parts:
+        return None
+    return tag(
+        "div",
+        {"class": "callout support"},
+        raw(tag("strong", None, "support diagnostics")),
+        raw(tag("ul", {"class": "flat"}, raw("".join(parts)))),
+    )
+
+
+def _intervene_json_command(report: ExplainReport, entry: AttributionEntry) -> str | None:
+    if report.run_path is None or report.corpus_dir is None or entry.estimate is None:
+        return None
+    query = entry.estimate.query
+    run_path = shlex.quote(report.run_path)
+    corpus_dir = shlex.quote(report.corpus_dir)
+    return (
+        "uv run counterfact intervene "
+        f"{run_path} --runs-dir {corpus_dir} "
+        f"--decision-id {entry.decision_id} "
+        f"--set {query.intervention_kind}={query.target} --json"
+    )
+
+
+def _render_decision_cards(report: ExplainReport) -> str:
+    if report.degenerate_estimate is not None:
+        return tag(
+            "section",
+            {"class": "decision-cards"},
+            raw(tag("h2", None, "Decision cards")),
+            raw(
+                tag(
+                    "p",
+                    {"class": "placeholder"},
+                    "(single-class corpus: no per-decision cards rendered)",
+                )
+            ),
+        )
+
+    cards: list[str] = []
+    for entry in report.attribution.entries:
+        step_index = _step_index_for_decision(report, entry.decision_id)
+        estimate = entry.estimate
+        support = _render_support_block(estimate) if estimate is not None else None
+        command = _intervene_json_command(report, entry)
+        if step_index is None:
+            step_pill = tag(
+                "span",
+                {"class": "subtle", "title": "step index unresolved"},
+                "step=?",
+            )
+        else:
+            step_pill = tag("span", {"class": "subtle"}, f"step={step_index}")
+        body_parts = [
+            tag(
+                "div",
+                {"class": "decision-head"},
+                raw(
+                    tag("code", {"class": "inline"}, entry.decision_id)
+                    + tag("span", None, entry.decision_type)
+                    + step_pill
+                    + _render_badge(entry.identifiability)
+                ),
+            ),
+            tag("div", {"class": "subtle"}, f"chosen_action={entry.chosen_action}"),
+        ]
+        if estimate is not None:
+            body_parts.append(
+                tag(
+                    "div",
+                    {"class": "subtle"},
+                    f"next_step.action={estimate.next_step.action}",
+                )
+            )
+        if support is not None:
+            body_parts.append(support)
+        if command is not None:
+            body_parts.append(
+                tag(
+                    "pre",
+                    {"class": "cmd"},
+                    raw(tag("code", None, command)),
+                )
+            )
+        cards.append(
+            tag(
+                "article",
+                {"class": f"decision-card ident-{entry.identifiability.value}"},
+                raw("".join(body_parts)),
+            )
+        )
+    if not cards:
+        cards.append(
+            tag("p", {"class": "placeholder"}, "(no attribution entries available)")
+        )
+    return tag(
+        "section",
+        {"class": "decision-cards"},
+        raw(tag("h2", None, "Decision cards")),
+        raw(
+            tag(
+                "p",
+                {"class": "section-subtitle"},
+                "Decision-level trace forensics with support and replay guidance.",
+            )
+        ),
+        raw(tag("div", {"class": "decision-card-list"}, raw("".join(cards)))),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -830,8 +1085,10 @@ def render_html(report: ExplainReport, *, now: datetime | None = None) -> str:
                 {"class": "page"},
                 raw(_render_header(report, generated_at=generated_at)),
                 raw(_render_story(report)),
+                raw(_render_timeline(report)),
                 raw(_render_descriptive(report)),
                 raw(_render_dag(report.dag, focal_decision_id=focal_id)),
+                raw(_render_decision_cards(report)),
                 raw(_render_verdict(report)),
                 raw(_render_footer(report, generated_at=generated_at)),
             )

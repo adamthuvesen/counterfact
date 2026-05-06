@@ -45,6 +45,8 @@ class ExplainReport(BaseModel):
     target_arm: str | None = None
     bootstrap: int = 200
     seed: int = 42
+    run_path: str | None = None
+    corpus_dir: str | None = None
     notes: list[str] = Field(default_factory=list)
 
 
@@ -64,6 +66,8 @@ def build_report(
     decision_type: Literal["model_call", "tool_call", "retry"] = "model_call",
     bootstrap: int = 200,
     seed: int = 42,
+    run_path: str | None = None,
+    corpus_dir: str | None = None,
 ) -> ExplainReport:
     """Compose an `ExplainReport` from one focal `Run` plus its corpus.
 
@@ -111,6 +115,8 @@ def build_report(
             target_arm=target,
             bootstrap=bootstrap,
             seed=seed,
+            run_path=run_path,
+            corpus_dir=corpus_dir,
         )
 
     model = fit_outcome_model(corpus, n_bootstrap=bootstrap, seed=seed)
@@ -128,4 +134,6 @@ def build_report(
         target_arm=_first_arm(corpus, decision_type),
         bootstrap=bootstrap,
         seed=seed,
+        run_path=run_path,
+        corpus_dir=corpus_dir,
     )
