@@ -7,12 +7,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from counterfact.intervene.estimate import (
-    CausalEstimate,
-    IdentifiabilityStatus,
-    InterventionQuery,
-    NextStep,
+from counterfact.intervene.degenerate import (
+    degenerate_estimate as _shared_degenerate_estimate,
 )
+from counterfact.intervene.degenerate import outcome_classes as _shared_outcome_classes
+from counterfact.intervene.estimate import CausalEstimate
 from counterfact.schema import Run
 
 
@@ -29,7 +28,7 @@ def _synthetic_runs(n: int, seed: int) -> list[Run]:
 
 
 def _outcome_classes(runs: list[Run]) -> set[bool]:
-    return {bool(run.outcome.value) for run in runs}
+    return _shared_outcome_classes(runs)
 
 
 def _first_step_for_decision_type(runs: list[Run], decision_type: str) -> tuple[Run, int]:
@@ -62,60 +61,11 @@ def _intervention_kind(decision_type: str) -> str:
 def _degenerate_estimate(
     runs: list[Run], *, decision_type: str, intervention_kind: str, target: Any
 ) -> CausalEstimate:
-    from counterfact import pass_rate_by_arm
-    from counterfact.intervene.suggest import known_arms, suggest_harness_command
-
-    classes = _outcome_classes(runs)
-    if len(classes) != 1:
-        raise ValueError("degenerate estimate requires exactly one outcome class")
-    observed = next(iter(classes))
-
-    table = pass_rate_by_arm(runs, decision_type)
-    observed_arms = [row.model_dump() for row in table.rows]
-    observed_arm_names = [row.arm for row in table.rows]
-    canonical = known_arms(decision_type, intervention_kind)
-    missing_arms = [arm for arm in canonical if arm not in observed_arm_names]
-
-    suggestion = suggest_harness_command(
+    return _shared_degenerate_estimate(
+        runs,
         decision_type=decision_type,
         intervention_kind=intervention_kind,
-        action="broaden_arm_support",
-        arm_name=str(target) if target is not None else None,
-    )
-
-    payload: dict[str, Any] = {
-        "arm_name": "outcome",
-        "missing_strata": [f"Outcome.value={not observed}"],
-        "observed_arms": observed_arms,
-        "missing_arms": missing_arms,
-    }
-    if suggestion is not None:
-        payload["suggested_command"] = suggestion
-
-    return CausalEstimate(
-        query=InterventionQuery(
-            decision_type=decision_type,
-            intervention_kind=intervention_kind,
-            target=target,
-            step=-1,
-        ),
-        identifiability=IdentifiabilityStatus.UNIDENTIFIED,
-        reason=(
-            "real corpus is causally degenerate: every trace has "
-            f"Outcome.value={observed}; no outcome variation exists for an outcome "
-            "model or back-door adjustment to leverage"
-        ),
-        warnings=[
-            "fit_outcome_model is intentionally skipped for single-class real corpora"
-        ],
-        next_step=NextStep(
-            action="broaden_arm_support",
-            payload=payload,
-            human_text=(
-                "Collect or construct traces with both pass and fail outcomes before "
-                "estimating decision-level effects on the real corpus."
-            ),
-        ),
+        target=target,
     )
 
 
@@ -280,6 +230,71 @@ def _analyze_corpus(args: argparse.Namespace) -> int:
     return 0 if report.promote else 1
 
 
+def _explain(args: argparse.Namespace) -> int:
+    from pydantic import ValidationError
+
+    from counterfact.explain import build_report, render_html
+
+    run_path: Path = args.run_json
+    if not run_path.exists() or not run_path.is_file():
+        print(
+            f"counterfact explain: run JSON not found: {run_path}",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        focal = Run.model_validate_json(run_path.read_text())
+    except (ValidationError, ValueError) as exc:
+        print(
+            f"counterfact explain: failed to parse {run_path}: {exc}",
+            file=sys.stderr,
+        )
+        return 2
+
+    runs_dir: Path = args.runs_dir if args.runs_dir is not None else run_path.parent
+    if not runs_dir.exists() or not runs_dir.is_dir():
+        print(
+            f"counterfact explain: corpus directory not found: {runs_dir}",
+            file=sys.stderr,
+        )
+        return 2
+
+    corpus: list[Run] = []
+    for path in sorted(runs_dir.glob("*.json")):
+        try:
+            corpus.append(Run.model_validate_json(path.read_text()))
+        except (ValidationError, ValueError) as exc:
+            print(
+                f"counterfact explain: failed to parse {path}: {exc}",
+                file=sys.stderr,
+            )
+            return 2
+
+    if focal.run_id not in {r.run_id for r in corpus}:
+        print(
+            f"counterfact explain: focal run_id={focal.run_id!r} not found in {runs_dir}",
+            file=sys.stderr,
+        )
+        return 2
+
+    output: Path = args.output if args.output is not None else (
+        run_path.parent / f"counterfact-explain-{focal.run_id}.html"
+    )
+
+    report = build_report(
+        focal,
+        corpus,
+        decision_type=args.decision_type,
+        bootstrap=args.bootstrap,
+        seed=args.seed,
+    )
+    html = render_html(report)
+    output.write_text(html)
+    print(str(output.resolve()))
+    return 0
+
+
 def _bench_real(args: argparse.Namespace) -> int:
     from bench.real.coding_agent.agent import AgentRunConfig
     from bench.real.coding_agent.runner import run_real_corpus
@@ -334,6 +349,46 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--seed", type=int, default=42)
     demo.add_argument("--bootstrap", type=int, default=200)
     demo.set_defaults(func=_demo)
+
+    explain = sub.add_parser(
+        "explain",
+        help=(
+            "Render a self-contained HTML report explaining one trace, "
+            "grounded in CausalEstimate"
+        ),
+    )
+    explain.add_argument(
+        "run_json",
+        type=Path,
+        help="Path to a single Run JSON file (the focal trace)",
+    )
+    explain.add_argument(
+        "--runs-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Corpus directory (defaults to the parent directory of run_json). "
+            "Must contain the focal run."
+        ),
+    )
+    explain.add_argument(
+        "--decision-type",
+        choices=["model_call", "tool_call", "retry"],
+        default="model_call",
+        help="Decision type to summarize (default: model_call)",
+    )
+    explain.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help=(
+            "Output HTML path (default: "
+            "<run-json-parent>/counterfact-explain-<run_id>.html)"
+        ),
+    )
+    explain.add_argument("--bootstrap", type=int, default=200)
+    explain.add_argument("--seed", type=int, default=42)
+    explain.set_defaults(func=_explain)
 
     bench = sub.add_parser("bench", help="Generate CounterBench corpora")
     bench_sub = bench.add_subparsers(dest="bench_kind", required=True)

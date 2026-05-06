@@ -127,7 +127,16 @@ uv run counterfact demo
 
 # Force synthetic fallback for the demo
 uv run counterfact demo --runs-dir /tmp/missing --synthetic-n 500 --target sonnet
+
+# Per-trace HTML report grounded in CausalEstimate
+uv run counterfact explain bench/real/runs_v2/real-date_window-000000.json --runs-dir bench/real/runs_v2
 ```
+
+`counterfact explain` writes a self-contained HTML file (no JS, no CDN, no
+new runtime deps) that pairs the descriptive `pass_rate_by_arm` baseline
+with one CausalEstimate card per ranked decision. Numeric estimates are
+suppressed for `unidentified` cards; `next_step` and any
+`suggested_command` are surfaced verbatim.
 
 The real-agent harness is available behind an explicit budget and first-run approval gate:
 

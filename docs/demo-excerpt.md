@@ -41,3 +41,17 @@ and returns `unidentified` with `next_step.action = broaden_arm_support`.
 The naive table and the honest verdict do not contradict each other here —
 the headline is that `counterfact` produces a labeled estimate alongside the
 descriptive baseline so consumers can tell which one to trust.
+
+## Per-Trace HTML Report
+
+For a single trace, `counterfact explain <run-json>` renders a
+self-contained HTML report that mirrors this naive-vs-honest framing:
+the descriptive `pass_rate_by_arm` table at the top, the per-trace DAG
+inline as SVG with the top-attributed decision highlighted, and one
+`CausalEstimate` card per ranked decision below. Cards are colour-coded
+by `IdentifiabilityStatus`, and numeric `outcome_delta` blocks are
+structurally suppressed when a card is `unidentified` so the report
+cannot accidentally smuggle a fake estimate through. Pointing it at a
+single-class run (e.g. anything in `runs_v1`) renders exactly one
+`unidentified` card with the `broaden_arm_support` next-step callout
+and no point estimate anywhere on the page.
