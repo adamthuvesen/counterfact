@@ -24,6 +24,78 @@ Requires Python 3.11+.
 
 ## Quickstart
 
+Drop in your agent traces, run diagnose. If you already use the Claude
+Agent SDK, the path is one command:
+
+```bash
+uv run counterfact ingest claude-agent-sdk traces.jsonl --output-dir corpus/
+uv run counterfact diagnose corpus/<session-id>.json --runs-dir corpus/
+```
+
+`traces.jsonl` is one session per line, each line either a JSON object
+`{"messages": [...]}` or a JSON array of message dicts. There is no
+mapping file: counterfact reads `session_id`, `ToolUseBlock`,
+`AssistantMessage.model`, and `ResultMessage.is_error` directly.
+
+For live tracing while your agent runs, wrap the message stream:
+
+```python
+from pathlib import Path
+from claude_agent_sdk import query
+from counterfact.tracing import ClaudeAgentTracer
+
+async with ClaudeAgentTracer(output_dir=Path("corpus/")) as tracer:
+    async for msg in query(prompt="..."):
+        tracer.observe(msg)
+# corpus/<session_id>.json is written on exit.
+```
+
+The same offline-vs-live mapping is used for both — byte-equivalent output.
+
+If you use the OpenAI Agents SDK instead, the path is symmetric:
+
+```bash
+uv run counterfact ingest openai-agents trace.json --output-dir corpus/ --outcome pass
+uv run counterfact diagnose corpus/<trace-id>.json --runs-dir corpus/
+```
+
+`--outcome pass|fail` is required when the trace has neither a root error
+nor a `counterfact.outcome` marker span. counterfact never infers
+pass/fail from "no error" — that would manufacture a confidence the data
+does not support.
+
+For live tracing, register the processor:
+
+```python
+from agents import add_trace_processor
+from counterfact.tracing import CounterfactSpanProcessor
+
+add_trace_processor(
+    CounterfactSpanProcessor(
+        output_dir=Path("corpus/"),
+        outcome_provider=my_evaluator,  # optional; returns True/False/None per trace
+    )
+)
+```
+
+| Adapter | Source format | Live helper |
+| --- | --- | --- |
+| `claude-agent-sdk` | JSONL of Claude Agent SDK message dicts | `ClaudeAgentTracer` |
+| `openai-agents` | JSON trace export from OpenAI Agents SDK | `CounterfactSpanProcessor` |
+| `generic-jsonl` | any JSONL with a user-supplied mapping | — |
+
+The full loop is the same in either direction:
+
+```text
+your agent run ─┬─► live tracer  ─┐
+                │                  ├─► corpus/  ─► counterfact diagnose
+                └─► trace dump  ──►│
+                    ingest <sdk>  ─┘
+```
+
+Live tracing and offline ingest share one mapping, so `corpus/<id>.json` is
+byte-equivalent whether you instrumented the run or imported its dump.
+
 Diagnose a failed trace against its corpus and write a shareable HTML report:
 
 ```bash

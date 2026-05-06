@@ -832,6 +832,62 @@ def _ingest_generic_jsonl_cli(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ingest_claude_agent_sdk_cli(args: argparse.Namespace) -> int:
+    from counterfact.adapters._common import IngestError
+    from counterfact.adapters.claude_agent_sdk import ingest_claude_agent_sdk
+
+    try:
+        receipt = ingest_claude_agent_sdk(args.source_jsonl, args.output_dir)
+    except IngestError as exc:
+        print(f"counterfact ingest claude-agent-sdk: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(receipt.model_dump_json(indent=2))
+    else:
+        print(
+            f"counterfact ingest claude-agent-sdk: wrote {receipt.generated_count} trace(s)"
+        )
+        print(str((args.output_dir / "ingest-receipt.json").resolve()))
+        for warning in receipt.warnings:
+            print(f"warning: {warning}")
+    return 0
+
+
+def _ingest_openai_agents_cli(args: argparse.Namespace) -> int:
+    from counterfact.adapters._common import IngestError
+    from counterfact.adapters.openai_agents import ingest_openai_agents
+
+    outcome: bool | None
+    if args.outcome is None:
+        outcome = None
+    elif args.outcome == "pass":
+        outcome = True
+    elif args.outcome == "fail":
+        outcome = False
+    else:
+        print(
+            "counterfact ingest openai-agents: --outcome must be 'pass' or 'fail'",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        receipt = ingest_openai_agents(args.source_json, args.output_dir, outcome=outcome)
+    except IngestError as exc:
+        print(f"counterfact ingest openai-agents: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(receipt.model_dump_json(indent=2))
+    else:
+        print(
+            f"counterfact ingest openai-agents: wrote {receipt.generated_count} trace(s)"
+        )
+        print(str((args.output_dir / "ingest-receipt.json").resolve()))
+        for warning in receipt.warnings:
+            print(f"warning: {warning}")
+    return 0
+
+
 def _export_runs_cli(args: argparse.Namespace) -> int:
     from counterfact.eval_audit_export import export_eval_audit_parquet
 
@@ -1026,7 +1082,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--decision-type",
         choices=["model_call", "tool_call", "retry"],
         default="model_call",
-        help="Decision type to summarize when fitting diagnosis support",
+        help="Only rank decisions of this type",
     )
     diagnose.add_argument("--top-k", type=_positive_int, default=3)
     diagnose.add_argument("--bootstrap", type=_positive_int, default=200)
@@ -1070,7 +1126,12 @@ def build_parser() -> argparse.ArgumentParser:
     compare.set_defaults(func=_compare_cli)
 
     ingest = sub.add_parser("ingest", help="Convert external trace data to native Run JSON")
-    ingest_sub = ingest.add_subparsers(dest="ingest_kind", required=True)
+    ingest.add_argument(
+        "--list-formats",
+        action="store_true",
+        help="List supported source formats and exit",
+    )
+    ingest_sub = ingest.add_subparsers(dest="ingest_kind", required=False)
     generic_jsonl = ingest_sub.add_parser(
         "generic-jsonl",
         help="Convert JSONL records through an explicit mapping file",
@@ -1080,6 +1141,51 @@ def build_parser() -> argparse.ArgumentParser:
     generic_jsonl.add_argument("--output-dir", type=Path, required=True)
     generic_jsonl.add_argument("--json", action="store_true", help="Emit receipt JSON")
     generic_jsonl.set_defaults(func=_ingest_generic_jsonl_cli)
+
+    claude_sdk = ingest_sub.add_parser(
+        "claude-agent-sdk",
+        help=(
+            "Convert a JSONL stream of Claude Agent SDK message dataclass dumps "
+            "to native Run JSON (zero-config — no mapping required)"
+        ),
+    )
+    claude_sdk.add_argument(
+        "source_jsonl",
+        type=Path,
+        help=(
+            "JSONL where each line is either {\"messages\": [...]} or a JSON list "
+            "of message dicts captured from claude_agent_sdk.query()"
+        ),
+    )
+    claude_sdk.add_argument("--output-dir", type=Path, required=True)
+    claude_sdk.add_argument("--json", action="store_true", help="Emit receipt JSON")
+    claude_sdk.set_defaults(func=_ingest_claude_agent_sdk_cli)
+
+    openai_agents = ingest_sub.add_parser(
+        "openai-agents",
+        help=(
+            "Convert an OpenAI Agents SDK trace export (one JSON file with a flat "
+            "spans array) to native Run JSON"
+        ),
+    )
+    openai_agents.add_argument(
+        "source_json",
+        type=Path,
+        help="Path to a JSON file containing one trace or a list of traces",
+    )
+    openai_agents.add_argument("--output-dir", type=Path, required=True)
+    openai_agents.add_argument(
+        "--outcome",
+        choices=["pass", "fail"],
+        default=None,
+        help=(
+            "Explicit binary outcome for traces without a counterfact.outcome "
+            "marker span and without a root error. The adapter never infers "
+            "outcomes from the absence of error."
+        ),
+    )
+    openai_agents.add_argument("--json", action="store_true", help="Emit receipt JSON")
+    openai_agents.set_defaults(func=_ingest_openai_agents_cli)
 
     export_runs = sub.add_parser(
         "export-runs",
@@ -1224,10 +1330,30 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+_INGEST_FORMATS = [
+    ("claude-agent-sdk", "Claude Agent SDK message JSONL (zero-config)"),
+    ("openai-agents", "OpenAI Agents SDK trace JSON (requires --outcome unless derivable)"),
+    ("generic-jsonl", "Any JSONL with an explicit user-supplied --mapping file"),
+]
+
+
+def _print_ingest_formats() -> int:
+    width = max(len(name) for name, _ in _INGEST_FORMATS)
+    for name, description in _INGEST_FORMATS:
+        print(f"  {name:<{width}}  {description}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     ns = parser.parse_args(argv)
-    return int(ns.func(ns))
+    if getattr(ns, "command", None) == "ingest" and getattr(ns, "list_formats", False):
+        return _print_ingest_formats()
+    func = getattr(ns, "func", None)
+    if func is None:
+        parser.parse_args([ns.command, "--help"])  # exits via argparse
+        return 2
+    return int(func(ns))
 
 
 if __name__ == "__main__":
