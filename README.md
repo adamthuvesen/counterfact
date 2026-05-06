@@ -10,12 +10,9 @@ If this agent system had used a different LLM, tool, or retry policy, would the 
 
 The answer is always labelled:
 
-- `identified` - the logged data supports a point estimate under the graph,
-  support, and assumptions.
-- `bounded` - the data does not support a point estimate, but sensitivity bounds
-  are available.
-- `unidentified` - the corpus does not support the counterfactual without more
-  data, stronger assumptions, or replay.
+- `identified` - the logged data supports a point estimate under the graph, support, and assumptions.
+- `bounded` - the data does not support a point estimate, but sensitivity bounds are available.
+- `unidentified` - the corpus does not support the counterfactual without more data, stronger assumptions, or replay.
 
 The useful feature is not confidence. It is knowing when confidence would be fake.
 
@@ -63,8 +60,7 @@ naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap ... = +0.251; .
 
 The pass-rate table is descriptive. It says what happened in the logged corpus.
 
-The intervention estimate is causal. It asks what the model predicts under a
-declared intervention, using the observed graph, support, and assumptions.
+The intervention estimate is causal. It asks what the model predicts under a declared intervention, using the observed graph, support, and assumptions.
 
 Those are different claims.
 
@@ -111,22 +107,19 @@ Common decision types:
 - `memory_read`
 - `termination`
 
-The demo focuses on `model_call`, `tool_call`, and `retry` because those have
-clear intervention arms.
+The demo focuses on `model_call`, `tool_call`, and `retry` because those have clear intervention arms.
 
 ### DAG
 
 `build_dag()` builds an inspectable graph for one trace.
 
-The graph is not learned from data. It is built from the trace structure so the
-causal assumptions stay visible.
+The graph is not learned from data. It is built from the trace structure so the causal assumptions stay visible.
 
 ### Outcome Model
 
 `fit_outcome_model()` fits a simple binary outcome model over a corpus.
 
-It is intentionally transparent. If the corpus has only one outcome class, the
-engine refuses to fit and returns `unidentified`.
+It is intentionally transparent. If the corpus has only one outcome class, the engine refuses to fit and returns `unidentified`.
 
 ### Intervention
 
@@ -197,11 +190,9 @@ Real-trace smoke test:
 uv run counterfact demo
 ```
 
-The default demo reads the committed smoke-test corpus at
-`bench/real/smoke_mixed_outcome/`.
+The default demo reads the committed smoke-test corpus at `bench/real/smoke_mixed_outcome/`.
 
-This command does not run the real-agent harness and does not call external
-LLMs.
+This command does not run the real-agent harness and does not call external LLMs.
 
 Single-class refusal branch:
 
@@ -209,8 +200,7 @@ Single-class refusal branch:
 uv run counterfact demo --runs-dir bench/real/single_class_refusal
 ```
 
-This corpus has only one outcome class. The expected result is
-`identifiability: unidentified`.
+This corpus has only one outcome class. The expected result is `identifiability: unidentified`.
 
 Synthetic fallback:
 
@@ -229,7 +219,7 @@ This is deterministic and local.
 ### Explain One Trace
 
 ```bash
-uv run counterfact explain bench/real/smoke_mixed_outcome/real-date_window-000000.json \
+uv run counterfact explain bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000000.json \
   --runs-dir bench/real/smoke_mixed_outcome
 ```
 
@@ -250,8 +240,7 @@ For `unidentified` estimates, numeric outcome deltas are hidden.
 uv run counterfact analyze corpus bench/real/smoke_mixed_outcome
 ```
 
-The analyzer checks whether a corpus is ready to be promoted as a committed
-real-trace corpus.
+The analyzer checks whether a corpus is ready to be promoted as a committed real-trace corpus.
 
 The default rubric expects:
 
@@ -263,36 +252,13 @@ The default rubric expects:
 
 The analyzer reports. It does not promote or rename anything.
 
-The pilot analyzer gives a different signal: whether a hard corpus is a good
-showcase. A showcase corpus should be dominated by hidden semantic failures, not
-patch-format failures.
+The pilot analyzer gives a different signal: whether a hard corpus is a good showcase. A showcase corpus should be dominated by hidden semantic failures, not patch-format failures.
 
 ## Real-Agent Benchmarks
 
-There are four real-benchmark concepts worth knowing:
+The real benchmark harness can call external LLM APIs and spend money. The local demo, synthetic benchmark, analyzer, and tests do not require provider credentials.
 
-| Name | Kind | Purpose |
-| --- | --- | --- |
-| `single_class_refusal` | corpus | Regression corpus proving honest refusal on single-class outcomes. |
-| `smoke_mixed_outcome` | corpus | Current real demo corpus. Useful, but not the final benchmark corpus. |
-| `broad_calibration` | fixture set | Broad hidden-fixture calibration across date windows, rate limits, and version ranges. |
-| `stateful_calibration` | fixture set | Harder stateful streaming calibration using watermark dedupe semantics. |
-
-The real benchmark harness can call external LLM APIs and spend money.
-
-Broad calibration:
-
-```bash
-uv run counterfact bench real --n 60 \
-  --fixture-set broad_calibration \
-  --model-epsilon 1.0 \
-  --tool-epsilon 0.0 \
-  --retry-epsilon 0.0 \
-  --budget-cap 10 \
-  --output-dir bench/real/pilot_broad_calibration_balanced
-```
-
-Stateful calibration:
+Example pilot:
 
 ```bash
 uv run counterfact bench real --n 60 \
@@ -306,79 +272,11 @@ uv run counterfact bench real --n 60 \
 
 Do not run this as a routine test.
 
-The harness has a first-run approval gate and budget tracking. The local demo,
-synthetic benchmark, analyzer, and tests do not require provider credentials.
+See `bench/real/README.md` for corpus promotion conventions and fixture sets.
 
-See `bench/real/README.md` for the corpus convention.
-
-## Committed Corpora
-
-### Real-Trace Smoke Corpus
-
-Path: `bench/real/smoke_mixed_outcome/`
-
-- 100 mixed-outcome real-agent traces.
-- Default corpus for `uv run counterfact demo`.
-- Used as a smoke test, not a statistical headline.
-- Fails the stricter promotion rubric because the `large` arm is currently
-  all-pass.
-- Replace this only after a new pilot passes both promotion and showcase-quality
-  checks.
-
-### Single-Class Refusal Corpus
-
-Path: `bench/real/single_class_refusal/`
-
-- 3 single-class real-agent traces.
-- Regression anchor for the honest refusal path.
-- Expected to return `unidentified`.
-
-## NextStep Payloads
-
-Every `CausalEstimate.next_step` has:
-
-- `action`
-- `human_text`
-- `payload`
-
-Current actions:
-
-- `broaden_arm_support`
-- `increase_n`
-- `replay_required`
-- `add_arm_randomization`
-- `none`
-
-When the tool can suggest a data-generation command, the payload includes
-`suggested_command`.
-
-## Validation
+## Development
 
 ```bash
 uv run ruff check .
 uv run pytest
 ```
-
-CI expects Ruff and the full non-skipped pytest suite to pass.
-
-## What Counterfact Does Not Claim
-
-`counterfact` does not provide:
-
-- Pearl L3 structural counterfactuals for arbitrary prompt rewrites
-- DAG learning
-- token-level causal graphs
-- a universal calibrated `P(success)`
-- hidden latent-quality modeling
-- an observability UI
-- provider replay guarantees
-
-It is deliberately narrow: causal attribution for logged agent decisions, with
-identifiability visible in the result.
-
-## More Detail
-
-- `docs/demo-excerpt.md` explains the demo output.
-- `bench/real/README.md` explains real corpus promotion.
-- `openspec/specs/causal-engine/spec.md` documents the `CausalEstimate` and
-  `NextStep` contracts.
