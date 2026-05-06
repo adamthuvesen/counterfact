@@ -36,6 +36,14 @@ def test_late_event_dropping_does_not_poison_future_duplicate_state() -> None:
     assert deduper.process([_event("same-id", 11)]) == [_event("same-id", 11)]
 
 
+def test_non_late_duplicate_still_advances_watermark() -> None:
+    deduper = WatermarkDeduper(allowed_lateness=0, ttl=100)
+    assert deduper.process([_event("dup", 10)]) == [_event("dup", 10)]
+
+    assert deduper.process([_event("dup", 20)]) == []
+    assert deduper.process([_event("fresh-but-now-late", 15)]) == []
+
+
 def test_ttl_eviction_allows_reuse_after_retained_window() -> None:
     deduper = WatermarkDeduper(allowed_lateness=100, ttl=5)
     assert deduper.process([_event("id-1", 0)]) == [_event("id-1", 0)]
