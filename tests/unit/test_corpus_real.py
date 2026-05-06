@@ -314,6 +314,74 @@ def test_agent_logs_all_randomization_fields(tmp_path: Path) -> None:
     assert saw_random
 
 
+def test_agent_observation_records_extracted_patch_text(tmp_path: Path) -> None:
+    """WHEN the LLM returns a Python code block
+    THEN the model_call observation's `extracted_code` field carries the
+    actual patch source as a string (not a bool flag) so downstream
+    consumers can inspect what the agent wrote."""
+    fixture = FIXTURES[1]
+    code = "def add(a, b):\n    return a + b"
+    fenced_response = f"Here's the fix:\n\n```python\n{code}\n```\n"
+
+    class _FencedLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text=fenced_response, cost_usd=0.0)
+
+    run = run_one_trace(
+        fixture,
+        run_index=0,
+        llm=_FencedLLM(),
+        budget=BudgetTracker(cap_usd=1.0),
+        sandbox_root=tmp_path,
+        config=AgentRunConfig(epsilon=0.0, seed=0),
+    )
+
+    model_call_obs = [
+        obs.content
+        for step in run.steps
+        for obs in step.observations
+        for d in step.decisions
+        if d.decision_type == "model_call"
+    ]
+    assert model_call_obs, "no model_call observation found"
+    first = model_call_obs[0]
+    actual_type = type(first["extracted_code"]).__name__
+    assert isinstance(first["extracted_code"], str), (
+        f"extracted_code should be the patch text (str), got {actual_type}"
+    )
+    assert "def add" in first["extracted_code"]
+
+
+def test_agent_observation_extracted_code_is_none_when_parse_fails(tmp_path: Path) -> None:
+    """WHEN the LLM response has no code fence
+    THEN `extracted_code` is None (not False), preserving the
+    'parse failed' signal as a typed absence rather than a bool flag."""
+    fixture = FIXTURES[1]
+
+    class _NoFenceLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text="I don't know how to fix this.", cost_usd=0.0)
+
+    run = run_one_trace(
+        fixture,
+        run_index=0,
+        llm=_NoFenceLLM(),
+        budget=BudgetTracker(cap_usd=1.0),
+        sandbox_root=tmp_path,
+        config=AgentRunConfig(epsilon=0.0, seed=0),
+    )
+
+    model_call_obs = [
+        obs.content
+        for step in run.steps
+        for obs in step.observations
+        for d in step.decisions
+        if d.decision_type == "model_call"
+    ]
+    assert model_call_obs, "no model_call observation found"
+    assert model_call_obs[0]["extracted_code"] is None
+
+
 # --- Approval gate / resume / CLI -------------------------------------------
 
 
