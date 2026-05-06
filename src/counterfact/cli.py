@@ -447,11 +447,11 @@ def _format_report(report: Any, runs_dir: Path) -> str:
     for c in report.criteria:
         prefix = "PASS" if c.passed else "FAIL"
         lines.append(f"{prefix} {c.reason}")
-    lines.append(f"promote: {report.promote}")
+    lines.append(f"support_ready: {report.promote}")
     if report.promote:
         lines.append(
             "support_readiness: suitable for counterfactual-support workflows; "
-            "promotion remains a human decision."
+            "use diagnose/intervene for trace-level causal questions."
         )
     else:
         lines.append("next_collection_guidance:")
@@ -683,7 +683,8 @@ def _format_diagnosis(report: Any) -> str:
 
 
 def _diagnose_cli(args: argparse.Namespace) -> int:
-    from counterfact.diagnose import build_diagnosis
+    from counterfact.diagnose import build_diagnosis_pair
+    from counterfact.explain import render_html
 
     run_path: Path = args.run_json
     focal = _load_run_file(run_path, command="diagnose")
@@ -698,7 +699,7 @@ def _diagnose_cli(args: argparse.Namespace) -> int:
         return 2
 
     try:
-        report = build_diagnosis(
+        report, html_report = build_diagnosis_pair(
             focal,
             corpus,
             decision_type=args.decision_type,
@@ -712,10 +713,24 @@ def _diagnose_cli(args: argparse.Namespace) -> int:
         print(f"counterfact diagnose: {exc}", file=sys.stderr)
         return 2
 
+    if args.html is not None:
+        try:
+            args.html.write_text(render_html(html_report))
+        except OSError as exc:
+            print(
+                f"counterfact diagnose: failed to write HTML {args.html}: {exc}",
+                file=sys.stderr,
+            )
+            return 2
+        if args.json:
+            print(str(args.html.resolve()), file=sys.stderr)
+
     if args.json:
         print(report.model_dump_json(indent=2, exclude_none=True))
     else:
         print(_format_diagnosis(report))
+        if args.html is not None:
+            print(f"html_report: {args.html.resolve()}")
     return 0
 
 
@@ -1017,6 +1032,12 @@ def build_parser() -> argparse.ArgumentParser:
     diagnose.add_argument("--bootstrap", type=_positive_int, default=200)
     diagnose.add_argument("--seed", type=int, default=42)
     diagnose.add_argument("--json", action="store_true", help="Emit JSON only")
+    diagnose.add_argument(
+        "--html",
+        type=Path,
+        default=None,
+        help="Write a self-contained diagnosis-first HTML report to this path",
+    )
     diagnose.set_defaults(func=_diagnose_cli)
 
     compare = sub.add_parser(
@@ -1159,7 +1180,8 @@ def build_parser() -> argparse.ArgumentParser:
     real.set_defaults(func=_bench_real)
 
     analyze = sub.add_parser(
-        "analyze", help="Score a candidate corpus against the promotion rubric"
+        "analyze",
+        help="Check corpus support-readiness for counterfactual diagnosis",
     )
     analyze_sub = analyze.add_subparsers(dest="analyze_kind", required=True)
     corpus = analyze_sub.add_parser(

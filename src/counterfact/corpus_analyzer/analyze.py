@@ -309,7 +309,7 @@ def analyze(
     *,
     thresholds: RubricThresholds = DEFAULT_THRESHOLDS,
 ) -> CorpusReadinessReport:
-    """Score a candidate corpus against the promotion rubric.
+    """Check whether a corpus is ready for counterfactual support questions.
 
     Returns a `CorpusReadinessReport`. The function is deterministic, makes
     no LLM calls, and writes no files. Empty inputs are reported (not raised).

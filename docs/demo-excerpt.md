@@ -73,12 +73,13 @@ a one-class outcome model and returns `unidentified` with
 
 ## Trace forensics
 
-For a single trace, `counterfact explain <run-json>` renders a
-self-contained HTML report that mirrors this naive-vs-causal framing: the
-descriptive `pass_rate_by_arm` table at the top, the per-trace DAG inline
-as SVG with the top-attributed decision highlighted, a trace timeline,
-decision cards with support/replay warnings, and one `CausalEstimate` card
-per ranked decision below. Cards are colour-coded by
+For a single trace, start with `counterfact diagnose <run-json> --html report.html`.
+It writes a diagnosis-first HTML report that answers the practical question:
+where did this run most plausibly go wrong, and can the corpus honestly support
+that counterfactual? The report includes the same descriptive
+`pass_rate_by_arm` table, per-trace DAG, trace timeline, decision cards with
+support/replay warnings, and `CausalEstimate` cards used by `counterfact explain`.
+Cards are colour-coded by
 `IdentifiabilityStatus`, and numeric `outcome_delta` blocks are structurally
 suppressed when a card is `unidentified` so the report cannot emit an estimate
 the data does not support. Pointing it at a single-class run (e.g. anything in
@@ -86,10 +87,16 @@ the data does not support. Pointing it at a single-class run (e.g. anything in
 `broaden_arm_support` next-step callout and no point estimate anywhere on the
 page.
 
+For a hands-on tour, see `examples/trace-forensics/`. The gallery has small
+synthetic fixtures for wrong model choice, bad tool choice, missed retry,
+stopped too early, unsupported counterfactuals, single-class support refusal,
+and pass/fail trace diffs. It is deliberately illustrative, not benchmark
+evidence.
+
 For a reusable artifact, `counterfact intervene <run-json> --decision-id <id>
 --set model_choice=large --json` emits the raw `CausalEstimate` JSON for one
-decision edit. That is the trace-forensics loop: use `explain` to find the
-decision, use `intervene` to ask the causal question, then read support,
+decision edit. That is the trace-forensics loop: use `diagnose` to find the
+candidate decision, use `intervene` to ask a precise causal question, then read support,
 replay, or missing-arm diagnostics when the trace corpus cannot answer it.
 The same pattern covers wrong model choice, bad tool choice, missed retry,
 stopped too early, and unsupported intervention scenarios.

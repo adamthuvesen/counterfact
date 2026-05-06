@@ -11,8 +11,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from counterfact.attribute import AttributionEntry
-from counterfact.explain import build_report
+from counterfact.attribute import AttributionEntry, FailureAttribution
+from counterfact.explain import ExplainReport, build_report
 from counterfact.intervene.estimate import (
     CausalEstimate,
     DistributionSummary,
@@ -222,6 +222,98 @@ def _summary_for(entries: list[DiagnosisEntry], run: Run) -> str:
     )
 
 
+def _diagnosis_from_explain_report(
+    report: ExplainReport,
+    *,
+    top_k: int,
+    run_path: str | None,
+    corpus_dir: str | None,
+) -> DiagnosisReport:
+    decisions = _decision_index(report.run)
+    if report.degenerate_estimate is not None:
+        entries = _degenerate_entries(
+            report.run, report.degenerate_estimate, top_k=top_k
+        )
+    else:
+        entries = [
+            _entry_from_attribution(entry, decisions)
+            for entry in report.attribution.entries[:top_k]
+        ]
+    return DiagnosisReport(
+        run_id=report.run.run_id,
+        outcome=_outcome_label(report.run),
+        corpus_size=report.corpus_size,
+        summary=_summary_for(entries, report.run),
+        entries=entries,
+        warnings=list(report.notes),
+        run_path=run_path,
+        corpus_dir=corpus_dir,
+    )
+
+
+def explain_report_from_diagnosis(
+    diagnosis: DiagnosisReport,
+    base_report: ExplainReport,
+) -> ExplainReport:
+    """Adapt a `DiagnosisReport` into the existing HTML renderer input."""
+    attribution = FailureAttribution(
+        entries=[
+            AttributionEntry(
+                decision_id=entry.decision_id,
+                decision_type=entry.decision_type,
+                chosen_action=entry.chosen_action or "n/a",
+                influence=entry.influence,
+                identifiability=entry.identifiability,
+                estimate=entry.estimate,
+            )
+            for entry in diagnosis.entries
+        ]
+    )
+    return base_report.model_copy(
+        update={
+            "attribution": attribution,
+            "diagnosis_summary": diagnosis.summary,
+            "counterfactual_lookup": [
+                entry.estimate
+                for entry in diagnosis.entries
+                if entry.estimate is not None
+            ],
+            "run_path": diagnosis.run_path or base_report.run_path,
+            "corpus_dir": diagnosis.corpus_dir or base_report.corpus_dir,
+        }
+    )
+
+
+def build_diagnosis_pair(
+    focal_run: Run,
+    corpus: list[Run],
+    *,
+    decision_type: Literal["model_call", "tool_call", "retry"] = "model_call",
+    top_k: int = 3,
+    bootstrap: int = 200,
+    seed: int = 42,
+    run_path: str | None = None,
+    corpus_dir: str | None = None,
+) -> tuple[DiagnosisReport, ExplainReport]:
+    """Build one diagnosis and its diagnosis-first HTML report input."""
+    explain_report = build_report(
+        focal_run,
+        corpus,
+        decision_type=decision_type,
+        bootstrap=bootstrap,
+        seed=seed,
+        run_path=run_path,
+        corpus_dir=corpus_dir,
+    )
+    diagnosis = _diagnosis_from_explain_report(
+        explain_report,
+        top_k=top_k,
+        run_path=run_path,
+        corpus_dir=corpus_dir,
+    )
+    return diagnosis, explain_report_from_diagnosis(diagnosis, explain_report)
+
+
 def build_diagnosis(
     focal_run: Run,
     corpus: list[Run],
@@ -234,35 +326,23 @@ def build_diagnosis(
     corpus_dir: str | None = None,
 ) -> DiagnosisReport:
     """Build a deterministic diagnosis artifact for one focal trace."""
-    report = build_report(
+    diagnosis, _ = build_diagnosis_pair(
         focal_run,
         corpus,
         decision_type=decision_type,
+        top_k=top_k,
         bootstrap=bootstrap,
         seed=seed,
         run_path=run_path,
         corpus_dir=corpus_dir,
     )
-    decisions = _decision_index(focal_run)
-    if report.degenerate_estimate is not None:
-        entries = _degenerate_entries(
-            focal_run, report.degenerate_estimate, top_k=top_k
-        )
-    else:
-        entries = [
-            _entry_from_attribution(entry, decisions)
-            for entry in report.attribution.entries[:top_k]
-        ]
-    return DiagnosisReport(
-        run_id=focal_run.run_id,
-        outcome=_outcome_label(focal_run),
-        corpus_size=len(corpus),
-        summary=_summary_for(entries, focal_run),
-        entries=entries,
-        warnings=list(report.notes),
-        run_path=run_path,
-        corpus_dir=corpus_dir,
-    )
+    return diagnosis
 
 
-__all__ = ["DiagnosisEntry", "DiagnosisReport", "build_diagnosis"]
+__all__ = [
+    "DiagnosisEntry",
+    "DiagnosisReport",
+    "build_diagnosis",
+    "build_diagnosis_pair",
+    "explain_report_from_diagnosis",
+]

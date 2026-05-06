@@ -274,6 +274,11 @@ def _outcome_label(run: Run) -> str:
 
 def _render_header(report: ExplainReport, *, generated_at: datetime) -> str:
     run = report.run
+    title = (
+        "counterfact diagnose"
+        if report.diagnosis_summary is not None
+        else "counterfact explain"
+    )
     items = [
         ("Run id", run.run_id),
         ("Outcome", _outcome_label(run)),
@@ -303,7 +308,7 @@ def _render_header(report: ExplainReport, *, generated_at: datetime) -> str:
     return tag(
         "header",
         {"class": "report-header"},
-        raw(tag("h1", None, "counterfact explain")),
+        raw(tag("h1", None, title)),
         raw(dl),
     )
 
@@ -445,6 +450,7 @@ def _render_support_block(estimate: CausalEstimate) -> str | None:
     payload = estimate.next_step.payload
     observed = _arm_names(payload.get("observed_arms"))
     missing = [str(arm) for arm in payload.get("missing_arms", [])]
+    missing_strata = [str(item) for item in payload.get("missing_strata", [])]
     localization = payload.get("localization_limit")
     replay_inputs = payload.get("replay_inputs_required")
     parts: list[str] = []
@@ -452,6 +458,8 @@ def _render_support_block(estimate: CausalEstimate) -> str | None:
         parts.append(tag("li", None, "observed arms: " + ", ".join(observed)))
     if missing:
         parts.append(tag("li", None, "missing arms: " + ", ".join(missing)))
+    if missing_strata:
+        parts.append(tag("li", None, "missing strata: " + ", ".join(missing_strata)))
     if isinstance(localization, str) and localization:
         parts.append(tag("li", None, "localization limit: " + localization))
     if isinstance(replay_inputs, list) and replay_inputs:
@@ -488,7 +496,7 @@ def _intervene_json_command(report: ExplainReport, entry: AttributionEntry) -> s
 
 
 def _render_decision_cards(report: ExplainReport) -> str:
-    if report.degenerate_estimate is not None:
+    if report.degenerate_estimate is not None and not report.attribution.entries:
         return tag(
             "section",
             {"class": "decision-cards"},
@@ -1149,6 +1157,11 @@ def render_html(report: ExplainReport, *, now: datetime | None = None) -> str:
     top = _top_entry(report.attribution)
     focal_id = top.decision_id if top is not None else None
 
+    title = (
+        "counterfact diagnose"
+        if report.diagnosis_summary is not None
+        else "counterfact explain"
+    )
     head = tag(
         "head",
         None,
@@ -1159,7 +1172,7 @@ def render_html(report: ExplainReport, *, now: datetime | None = None) -> str:
                 {"name": "viewport", "content": "width=device-width, initial-scale=1"},
             )
         ),
-        raw(tag("title", None, f"counterfact explain — {report.run.run_id}")),
+        raw(tag("title", None, f"{title} — {report.run.run_id}")),
         raw(tag("style", None, raw(_CSS))),
     )
     body = tag(

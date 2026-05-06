@@ -69,7 +69,7 @@ def test_synthetic_anchor_promotes_with_identified_coverage() -> None:
 def test_smoke_mixed_outcome_anchor_promotes_with_mixed_model_arms() -> None:
     """`smoke_mixed_outcome` is the promoted real-trace demo corpus.
 
-    It should pass the promotion rubric while retaining both identified and
+    It should pass the support-readiness checks while retaining both identified and
     unidentified branches for explain/demo coverage.
     """
     runs = _load_smoke_mixed_outcome()
