@@ -293,7 +293,7 @@ def run_one_trace(
                     content={
                         "response_chars": len(resp.text),
                         "cost_usd": resp.cost_usd,
-                        "extracted_code": patched is not None,
+                        "extracted_code": patched,
                     },
                 )
             ],
@@ -394,7 +394,7 @@ def run_one_trace(
                     content={
                         "response_chars": len(resp2.text),
                         "cost_usd": resp2.cost_usd,
-                        "extracted_code": patched2 is not None,
+                        "extracted_code": patched2,
                     },
                 )
             ],
