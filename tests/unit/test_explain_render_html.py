@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from counterfact.attribute import AttributionEntry, FailureAttribution
+from counterfact.diagnose import build_diagnosis_pair
 from counterfact.explain import build_report, render_html
 from counterfact.explain.render_html import _node_label
 from counterfact.explain.report import ExplainReport
@@ -558,6 +559,56 @@ def test_render__decision_card_renders_support_diagnostics() -> None:
     assert "observed arms: haiku" in section
     assert "missing arms: opus" in section
     assert "localization limit: decision-id support is absent" in section
+
+
+def test_render__diagnosis_report_shows_summary_entries_and_support_context() -> None:
+    corpus = [
+        Run.model_validate_json(p.read_text())
+        for p in sorted(Path("examples/trace-forensics/single-arm-model").glob("*.json"))
+    ]
+    diagnosis, report = build_diagnosis_pair(
+        corpus[0],
+        corpus,
+        top_k=3,
+        bootstrap=10,
+        seed=42,
+        run_path="examples/trace-forensics/single-arm-model/single-arm-000000.json",
+        corpus_dir="examples/trace-forensics/single-arm-model",
+    )
+
+    html = render_html(report, now=FIXED_NOW)
+    section = _extract_section(html, "Decision cards")
+
+    assert "<h1>counterfact diagnose</h1>" in html
+    assert diagnosis.summary in html
+    assert diagnosis.entries
+    assert len(diagnosis.entries) <= 3
+    for entry in diagnosis.entries:
+        assert entry.decision_id in section
+        assert entry.identifiability.value in section
+    assert "support diagnostics" in html
+    assert "Trace timeline" in html
+    assert "RAW_OBSERVATION_SECRET" not in html
+
+
+def test_render__diagnosis_report_is_deterministic_with_frozen_clock() -> None:
+    corpus = _synthetic_corpus(n=48, seed=42)
+    _, report = build_diagnosis_pair(corpus[0], corpus, bootstrap=10, seed=42)
+
+    a = render_html(report, now=FIXED_NOW)
+    b = render_html(report, now=FIXED_NOW)
+
+    assert a == b
+
+
+def test_render__diagnosis_report_is_self_contained() -> None:
+    corpus = _synthetic_corpus(n=48, seed=42)
+    _, report = build_diagnosis_pair(corpus[0], corpus, bootstrap=10, seed=42)
+
+    html = render_html(report, now=FIXED_NOW)
+
+    assert re.search(r'(?:src|href)="https?://', html) is None
+    assert re.search(r'<(?:script|link)\b[^>]+(?:src|href)="', html) is None
 
 
 def test_render__decision_card_includes_intervene_json_command() -> None:

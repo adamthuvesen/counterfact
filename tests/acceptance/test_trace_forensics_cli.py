@@ -45,6 +45,87 @@ def test_diagnose_cli__json_round_trips(tmp_path: Path, capsys: pytest.CaptureFi
     assert report.entries[0].decision_id
 
 
+def test_diagnose_cli__html_writes_report_and_keeps_text_summary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    paths = _write_synthetic_corpus(tmp_path / "runs")
+    html_path = tmp_path / "diagnosis.html"
+
+    rc = main(
+        [
+            "diagnose",
+            str(paths[0]),
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            "--bootstrap",
+            "10",
+            "--html",
+            str(html_path),
+        ]
+    )
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert out.startswith("Run ")
+    assert "html_report:" in out
+    html = html_path.read_text()
+    assert "<h1>counterfact diagnose</h1>" in html
+    assert "Diagnosis summary" in html
+    assert "Decision cards" in html
+
+
+def test_diagnose_cli__json_with_html_keeps_stdout_parseable(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    paths = _write_synthetic_corpus(tmp_path / "runs")
+    html_path = tmp_path / "diagnosis.html"
+
+    rc = main(
+        [
+            "diagnose",
+            str(paths[0]),
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            "--bootstrap",
+            "10",
+            "--json",
+            "--html",
+            str(html_path),
+        ]
+    )
+
+    assert rc == 0
+    captured = capsys.readouterr()
+    report = DiagnosisReport.model_validate_json(captured.out)
+    assert report.entries
+    assert str(html_path.resolve()) in captured.err
+    assert html_path.exists()
+
+
+def test_diagnose_cli__html_write_failure_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    paths = _write_synthetic_corpus(tmp_path / "runs")
+
+    rc = main(
+        [
+            "diagnose",
+            str(paths[0]),
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            "--bootstrap",
+            "10",
+            "--html",
+            str(tmp_path / "missing" / "diagnosis.html"),
+        ]
+    )
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "failed to write HTML" in err
+    assert "diagnosis.html" in err
+
+
 def test_diagnose_cli__missing_run_exits_2(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

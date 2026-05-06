@@ -14,6 +14,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SINGLE_CLASS_REFUSAL_DIR = REPO_ROOT / "bench" / "real" / "single_class_refusal"
 
 
+def test_analyze_help_frames_support_readiness(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--help"])
+
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    analyze_line = next(line for line in out.splitlines() if "support-readiness" in line)
+    assert "support-readiness" in analyze_line
+    for forbidden in ("Score", "score", "promotion", "promote", "rank", "rubric"):
+        assert forbidden not in analyze_line
+
+
 def test_analyze_single_class_refusal_exits_1_with_outcome_balance_failure(capsys) -> None:
     if not SINGLE_CLASS_REFUSAL_DIR.exists():
         pytest.skip(f"single_class_refusal corpus absent at {SINGLE_CLASS_REFUSAL_DIR}")
@@ -22,7 +34,7 @@ def test_analyze_single_class_refusal_exits_1_with_outcome_balance_failure(capsy
     assert rc == 1
     assert "support-readiness" in out
     assert "FAIL outcome_balance:" in out
-    assert "promote: False" in out
+    assert "support_ready: False" in out
     assert "next_collection_guidance:" in out
     assert "mixed pass/fail outcomes" in out
 
@@ -38,7 +50,7 @@ def test_analyze_synthetic_corpus_exits_0(tmp_path: Path, capsys) -> None:
     out = capsys.readouterr().out
     assert rc == 0
     assert "support-readiness" in out
-    assert "promote: True" in out
+    assert "support_ready: True" in out
     assert "suitable for counterfactual-support workflows" in out
     # Every criterion should pass on the default rubric for synthetic SCM
     pass_lines = [line for line in out.splitlines() if line.startswith("PASS ")]
@@ -53,7 +65,7 @@ def test_analyze_missing_directory_exits_2(tmp_path: Path, capsys) -> None:
     captured = capsys.readouterr()
     assert rc == 2
     assert "directory not found" in captured.err
-    assert "promote:" not in captured.out
+    assert "support_ready:" not in captured.out
 
 
 def test_analyze_unparseable_json_exits_2(tmp_path: Path, capsys) -> None:
@@ -74,11 +86,11 @@ def test_analyze_thresholds_can_be_overridden_via_flags(tmp_path: Path, capsys) 
         run = Run.model_validate(trace)
         (out_dir / f"r-{i:04d}.json").write_text(run.model_dump_json())
 
-    # With default thresholds: promote=True
+    # With default thresholds: support_ready=True
     rc_default = main(["analyze", "corpus", str(out_dir)])
     out_default = capsys.readouterr().out
     assert rc_default == 0
-    assert "promote: True" in out_default
+    assert "support_ready: True" in out_default
 
     # Tightening max_pass_rate well below the corpus's actual pass rate
     # should flip the verdict.
@@ -95,6 +107,6 @@ def test_analyze_thresholds_can_be_overridden_via_flags(tmp_path: Path, capsys) 
     )
     out_strict = capsys.readouterr().out
     assert rc_strict == 1
-    assert "promote: False" in out_strict
+    assert "support_ready: False" in out_strict
     assert "FAIL outcome_balance:" in out_strict
     assert "next_collection_guidance:" in out_strict

@@ -1,6 +1,6 @@
 # counterfact
 
-`counterfact` is a research library for counterfactual analysis of agent decision traces.
+`counterfact` helps you find where an agent run went wrong.
 
 Given a decision the agent actually logged, such as a model call, tool call, retry, or stop decision, it asks:
 
@@ -24,16 +24,30 @@ Requires Python 3.11+.
 
 ## Quickstart
 
-Diagnose a failed trace against its corpus:
+Diagnose a failed trace against its corpus and write a shareable HTML report:
 
 ```bash
 uv run counterfact diagnose bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000000.json \
-  --runs-dir bench/real/smoke_mixed_outcome
+  --runs-dir bench/real/smoke_mixed_outcome \
+  --html /tmp/counterfact-diagnosis.html
 ```
 
 `diagnose` ranks likely load-bearing decisions, shows which counterfactual
 questions the corpus can honestly support, and gives the next data-collection
 step when the answer is `unidentified`.
+
+For a faster tour of common failure shapes, use the committed trace-forensics gallery:
+
+```bash
+uv run counterfact diagnose examples/trace-forensics/runs/syn-000000.json \
+  --runs-dir examples/trace-forensics/runs \
+  --decision-type model_call \
+  --html /tmp/counterfact-wrong-model.html
+```
+
+The gallery covers wrong model choice, bad tool choice, missed retry, stopped
+too early, unsupported counterfactuals, single-class support refusal, and
+pass/fail trace diffs. It is illustrative, not benchmark evidence.
 
 Run the deterministic local demo:
 
@@ -56,6 +70,11 @@ uv run counterfact diagnose bench/real/smoke_mixed_outcome/real-streaming_waterm
 Use `--json` to emit the reusable diagnosis artifact. Numeric effects appear
 only when the underlying `CausalEstimate` is identified or bounded; unsupported
 entries carry concrete `next_step` guidance instead.
+
+Use `--html report.html` to write a self-contained diagnosis report with the
+same ranked decisions, trace context, support diagnostics, and unidentified
+hide rules. `--json --html report.html` keeps stdout as JSON and writes the
+HTML path notification to stderr.
 
 ### Compare Two Traces
 
