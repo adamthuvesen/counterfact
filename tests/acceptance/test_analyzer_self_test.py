@@ -66,16 +66,17 @@ def test_synthetic_anchor_promotes_with_identified_coverage() -> None:
     ]
 
 
-def test_smoke_mixed_outcome_anchor_reaches_identified_but_fails_model_arm_mix() -> None:
-    """`smoke_mixed_outcome` is still useful for the demo, but the tightened
-    promotion rubric rejects its perfect large arm until broad_calibration is
-    calibrated and promoted."""
+def test_smoke_mixed_outcome_anchor_promotes_with_mixed_model_arms() -> None:
+    """`smoke_mixed_outcome` is the promoted real-trace demo corpus.
+
+    It should pass the promotion rubric while retaining both identified and
+    unidentified branches for explain/demo coverage.
+    """
     runs = _load_smoke_mixed_outcome()
     report = analyze_corpus(runs)
-    assert report.promote is False
+    assert report.promote is True
     model_mix = next(c for c in report.criteria if c.name == "model_arm_outcome_mix")
-    assert model_mix.passed is False
-    assert "large=pass:" in model_mix.reason
+    assert model_mix.passed is True
     assert "identified" in report.identifiability_coverage.reachable
     assert "unidentified" in report.identifiability_coverage.reachable
     assert report.identifiability_coverage.unfittable_outcome_model is False

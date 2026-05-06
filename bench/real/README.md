@@ -9,23 +9,21 @@ them post-hoc and the demo points at one as its evidence base.
 | Name | Kind | Purpose |
 | --- | --- | --- |
 | `single_class_refusal` | corpus | Proves the honest-refusal path on single-class outcomes. |
-| `smoke_mixed_outcome` | corpus | Current real demo corpus. |
+| `smoke_mixed_outcome` | corpus | Current real demo corpus with stateful hidden-semantic failures. |
 | `broad_calibration` | fixture set | Broad hidden-fixture calibration: `date_window`, `rate_limit`, `version_range`. |
 | `stateful_calibration` | fixture set | Harder stateful calibration: `streaming_watermark_dedupe`. |
 
 ## Output directories
 
-- **`smoke_mixed_outcome/`** — the messy real-trace smoke test. 100 `date_window`
-  traces from the `hard_hidden_v1` compatibility set, generated with
-  `--model-greedy small --model-epsilon 0.67 --seed 1`. Cleared
-  the legacy analyzer with `promote: True` (pass rate 0.440, both
-  `model_call` arms supported, `identified` and `unidentified` reachable).
-  The current stricter analyzer rejects it because the `large` arm is all-pass.
-  This is the corpus `counterfact demo` (no `--confound` flag) points at by
-  default — proof the engine works on real-agent traces. The headline
-  showcase is the confounded synthetic demo (`counterfact demo --confound`);
-  this corpus is the smoke test that the engine still works on data the
-  project did not synthesize.
+- **`smoke_mixed_outcome/`** — the promoted real-trace demo corpus. 120
+  `streaming_watermark_dedupe` traces from `stateful_calibration`, generated
+  with `--model-epsilon 1.0 --tool-epsilon 0.0 --retry-epsilon 0.0` after the
+  hidden suite was tightened to catch non-late duplicate watermark advancement.
+  It passes the stricter analyzer with `promote: True` (pass rate 0.467, mixed
+  outcomes in both `small` and `large` model arms, `identified` and
+  `unidentified` reachable). The showcase analyzer reports 64
+  hidden-semantic failures, zero format failures, and hidden-semantic failures
+  in both model arms.
 - **`single_class_refusal/`** — the single-class regression anchor. 3 csv_dedupe
   traces (a trimmed subset of the original 30-trace `csv_dedupe` pilot)
   kept committed as a regression anchor for the analyzer (it must never
