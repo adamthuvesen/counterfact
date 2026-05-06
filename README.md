@@ -1,12 +1,6 @@
 # counterfact
 
-`counterfact` helps researchers understand agent decision traces by asking counterfactual questions about what the agent did.
-
-For agent traces:
-
-```text
-If the agent had called a different model, used a different tool, retried, or stopped later, would it have been more likely to complete the task?
-```
+`counterfact` is a small research library for understanding agent decision traces through counterfactual questions: if the agent had called a different model, used a different tool, retried, or stopped later, would it have been more likely to complete the task?
 
 It does not decide whether one benchmark score is enough to switch models. It studies logged agent decisions and labels what the trace corpus can honestly support.
 
