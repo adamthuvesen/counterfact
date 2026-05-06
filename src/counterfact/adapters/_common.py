@@ -1,0 +1,111 @@
+"""Shared helpers used by every ingest adapter.
+
+The receipt model, the corpus-level randomization warning sentence, and the
+run-writer all live here so per-adapter modules stay focused on the shape
+mapping. Both `counterfact.ingest.ingest_generic_jsonl` and the SDK-specific
+adapters under `counterfact.adapters` reuse these primitives.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from counterfact.schema import Run
+
+
+class IngestReceipt(BaseModel):
+    """Per-corpus receipt written alongside generated trace files.
+
+    Adapters that do not consume an explicit user-supplied mapping file emit
+    `mapping_file=""`; the field is preserved for shape-compatibility with the
+    historical `generic-jsonl` receipt.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_format: str
+    source_file: str
+    mapping_file: str = ""
+    generated_count: int
+    warnings: list[str] = Field(default_factory=list)
+    dropped_fields: list[str] = Field(default_factory=list)
+    validation_errors: list[str] = Field(default_factory=list)
+
+
+class IngestError(RuntimeError):
+    """Raised when an ingest adapter cannot produce a valid native corpus."""
+
+
+def randomization_warning(source_format: str) -> str:
+    """The corpus-level warning every SDK adapter must emit.
+
+    Format-specific adapters never log randomization metadata (`policy`,
+    `propensity`, etc.) because the upstream SDKs do not log it. Counterfact
+    callers need to know that randomized-support claims will be unavailable
+    on the resulting corpus before they reach for `intervene` and get an
+    `unidentified` answer.
+    """
+
+    return (
+        f"{source_format} traces do not log randomization metadata; "
+        "randomized-support claims will be unavailable for this corpus. "
+        "Use bench/real for randomized arms."
+    )
+
+
+def per_decision_randomization_warnings(run: Run, *, source_index: int) -> list[str]:
+    """Per-record warnings for decisions with chosen_action but no randomization.
+
+    Emitted by `generic-jsonl` so partially-mapped sources still flag missing
+    metadata at the row level. SDK adapters use the corpus-level
+    `randomization_warning` instead because every decision is in this state.
+    """
+
+    warnings: list[str] = []
+    for step in run.steps:
+        for decision in step.decisions:
+            has_randomization = any(
+                value is not None
+                for value in (
+                    decision.policy,
+                    decision.policy_params,
+                    decision.valid_actions,
+                    decision.propensity,
+                    decision.context_features,
+                )
+            )
+            if decision.chosen_action is not None and not has_randomization:
+                warnings.append(
+                    f"record {source_index}: decision {decision.decision_id} "
+                    "has chosen_action but no randomization metadata; "
+                    "randomized-support claims may be unavailable"
+                )
+    return warnings
+
+
+def write_corpus(runs: list[Run], output_dir: Path, receipt: IngestReceipt) -> None:
+    """Write each run as `<run_id>.json` plus a single `ingest-receipt.json`.
+
+    Filenames are derived from `run_id`, so the adapter is responsible for
+    making sure run_ids are unique across the corpus.
+    """
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for run in runs:
+        (output_dir / f"{run.run_id}.json").write_text(
+            run.model_dump_json(indent=2) + "\n"
+        )
+    (output_dir / "ingest-receipt.json").write_text(
+        receipt.model_dump_json(indent=2) + "\n"
+    )
+
+
+__all__ = [
+    "IngestError",
+    "IngestReceipt",
+    "per_decision_randomization_warnings",
+    "randomization_warning",
+    "write_corpus",
+]

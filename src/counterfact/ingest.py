@@ -6,25 +6,16 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
+from counterfact.adapters._common import (
+    IngestError,
+    IngestReceipt,
+    per_decision_randomization_warnings,
+    randomization_warning,
+    write_corpus,
+)
 from counterfact.schema import Run
-
-
-class IngestReceipt(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    source_format: str
-    source_file: str
-    mapping_file: str
-    generated_count: int
-    warnings: list[str] = Field(default_factory=list)
-    dropped_fields: list[str] = Field(default_factory=list)
-    validation_errors: list[str] = Field(default_factory=list)
-
-
-class IngestError(RuntimeError):
-    """Raised when ingest cannot produce a valid native corpus."""
 
 
 def _read_mapping(path: Path) -> dict[str, Any]:
@@ -151,29 +142,6 @@ def _mapped_payload(
     return payload, dropped
 
 
-def _randomization_warnings(run: Run, *, source_index: int) -> list[str]:
-    warnings: list[str] = []
-    for step in run.steps:
-        for decision in step.decisions:
-            has_randomization = any(
-                value is not None
-                for value in (
-                    decision.policy,
-                    decision.policy_params,
-                    decision.valid_actions,
-                    decision.propensity,
-                    decision.context_features,
-                )
-            )
-            if decision.chosen_action is not None and not has_randomization:
-                warnings.append(
-                    "record "
-                    f"{source_index}: decision {decision.decision_id} has chosen_action "
-                    "but no randomization metadata; randomized-support claims may be unavailable"
-                )
-    return warnings
-
-
 def ingest_generic_jsonl(
     source_path: Path,
     mapping_path: Path,
@@ -182,7 +150,7 @@ def ingest_generic_jsonl(
     mapping = _read_mapping(mapping_path)
     mode = mapping.get("mode", "mapped")
     runs: list[Run] = []
-    warnings: list[str] = []
+    warnings: list[str] = [randomization_warning("generic-jsonl")]
     dropped_fields: set[str] = set()
     validation_errors: list[str] = []
 
@@ -208,16 +176,11 @@ def ingest_generic_jsonl(
             continue
         runs.append(run)
         dropped_fields.update(dropped)
-        warnings.extend(_randomization_warnings(run, source_index=idx))
+        warnings.extend(per_decision_randomization_warnings(run, source_index=idx))
 
     if validation_errors:
         raise IngestError("; ".join(validation_errors))
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    for run in runs:
-        (output_dir / f"{run.run_id}.json").write_text(
-            run.model_dump_json(indent=2) + "\n"
-        )
     receipt = IngestReceipt(
         source_format="generic-jsonl",
         source_file=str(source_path),
@@ -227,9 +190,7 @@ def ingest_generic_jsonl(
         dropped_fields=sorted(dropped_fields),
         validation_errors=[],
     )
-    (output_dir / "ingest-receipt.json").write_text(
-        receipt.model_dump_json(indent=2) + "\n"
-    )
+    write_corpus(runs, output_dir, receipt)
     return receipt
 
 
