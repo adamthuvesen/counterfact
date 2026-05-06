@@ -1,6 +1,6 @@
 """Self-test anchors for the corpus-readiness analyzer.
 
-These two tests pin the analyzer's discriminating power: `runs_single_class` is the
+These two tests pin the analyzer's discriminating power: `single_class_refusal` is the
 canonical degenerate corpus and must never promote; the synthetic SCM is the
 canonical mixed-outcome corpus and must always promote. If either anchor
 breaks, the rubric or the analyzer is wrong, not the test.
@@ -17,30 +17,30 @@ from counterfact import analyze_corpus
 from counterfact.schema import Run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RUNS_SINGLE_CLASS_DIR = REPO_ROOT / "bench" / "real" / "runs_single_class"
-RUNS_V2_DIR = REPO_ROOT / "bench" / "real" / "runs_v2"
+SINGLE_CLASS_REFUSAL_DIR = REPO_ROOT / "bench" / "real" / "single_class_refusal"
+SMOKE_MIXED_OUTCOME_DIR = REPO_ROOT / "bench" / "real" / "smoke_mixed_outcome"
 
 
-def _load_runs_single_class() -> list[Run]:
-    if not RUNS_SINGLE_CLASS_DIR.exists():
-        pytest.skip(f"runs_single_class corpus absent at {RUNS_SINGLE_CLASS_DIR}")
+def _load_single_class_refusal() -> list[Run]:
+    if not SINGLE_CLASS_REFUSAL_DIR.exists():
+        pytest.skip(f"single_class_refusal corpus absent at {SINGLE_CLASS_REFUSAL_DIR}")
     return [
         Run.model_validate_json(p.read_text())
-        for p in sorted(RUNS_SINGLE_CLASS_DIR.glob("*.json"))
+        for p in sorted(SINGLE_CLASS_REFUSAL_DIR.glob("*.json"))
     ]
 
 
-def _load_runs_v2() -> list[Run]:
-    if not RUNS_V2_DIR.exists():
-        pytest.skip(f"runs_v2 corpus absent at {RUNS_V2_DIR}")
+def _load_smoke_mixed_outcome() -> list[Run]:
+    if not SMOKE_MIXED_OUTCOME_DIR.exists():
+        pytest.skip(f"smoke_mixed_outcome corpus absent at {SMOKE_MIXED_OUTCOME_DIR}")
     return [
         Run.model_validate_json(p.read_text())
-        for p in sorted(RUNS_V2_DIR.glob("*.json"))
+        for p in sorted(SMOKE_MIXED_OUTCOME_DIR.glob("*.json"))
     ]
 
 
-def test_runs_single_class_anchor_scores_unidentified_only() -> None:
-    runs = _load_runs_single_class()
+def test_single_class_refusal_anchor_scores_unidentified_only() -> None:
+    runs = _load_single_class_refusal()
     report = analyze_corpus(runs)
     assert report.promote is False
     assert report.identifiability_coverage.unfittable_outcome_model is True
@@ -66,15 +66,16 @@ def test_synthetic_anchor_promotes_with_identified_coverage() -> None:
     ]
 
 
-def test_runs_v2_anchor_promotes_with_identified_coverage() -> None:
-    """`runs_v2` is the canonical mixed-outcome real corpus. It must promote
-    on the default rubric and reach `identified` + `unidentified`. If this
-    breaks, either the corpus drifted or the rubric tightened — investigate."""
-    runs = _load_runs_v2()
+def test_smoke_mixed_outcome_anchor_reaches_identified_but_fails_model_arm_mix() -> None:
+    """`smoke_mixed_outcome` is still useful for the demo, but the tightened
+    promotion rubric rejects its perfect large arm until broad_calibration is
+    calibrated and promoted."""
+    runs = _load_smoke_mixed_outcome()
     report = analyze_corpus(runs)
-    assert report.promote is True, [
-        (c.name, c.reason) for c in report.criteria if not c.passed
-    ]
+    assert report.promote is False
+    model_mix = next(c for c in report.criteria if c.name == "model_arm_outcome_mix")
+    assert model_mix.passed is False
+    assert "large=pass:" in model_mix.reason
     assert "identified" in report.identifiability_coverage.reachable
     assert "unidentified" in report.identifiability_coverage.reachable
     assert report.identifiability_coverage.unfittable_outcome_model is False

@@ -1,11 +1,11 @@
 # csv_dedupe pilot (Pilot 3) — n=30
 
 These notes explain how the hidden/public harness was exercised on `csv_dedupe`
-and why the committed showcase traces live under `bench/real/runs_single_class/`.
+and why the committed showcase traces live under `bench/real/single_class_refusal/`.
 
 **Date:** 2026-05-02  
-**Command (historical output dir):**
-`counterfact bench real --fixtures csv_dedupe --n 30 --budget-cap 5 --output-dir bench/real/runs_v3_pilot --seed 0 --epsilon 0.2`  
+**Command:**
+`counterfact bench real --fixtures csv_dedupe --n 30 --budget-cap 5 --output-dir bench/real/pilot_csv_dedupe --seed 0 --epsilon 0.2`  
 **Observed cost:** $0.1896 ($0.0063 / trace)
 
 ## 2×2 contingency (public_pass × hidden_pass)
@@ -90,7 +90,7 @@ shelved as "implementation works, signal too weak to drive the corpus."
   `pytest_hidden`, and test invariants — none of those need changing.
 - `csv_dedupe` stays in the registry as a regression fixture for
   harness-level tests; it drives the qualitative demo via the committed corpus.
-- A trimmed subset of these traces lives at **`bench/real/runs_single_class/`**
+- A trimmed subset of these traces lives at **`bench/real/single_class_refusal/`**
   (3 keepers — same content as was produced during this pilot, kept as the
   canonical public artifact and as the engine's single-class regression anchor).
 
@@ -103,6 +103,6 @@ CI-width ship-gate criteria. The reframed v0 ships with a smaller, honest corpus
 and a demo whose headline is "naive vs honest" rather than "identified effect =
 X".
 
-The committed `runs_single_class` traces demonstrate the failure mode the pivot was built
+The committed `single_class_refusal` traces demonstrate the failure mode the pivot was built
 to surface — a causally degenerate corpus where outcome variation is absent and
 `intervene()` correctly refuses to invent a causal difference between arms.

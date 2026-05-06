@@ -13,11 +13,14 @@ from pathlib import Path
 from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
 from bench.real.coding_agent.budget import BudgetExceeded, BudgetTracker
 from bench.real.coding_agent.fixtures import (
+    BROAD_CALIBRATION_FIXTURES,
     EASY_FIXTURES,
     FIXTURES,
     HARD_HIDDEN_V1_FIXTURES,
     HIDDEN_FIXTURES,
     HIDDEN_V1_FIXTURES,
+    STATEFUL_CALIBRATION_FIXTURES,
+    VERY_HARD_HIDDEN_V1_FIXTURES,
     FixtureSpec,
 )
 from bench.real.coding_agent.llm import (
@@ -102,7 +105,7 @@ def print_approval_prompt(stream=sys.stderr) -> None:
         "Before proceeding, the user must:\n"
         "  1. Run a tiny smoke corpus:\n"
         "       counterfact bench real --n 5 --budget-cap 5\n"
-        "  2. Eyeball the resulting traces under bench/real/runs/.\n"
+        "  2. Eyeball the resulting traces under bench/real/pilot/.\n"
         "  3. If sane, create the approval marker:\n"
         "       mkdir -p .counterfact && touch .counterfact/approved\n"
         "Re-run after the marker exists.\n",
@@ -222,6 +225,9 @@ _FIXTURE_SETS: dict[str, tuple[FixtureSpec, ...]] = {
     "easy": EASY_FIXTURES,
     "hidden_v1": HIDDEN_V1_FIXTURES,
     "hard_hidden_v1": HARD_HIDDEN_V1_FIXTURES,
+    "broad_calibration": BROAD_CALIBRATION_FIXTURES,
+    "very_hard_hidden_v1": VERY_HARD_HIDDEN_V1_FIXTURES,
+    "stateful_calibration": STATEFUL_CALIBRATION_FIXTURES,
 }
 
 

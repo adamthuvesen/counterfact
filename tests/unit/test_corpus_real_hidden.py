@@ -29,6 +29,37 @@ def test_date_window_is_registered() -> None:
     assert "date_window" in ids
 
 
+def test_broad_calibration_fixtures_are_registered() -> None:
+    """Req: broad_calibration adds multiple hard hidden fixtures
+    WHEN the hidden-fixture registry is queried
+    THEN rate_limit and version_range are among the registered fixtures."""
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    ids = [fx.fixture_id for fx in HIDDEN_FIXTURES]
+    assert "rate_limit" in ids
+    assert "version_range" in ids
+
+
+def test_streaming_watermark_dedupe_is_registered() -> None:
+    """Req: streaming_watermark_dedupe is registered as a stateful hidden fixture
+    WHEN the hidden-fixture registry is queried
+    THEN streaming_watermark_dedupe is among the registered fixtures."""
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    ids = [fx.fixture_id for fx in HIDDEN_FIXTURES]
+    assert "streaming_watermark_dedupe" in ids
+
+
+def test_unicode_normalize_is_registered() -> None:
+    """Req: unicode_normalize is registered as a very-hard hidden fixture
+    WHEN the hidden-fixture registry is queried
+    THEN unicode_normalize is among the registered fixtures."""
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    ids = [fx.fixture_id for fx in HIDDEN_FIXTURES]
+    assert "unicode_normalize" in ids
+
+
 def test_hidden_fixture_root_has_four_required_entries() -> None:
     """Req: Hidden-test fixtures use a public/hidden split layout
     WHEN a hidden-test fixture is registered
@@ -239,14 +270,191 @@ def _parse(value: str) -> date:
 
 def in_any_window(target_date: str, windows: list[tuple[str, str]]) -> bool:
     target = _parse(target_date)
+    matched = False
     for start_raw, end_raw in windows:
         start = _parse(start_raw)
         end = _parse(end_raw)
         if start > end:
             raise ValueError("window start must be <= end")
         if start <= target <= end:
-            return True
-    return False
+            matched = True
+    return matched
+'''
+
+
+def _rate_limit_known_good_source() -> str:
+    return '''"""Known-good rate_limit implementation for fixture self-tests."""
+
+from __future__ import annotations
+
+
+def allow_request(
+    user_id: str,
+    now_s: int,
+    history: list[tuple[str, int]],
+    *,
+    limit: int,
+    window_s: int,
+) -> bool:
+    if limit < 1:
+        raise ValueError("limit must be >= 1")
+    if window_s < 1:
+        raise ValueError("window_s must be >= 1")
+    lower = now_s - window_s
+    counted = 0
+    for seen_user, timestamp in history:
+        if timestamp > now_s:
+            raise ValueError("history timestamp cannot be in the future")
+        if seen_user == user_id and lower <= timestamp <= now_s:
+            counted += 1
+    return counted < limit
+'''
+
+
+def _version_range_known_good_source() -> str:
+    return '''"""Known-good version_range implementation for fixture self-tests."""
+
+from __future__ import annotations
+
+import re
+
+_VERSION_RE = re.compile(r"^(\\d+)\\.(\\d+)\\.(\\d+)(?:-([A-Za-z0-9.]+))?$")
+_OPS = (">=", "<=", "==", ">", "<")
+
+
+def _parse_identifier(raw: str) -> tuple[int, int | str]:
+    if raw == "":
+        raise ValueError("empty prerelease identifier")
+    if raw.isdigit():
+        return (0, int(raw))
+    return (1, raw)
+
+
+def _compare_prerelease(
+    left: tuple[tuple[int, int | str], ...],
+    right: tuple[tuple[int, int | str], ...],
+) -> int:
+    for left_part, right_part in zip(left, right):
+        if left_part == right_part:
+            continue
+        left_kind, left_value = left_part
+        right_kind, right_value = right_part
+        if left_kind != right_kind:
+            return -1 if left_kind < right_kind else 1
+        return -1 if left_value < right_value else 1
+    if len(left) == len(right):
+        return 0
+    return -1 if len(left) < len(right) else 1
+
+
+class Version(tuple):
+    def __new__(
+        cls,
+        major: int,
+        minor: int,
+        patch: int,
+        prerelease: tuple[tuple[int, int | str], ...] | None,
+    ):
+        return tuple.__new__(cls, (major, minor, patch, prerelease))
+
+    def _cmp(self, other: "Version") -> int:
+        left_core = self[:3]
+        right_core = other[:3]
+        if left_core != right_core:
+            return -1 if left_core < right_core else 1
+        left_pre = self[3]
+        right_pre = other[3]
+        if left_pre is None and right_pre is None:
+            return 0
+        if left_pre is None:
+            return 1
+        if right_pre is None:
+            return -1
+        return _compare_prerelease(left_pre, right_pre)
+
+    def __lt__(self, other: "Version") -> bool:
+        return self._cmp(other) < 0
+
+    def __le__(self, other: "Version") -> bool:
+        return self._cmp(other) <= 0
+
+    def __gt__(self, other: "Version") -> bool:
+        return self._cmp(other) > 0
+
+    def __ge__(self, other: "Version") -> bool:
+        return self._cmp(other) >= 0
+
+
+def _parse(version: str) -> Version:
+    match = _VERSION_RE.match(version)
+    if match is None:
+        raise ValueError(f"malformed version: {version!r}")
+    major, minor, patch, prerelease = match.groups()
+    parsed_pre = (
+        None
+        if prerelease is None
+        else tuple(_parse_identifier(part) for part in prerelease.split("."))
+    )
+    return Version(int(major), int(minor), int(patch), parsed_pre)
+
+
+def _constraint(raw: str) -> tuple[str, Version]:
+    for op in _OPS:
+        if raw.startswith(op):
+            return op, _parse(raw[len(op):])
+    raise ValueError(f"malformed constraint: {raw!r}")
+
+
+def satisfies(version: str, constraints: list[str]) -> bool:
+    parsed = _parse(version)
+    for raw in constraints:
+        op, target = _constraint(raw)
+        if op == ">=" and not parsed >= target:
+            return False
+        if op == ">" and not parsed > target:
+            return False
+        if op == "<=" and not parsed <= target:
+            return False
+        if op == "<" and not parsed < target:
+            return False
+        if op == "==" and not parsed == target:
+            return False
+    return True
+'''
+
+
+def _unicode_normalize_known_good_source() -> str:
+    return '''"""Known-good unicode_normalize implementation for fixture self-tests."""
+
+from __future__ import annotations
+
+import unicodedata
+
+
+def _clean(label: str) -> str:
+    return label.removeprefix("\\ufeff").strip()
+
+
+def _identity(label: str) -> str:
+    folded = _clean(label).casefold()
+    decomposed = unicodedata.normalize("NFKD", folded)
+    without_marks = "".join(
+        char for char in decomposed if unicodedata.category(char) != "Mn"
+    )
+    return unicodedata.normalize("NFC", without_marks)
+
+
+def dedupe_normalized(labels: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for label in labels:
+        cleaned = _clean(label)
+        key = _identity(label)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(cleaned)
+    return out
 '''
 
 
@@ -303,6 +511,79 @@ def test_date_window_buggy_src_fails_hidden_passes_public(tmp_path: Path) -> Non
     assert proc_hid.returncode != 0, "buggy src must fail hidden tests"
 
 
+@pytest.mark.parametrize("fixture_id", ["rate_limit", "version_range"])
+def test_new_hard_hidden_fixtures_fail_hidden_pass_public(
+    fixture_id: str, tmp_path: Path
+) -> None:
+    """Req: new hard hidden fixtures are public-passing but hidden-failing
+    WHEN the pristine source is tested
+    THEN public tests pass and hidden tests catch the incomplete implementation."""
+    import shutil
+    import subprocess
+    import sys
+
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == fixture_id)
+    workspace = tmp_path / fixture_id
+    shutil.copytree(fixture.root, workspace)
+
+    proc_pub = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests_public/", "-q"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc_pub.returncode == 0, (
+        f"{fixture_id} buggy src must satisfy public tests:\n"
+        f"{proc_pub.stdout}\n{proc_pub.stderr}"
+    )
+    proc_hid = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests_hidden/", "-q"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc_hid.returncode != 0, f"{fixture_id} buggy src must fail hidden tests"
+
+
+def test_unicode_normalize_fails_hidden_passes_public(tmp_path: Path) -> None:
+    """Req: unicode_normalize is public-passing but hidden-failing
+    WHEN the pristine source is tested
+    THEN public tests pass and hidden tests catch semantic Unicode gaps."""
+    import shutil
+    import subprocess
+    import sys
+
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "unicode_normalize")
+    workspace = tmp_path / "unicode_normalize"
+    shutil.copytree(fixture.root, workspace)
+
+    proc_pub = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests_public/", "-q"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc_pub.returncode == 0, (
+        f"unicode_normalize buggy src must satisfy public tests:\n"
+        f"{proc_pub.stdout}\n{proc_pub.stderr}"
+    )
+    proc_hid = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests_hidden/", "-q"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc_hid.returncode != 0, "unicode_normalize buggy src must fail hidden tests"
+
+
 def test_date_window_known_good_source_passes_hidden(tmp_path: Path) -> None:
     """Req: date_window is registered as a hard hidden-test fixture
     WHEN source is replaced with a known-good implementation
@@ -329,6 +610,78 @@ def test_date_window_known_good_source_passes_hidden(tmp_path: Path) -> None:
     assert proc_hid.returncode == 0, (
         f"known-good source fails hidden tests:\n{proc_hid.stdout}\n{proc_hid.stderr}"
     )
+
+
+@pytest.mark.parametrize(
+    ("fixture_id", "source_factory"),
+    [
+        ("rate_limit", _rate_limit_known_good_source),
+        ("version_range", _version_range_known_good_source),
+        ("unicode_normalize", _unicode_normalize_known_good_source),
+    ],
+)
+def test_new_hard_hidden_known_good_source_passes_hidden(
+    fixture_id: str, source_factory, tmp_path: Path
+) -> None:
+    """Req: new hard hidden fixtures are fair
+    WHEN source is replaced with a known-good implementation
+    THEN hidden tests pass."""
+    import shutil
+    import subprocess
+    import sys
+
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == fixture_id)
+    workspace = tmp_path / fixture_id
+    shutil.copytree(fixture.root, workspace)
+    target = workspace / "src" / fixture.source_relpath
+    target.write_text(source_factory())
+
+    proc_hid = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests_hidden/", "-q"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc_hid.returncode == 0, (
+        f"{fixture_id} known-good source fails hidden tests:\n"
+        f"{proc_hid.stdout}\n{proc_hid.stderr}"
+    )
+
+
+def test_unicode_normalize_spec_md_names_hidden_categories() -> None:
+    """Req: unicode_normalize spec states the hidden semantic categories."""
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "unicode_normalize")
+    text = (fixture.root / "spec.md").read_text().lower()
+    for keyword in (
+        "canonical",
+        "case folding",
+        "combining marks",
+        "non-ascii",
+        "first occurrence",
+    ):
+        assert keyword in text, f"unicode_normalize spec.md must mention {keyword!r}"
+
+
+def test_unicode_normalize_hidden_tests_name_semantic_categories() -> None:
+    """Req: unicode_normalize hidden tests cover semantic Unicode cases."""
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "unicode_normalize")
+    assert fixture.hidden_test_path is not None
+    text = fixture.hidden_test_path.read_text().lower()
+    for keyword in (
+        "canonical_equivalence",
+        "casefolding",
+        "combining_mark",
+        "non_ascii",
+        "stable_duplicate",
+    ):
+        assert keyword in text, f"hidden tests must name {keyword!r}"
 
 
 # --- Phase B: sandbox + public-pytest isolation ----------------------------
@@ -842,6 +1195,125 @@ def test_cli_real_subcommand_accepts_fixtures_flag(tmp_path: Path) -> None:
     assert "HUMAN GATE" in (proc.stdout + proc.stderr)
 
 
+def test_streaming_watermark_dedupe_buggy_src_fails_hidden_passes_public(
+    tmp_path: Path,
+) -> None:
+    """Req: streaming_watermark_dedupe is fair and deterministic
+    WHEN the pristine source is tested
+    THEN public tests pass and hidden tests fail."""
+    import shutil
+    import subprocess
+    import sys
+
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    fixture = next(
+        fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe"
+    )
+    workspace = tmp_path / "streaming_watermark_dedupe"
+    shutil.copytree(fixture.root, workspace)
+
+    proc_pub = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests_public/", "-q"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc_pub.returncode == 0, (
+        f"buggy src must satisfy public tests:\n{proc_pub.stdout}\n{proc_pub.stderr}"
+    )
+    proc_hid = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests_hidden/", "-q"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc_hid.returncode != 0, (
+        "buggy src must fail hidden stateful stream semantics"
+    )
+
+
+def test_streaming_watermark_dedupe_reference_passes_hidden(
+    tmp_path: Path,
+) -> None:
+    """Req: known-good implementation passes hidden tests
+    WHEN the source is replaced with the reference implementation
+    THEN hidden tests pass."""
+    import shutil
+    import subprocess
+    import sys
+
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    fixture = next(
+        fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe"
+    )
+    workspace = tmp_path / "streaming_watermark_dedupe"
+    shutil.copytree(fixture.root, workspace)
+
+    reference = fixture.root / "src" / "_watermark_dedupe_reference.py"
+    assert reference.is_file()
+    target = workspace / "src" / fixture.source_relpath
+    target.write_text(reference.read_text())
+
+    proc_hid = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests_hidden/", "-q"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc_hid.returncode == 0, (
+        f"reference fails hidden tests:\n{proc_hid.stdout}\n{proc_hid.stderr}"
+    )
+
+
+def test_streaming_watermark_dedupe_spec_md_names_hidden_categories() -> None:
+    """Req: spec.md names every hidden semantic category
+    WHEN streaming_watermark_dedupe/spec.md is inspected
+    THEN it states every hidden category."""
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    fixture = next(
+        fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe"
+    )
+    text = (fixture.root / "spec.md").read_text().lower()
+    for keyword in (
+        "event-time watermark",
+        "late",
+        "ttl",
+        "checkpoint",
+        "stable order",
+        "memory-bounded",
+    ):
+        assert keyword in text, f"spec.md must mention {keyword!r}"
+
+
+def test_streaming_watermark_dedupe_hidden_names_stateful_categories() -> None:
+    """Req: hidden tests cover stateful stream semantics
+    WHEN hidden test names are inspected
+    THEN each required semantic category is named."""
+    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
+
+    fixture = next(
+        fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe"
+    )
+    text = "\n".join(
+        path.read_text().lower() for path in (fixture.root / "tests_hidden").glob("test_*.py")
+    )
+    for keyword in (
+        "watermark",
+        "late",
+        "ttl",
+        "checkpoint",
+        "stable",
+        "bounded",
+    ):
+        assert keyword in text, f"hidden tests must mention {keyword!r}"
+
+
 def test_hard_hidden_v1_fixture_set_resolves_to_date_window() -> None:
     """Req: hard hidden fixture set is selectable
     WHEN fixture_set='hard_hidden_v1' is resolved
@@ -851,6 +1323,39 @@ def test_hard_hidden_v1_fixture_set_resolves_to_date_window() -> None:
     fixtures = resolve_fixtures(fixture_set="hard_hidden_v1")
     ids = [fx.fixture_id for fx in fixtures]
     assert ids == ["date_window"]
+
+
+def test_broad_calibration_fixture_set_resolves_to_three_hard_fixtures() -> None:
+    """Req: broad_calibration is the current hard hidden fixture set
+    WHEN fixture_set='broad_calibration' is resolved
+    THEN it includes date_window, rate_limit, and version_range."""
+    from bench.real.coding_agent.runner import resolve_fixtures
+
+    fixtures = resolve_fixtures(fixture_set="broad_calibration")
+    ids = [fx.fixture_id for fx in fixtures]
+    assert ids == ["date_window", "rate_limit", "version_range"]
+
+
+def test_very_hard_hidden_v1_fixture_set_resolves_to_unicode_normalize() -> None:
+    """Req: very hard hidden fixture set is selectable
+    WHEN fixture_set='very_hard_hidden_v1' is resolved
+    THEN unicode_normalize is included."""
+    from bench.real.coding_agent.runner import resolve_fixtures
+
+    fixtures = resolve_fixtures(fixture_set="very_hard_hidden_v1")
+    ids = [fx.fixture_id for fx in fixtures]
+    assert ids == ["unicode_normalize"]
+
+
+def test_stateful_calibration_fixture_set_resolves_to_semantic_fixtures() -> None:
+    """Req: very hard hidden fixture set is selectable
+    WHEN fixture_set='stateful_calibration' is resolved
+    THEN the stateful streaming fixture is included."""
+    from bench.real.coding_agent.runner import resolve_fixtures
+
+    fixtures = resolve_fixtures(fixture_set="stateful_calibration")
+    ids = [fx.fixture_id for fx in fixtures]
+    assert ids == ["streaming_watermark_dedupe"]
 
 
 def test_hidden_v1_fixture_set_stays_csv_dedupe_only() -> None:
@@ -882,3 +1387,63 @@ def test_cli_real_subcommand_accepts_hard_hidden_v1() -> None:
         ]
     )
     assert ns.fixture_set == "hard_hidden_v1"
+
+
+def test_cli_real_subcommand_accepts_broad_calibration() -> None:
+    """Req: broad_calibration is selectable
+    WHEN the CLI parser sees --fixture-set broad_calibration
+    THEN argparse accepts it."""
+    from counterfact.cli import build_parser
+
+    parser = build_parser()
+    ns = parser.parse_args(
+        [
+            "bench",
+            "real",
+            "--n",
+            "1",
+            "--fixture-set",
+            "broad_calibration",
+        ]
+    )
+    assert ns.fixture_set == "broad_calibration"
+
+
+def test_cli_real_subcommand_accepts_very_hard_hidden_v1() -> None:
+    """Req: very_hard_hidden_v1 is selectable
+    WHEN the CLI parser sees --fixture-set very_hard_hidden_v1
+    THEN argparse accepts it."""
+    from counterfact.cli import build_parser
+
+    parser = build_parser()
+    ns = parser.parse_args(
+        [
+            "bench",
+            "real",
+            "--n",
+            "1",
+            "--fixture-set",
+            "very_hard_hidden_v1",
+        ]
+    )
+    assert ns.fixture_set == "very_hard_hidden_v1"
+
+
+def test_cli_real_subcommand_accepts_stateful_calibration() -> None:
+    """Req: stateful_calibration is selectable
+    WHEN the CLI parser sees --fixture-set stateful_calibration
+    THEN argparse accepts it."""
+    from counterfact.cli import build_parser
+
+    parser = build_parser()
+    ns = parser.parse_args(
+        [
+            "bench",
+            "real",
+            "--n",
+            "1",
+            "--fixture-set",
+            "stateful_calibration",
+        ]
+    )
+    assert ns.fixture_set == "stateful_calibration"

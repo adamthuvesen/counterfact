@@ -6,6 +6,7 @@ corpus is a HUMAN GATE (§12.3) and is not exercised here.
 
 from __future__ import annotations
 
+import json
 import random
 import shutil
 import subprocess
@@ -20,7 +21,11 @@ from bench.real.coding_agent import (
     BudgetTracker,
     EpsilonGreedy,
 )
-from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
+from bench.real.coding_agent.agent import (
+    AgentRunConfig,
+    _extract_python_block,
+    run_one_trace,
+)
 from bench.real.coding_agent.fixtures import EASY_FIXTURES, run_pytest
 from bench.real.coding_agent.llm import (
     CostUnknownError,
@@ -391,6 +396,28 @@ def test_agent_observation_extracted_code_is_none_when_parse_fails(tmp_path: Pat
     assert obs["extracted_code"] is None
 
 
+def test_extract_python_block_prefers_fenced_code() -> None:
+    text = "notes\n```python\ndef target():\n    return 1\n```\n"
+    assert _extract_python_block(text, expected_function="target") == (
+        "def target():\n    return 1\n"
+    )
+
+
+def test_extract_python_block_accepts_parseable_full_response() -> None:
+    text = "from __future__ import annotations\n\n\ndef target() -> int:\n    return 1\n"
+    assert _extract_python_block(text, expected_function="target") == text
+
+
+def test_extract_python_block_rejects_unparseable_commentary() -> None:
+    text = "Here is the fix:\n\ndef target() -> int:\n    return 1\n"
+    assert _extract_python_block(text, expected_function="target") is None
+
+
+def test_extract_python_block_rejects_wrong_function() -> None:
+    text = "def other() -> int:\n    return 1\n"
+    assert _extract_python_block(text, expected_function="target") is None
+
+
 # --- Approval gate / resume / CLI -------------------------------------------
 
 
@@ -630,7 +657,7 @@ def test_resume_rejects_changed_randomization_config(tmp_path: Path) -> None:
 
 def test_resume_rejects_existing_traces_without_identity(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    source = next((repo_root / "bench" / "real" / "runs_single_class").glob("real-*.json"))
+    source = next((repo_root / "bench" / "real" / "single_class_refusal").glob("real-*.json"))
     output = tmp_path / "out"
     output.mkdir()
     shutil.copy(source, output / source.name)
@@ -788,7 +815,7 @@ def test_cli_real_subcommand_first_run_prints_approval(tmp_path: Path) -> None:
 
 def test_analyze_pilot_cli_writes_notes_without_provider_calls(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    source_dir = repo_root / "bench" / "real" / "runs_single_class"
+    source_dir = repo_root / "bench" / "real" / "single_class_refusal"
     run_dir = tmp_path / "runs"
     run_dir.mkdir()
     for path in sorted(source_dir.glob("real-*.json"))[:3]:
@@ -803,4 +830,96 @@ def test_analyze_pilot_cli_writes_notes_without_provider_calls(tmp_path: Path) -
     )
     assert proc.returncode == 0, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
     assert "2x2 contingency" in proc.stdout
+    assert "Extraction failures" in proc.stdout
     assert (run_dir / "PILOT_NOTES.md").is_file()
+
+
+def _write_pilot_trace(
+    run_dir: Path,
+    name: str,
+    *,
+    fixture_id: str = "unicode_normalize",
+    model: str = "large",
+    public_pass: bool = True,
+    hidden_pass: bool = False,
+    extracted_code: str | None = "def dedupe_normalized(labels):\n    return labels\n",
+    stdout_tail: str = "",
+) -> None:
+    run = {
+        "steps": [
+            {
+                "decisions": [
+                    {"decision_type": "model_call", "chosen_action": model}
+                ],
+                "observations": [
+                    {
+                        "content": {
+                            "cost_usd": 0.0,
+                            "extracted_code": extracted_code,
+                        }
+                    }
+                ],
+            },
+            {
+                "decisions": [
+                    {"decision_type": "tool_call", "chosen_action": "run_tests"}
+                ],
+                "observations": [{"content": {"stdout_tail": stdout_tail}}],
+            },
+        ],
+        "outcome": {
+            "metadata": {
+                "fixture_id": fixture_id,
+                "public_pass": public_pass,
+                "hidden_pass": hidden_pass,
+            }
+        },
+    }
+    (run_dir / f"real-{name}.json").write_text(json.dumps(run))
+
+
+def test_analyze_pilot_counts_hidden_semantic_failures_by_model(tmp_path: Path) -> None:
+    from bench.real.analyze_pilot import analyze, render
+
+    _write_pilot_trace(tmp_path, "small", model="small")
+    _write_pilot_trace(tmp_path, "large", model="large")
+    _write_pilot_trace(tmp_path, "pass", model="large", hidden_pass=True)
+
+    report = analyze(tmp_path)
+    assert report["failure_modes"]["hidden_semantic_failure"] == 2
+    assert report["failure_modes_by_model"][
+        "model=small,mode=hidden_semantic_failure"
+    ] == 1
+    assert report["failure_modes_by_model"][
+        "model=large,mode=hidden_semantic_failure"
+    ] == 1
+    assert report["showcase_gate_passed"] is True
+    assert "Showcase composition gate" in render(report)
+
+
+def test_analyze_pilot_rejects_format_dominated_failures(tmp_path: Path) -> None:
+    from bench.real.analyze_pilot import analyze
+
+    _write_pilot_trace(tmp_path, "format-small", model="small", extracted_code=None)
+    _write_pilot_trace(tmp_path, "format-large", model="large", extracted_code=None)
+    _write_pilot_trace(tmp_path, "semantic-large", model="large")
+
+    report = analyze(tmp_path)
+    assert report["failure_modes"]["format_failure"] == 2
+    assert report["failure_modes"]["hidden_semantic_failure"] == 1
+    assert report["showcase_gate_passed"] is False
+
+
+def test_analyze_pilot_counts_public_failure(tmp_path: Path) -> None:
+    from bench.real.analyze_pilot import analyze
+
+    _write_pilot_trace(
+        tmp_path,
+        "public-failure",
+        public_pass=False,
+        hidden_pass=False,
+        extracted_code="def dedupe_normalized(labels):\n    return []\n",
+    )
+
+    report = analyze(tmp_path)
+    assert report["failure_modes"]["public_failure"] == 1

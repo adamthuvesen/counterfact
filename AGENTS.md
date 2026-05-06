@@ -41,9 +41,9 @@ logged data, graph, support, and assumptions can actually support them. A useful
   `model_choice` is biased by `tool_choice`. Safe for CI and local work.
 - `bench/real/coding_agent/` - real-agent trace harness. Can call external LLMs
   and spend money; treat it as gated infrastructure.
-- `bench/real/runs_v2/` - committed mixed-outcome real corpus (30 traces),
+- `bench/real/smoke_mixed_outcome/` - committed mixed-outcome real corpus (30 traces),
   the real-trace smoke test for the demo (no statistical headline).
-- `bench/real/runs_single_class/` - committed single-class regression anchor
+- `bench/real/single_class_refusal/` - committed single-class regression anchor
   (3 traces from the original csv_dedupe pilot), pinning the engine's
   "honest refusal" branch.
 - `notebooks/demo.ipynb` and `docs/demo-excerpt.md` - naive-vs-honest demo
@@ -96,7 +96,7 @@ uv run counterfact bench synthetic --n 500 --seed 42 --output-dir /tmp/counterfa
   design; do not relax that without an explicit requirement.
 - Never commit secrets or provider credentials. Use environment variables loaded
   from the user's secret manager, not hardcoded values or `.env` files.
-- Treat `bench/real/runs/`, `bench/synthetic/_out/`, checkpoints, and ad hoc
+- Treat `bench/real/pilot/`, `bench/synthetic/_out/`, checkpoints, and ad hoc
   generated corpora as local artifacts unless the task explicitly says to
   curate and commit a corpus.
 

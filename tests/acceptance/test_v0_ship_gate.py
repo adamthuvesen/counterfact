@@ -47,12 +47,12 @@ from tests.acceptance.demo_notebook_helpers import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-REAL_CORPUS_DIR = REPO_ROOT / "bench" / "real" / "runs_v2"
+REAL_CORPUS_DIR = REPO_ROOT / "bench" / "real" / "smoke_mixed_outcome"
 DEMO_NOTEBOOK = REPO_ROOT / "notebooks" / "demo.ipynb"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 SRC_DIR = REPO_ROOT / "src"
 
-MIN_REAL_TRACES = 30  # runs_v2 baseline; raised by future corpora
+MIN_REAL_TRACES = 100  # smoke_mixed_outcome baseline; raised by future corpora
 SCM_RECOVERY_TOLERANCE = 0.05
 
 # Every action documented in the NextStep contract that counts as
@@ -83,7 +83,7 @@ def real_corpus() -> list[Run]:
     runs = _load_real_corpus()
     if not runs:
         pytest.skip(
-            f"runs_v2 corpus absent at {REAL_CORPUS_DIR}. "
+            f"smoke_mixed_outcome corpus absent at {REAL_CORPUS_DIR}. "
             f"Promote a real corpus per bench/real/README.md before §15 runs."
         )
     return runs
@@ -356,7 +356,7 @@ def test_top1_attribution_label_artifact_is_present() -> None:
 
     The full top-1 acceptance test lives in
     tests/acceptance/test_top1_attribution.py and runs against the real
-    corpus when both labels and runs_single_class are populated. This gate-level
+    corpus when both labels and single_class_refusal are populated. This gate-level
     test is a presence check so the gate's structure is auditable here too;
     it skips when no label has been added yet (the §14.1 HUMAN GATE)."""
     labels_path = REPO_ROOT / "bench" / "real" / "coding_agent" / "labels.json"

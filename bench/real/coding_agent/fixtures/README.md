@@ -10,7 +10,7 @@ The product question this directory answers is *not* "can an LLM write code?"
 warmup. The question is **"does this fixture produce real outcome variation
 when randomized model and tool choices are flipped?"** Without that, the
 generated traces are causally degenerate (every trace passes; see
-`bench/real/runs_single_class/`) and `counterfact intervene` correctly refuses to
+`bench/real/single_class_refusal/`) and `counterfact intervene` correctly refuses to
 attribute anything.
 
 ## Properties of a useful fixture
@@ -48,33 +48,57 @@ A fixture is worth running iff:
 
 ## Promotion gate
 
-Before any new fixture set ships under `bench/real/runs_v2/`, run:
+Before any new fixture set ships under `bench/real/smoke_mixed_outcome/`, run:
 
 ```bash
-counterfact analyze corpus bench/real/runs_pilot_<YYYY-MM-DD>/
+counterfact analyze corpus bench/real/pilot_<YYYY-MM-DD>/
 ```
 
 The analyzer enforces the rubric documented in
 `src/counterfact/corpus_analyzer/rubric.py`: pass rate in [0.3, 0.7], at
-least two arms with `n >= 5` for some randomized decision type, and at
-least one decision type where `intervene()` returns `identified`. Promotion
-to `runs_v2/` is a deliberate human action — see `bench/real/README.md` for
-the convention. The analyzer never auto-renames anything.
+least two arms with `n >= 5` for some randomized decision type, at least one
+decision type where `intervene()` returns `identified`, and mixed pass/fail
+outcomes for both real-agent model arms (`small` and `large`) when those arms
+are present. Promotion to `smoke_mixed_outcome/` is a deliberate human action
+— see `bench/real/README.md` for the convention. The analyzer never
+auto-renames anything.
+
+For showcase calibration, also run `python -m bench.real.analyze_pilot` and read
+the failure-mode table. A strong showcase should fail because runnable patches
+miss hidden semantics, not because the model omitted a parseable patch.
 
 ## Existing fixtures
 
-- `csv_dedupe/` — the canonical hidden-test fixture. Modern models one-shot
-  it (see pilot 3); kept as the lower-bound difficulty calibration and exposed
-  as `hidden_v1`.
-- `date_window/` — the first hard hidden-test fixture for future corpus pilots.
+- `date_window/` — broad calibration fixture.
   Public tests cover sorted-window basics; hidden tests cover stated edge
   semantics around inclusive boundaries, unsorted windows, invalid ranges,
-  leap days, and malformed dates. Exposed as `hard_hidden_v1`.
+  validating every window endpoint, cross-year windows, leap days, and
+  malformed dates.
+- `rate_limit/` — broad calibration fixture for fixed-window rate limiting.
+  Public tests cover basic limits; hidden tests cover inclusive lower bounds,
+  unsorted history, future timestamps, duplicate same-second requests, and
+  invalid limit/window values.
+- `version_range/` — broad calibration fixture for semantic-version ranges.
+  Public tests cover simple final-release ranges; hidden tests cover strict
+  bounds, prereleases, dot-separated prerelease ordering, malformed versions,
+  and malformed constraints.
+- `streaming_watermark_dedupe/` — stateful calibration fixture. Public
+  tests cover in-order duplicate suppression; hidden tests cover event-time
+  watermark advancement, late-event dropping, TTL eviction, checkpoint restore,
+  stable emission order, and memory-bounded retained state. It is harder than
+  single-function normalization fixtures because correctness depends on state
+  transitions across multiple `process()` calls.
+
+Historical fixtures:
+
+- `csv_dedupe/` — lower-bound hidden-test calibration, exposed as `hidden_v1`.
+- `unicode_normalize/` — semantic calibration that proved too easy for current
+  models, exposed as `very_hard_hidden_v1`.
 - `csv-stats/`, `string-utils/`, `date-utils/` — easy v0 fixtures, retained
   for harness-integration testing.
 - `regex-anchors/`, `iso-week-dates/`, `agg-with-groups/` — harder v0
   fixtures.
 
-Candidate next fixtures: `rate_limit`, `unicode_normalize`. They should follow
-the same rule as `date_window`: deterministic local verifier, naturally lossy
-spec, and hidden tests that stay derivable from the prose.
+Candidate next fixtures should follow the same rule as `unicode_normalize`:
+deterministic local verifier, naturally lossy spec, and hidden tests that stay
+derivable from the prose.

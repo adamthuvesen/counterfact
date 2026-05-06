@@ -1,0 +1,185 @@
+{
+  "schema_version": "0.1.0",
+  "run_id": "real-date_window-000088",
+  "steps": [
+    {
+      "step_index": 0,
+      "decisions": [
+        {
+          "decision_id": "d-000088-plan",
+          "decision_type": "plan_step",
+          "chosen_action": "begin",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    },
+    {
+      "step_index": 1,
+      "decisions": [
+        {
+          "decision_id": "d-000088-inspect",
+          "decision_type": "tool_call",
+          "chosen_action": "inspect_file",
+          "policy": "epsilon_greedy",
+          "policy_params": {
+            "epsilon": 0.2,
+            "greedy": "inspect_file"
+          },
+          "valid_actions": [
+            "inspect_file",
+            "run_tests",
+            "search_docs"
+          ],
+          "propensity": 0.8666666666666667,
+          "context_features": {
+            "first_action": true
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000088-inspect",
+          "content": {
+            "source_chars": 615,
+            "test_chars": 771
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 2,
+      "decisions": [
+        {
+          "decision_id": "d-000088-retry",
+          "decision_type": "retry",
+          "chosen_action": "retry_once",
+          "policy": "epsilon_greedy",
+          "policy_params": {
+            "epsilon": 0.2,
+            "greedy": "retry_once"
+          },
+          "valid_actions": [
+            "no_retry",
+            "retry_once"
+          ],
+          "propensity": 0.9,
+          "context_features": {
+            "step_index": 2,
+            "upfront": true
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    },
+    {
+      "step_index": 3,
+      "decisions": [
+        {
+          "decision_id": "d-000088-model-1",
+          "decision_type": "model_call",
+          "chosen_action": "small",
+          "policy": "epsilon_greedy",
+          "policy_params": {
+            "epsilon": 0.67,
+            "greedy": "small"
+          },
+          "valid_actions": [
+            "small",
+            "large"
+          ],
+          "propensity": 0.665,
+          "context_features": {
+            "prompt_chars": 3940,
+            "attempt": 1
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000088-model-1",
+          "content": {
+            "response_chars": 1493,
+            "cost_usd": 0.003196,
+            "extracted_code": "\"\"\"Date-window membership for the date_window fixture.\"\"\"\n\nfrom __future__ import annotations\n\nfrom datetime import datetime\n\n\ndef in_any_window(target_date: str, windows: list[tuple[str, str]]) -> bool:\n    \"\"\"Return whether target_date falls inside any date window.\"\"\"\n    # Validate and parse the target date\n    target_parsed = _parse_and_validate_date(target_date)\n    \n    # Check each window\n    for start, end in windows:\n        start_parsed = _parse_and_validate_date(start)\n        end_parsed = _parse_and_validate_date(end)\n        \n        # Check if start > end (invalid window)\n        if start_parsed > end_parsed:\n            raise ValueError(f\"Invalid window: start ({start}) is after end ({end})\")\n        \n        # Check if target is within this window (inclusive boundaries)\n        if start_parsed <= target_parsed <= end_parsed:\n            return True\n    \n    return False\n\n\ndef _parse_and_validate_date(date_str: str) -> datetime:\n    \"\"\"Parse and validate a date string in YYYY-MM-DD format.\n    \n    Raises ValueError if the date is malformed or impossible.\n    \"\"\"\n    try:\n        # Strict parsing using strptime with %Y-%m-%d format\n        # This ensures proper zero-padding and validates the date\n        parsed = datetime.strptime(date_str, \"%Y-%m-%d\")\n        return parsed\n    except ValueError as e:\n        # strptime raises ValueError for invalid dates\n        raise ValueError(f\"Invalid date format or impossible date: {date_str}\") from e\n"
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 4,
+      "decisions": [
+        {
+          "decision_id": "d-000088-runtests-1",
+          "decision_type": "tool_call",
+          "chosen_action": "run_tests",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000088-runtests-1",
+          "content": {
+            "passed": true,
+            "stdout_tail": "....                                                                     [100%]\n4 passed in 0.01s\n"
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 5,
+      "decisions": [
+        {
+          "decision_id": "d-000088-term",
+          "decision_type": "termination",
+          "chosen_action": "success",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    }
+  ],
+  "outcome": {
+    "kind": "binary",
+    "value": false,
+    "verifier": "pytest_hidden",
+    "metadata": {
+      "fixture_id": "date_window",
+      "public_pass": true,
+      "hidden_pass": false,
+      "generalization_gap": true
+    }
+  },
+  "metadata": {
+    "agent_name": null,
+    "notes": null,
+    "extra": {}
+  }
+}

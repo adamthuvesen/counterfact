@@ -46,7 +46,7 @@ causal estimate disagree, the disagreement is the diagnostic.
 ## The real-trace smoke test
 
 Without `--confound`, `counterfact demo` runs the same flow against the
-committed real corpus, `bench/real/runs_v2/` (30 `date_window` traces,
+committed real corpus, `bench/real/smoke_mixed_outcome/` (100 `date_window` traces,
 mixed-outcome from inverted-greedy randomization). It is intentionally
 small — a smoke test that the engine works on real-agent traces, not the
 statistical headline. The CI is wide and the naive arm gap and the engine's
@@ -55,19 +55,19 @@ shape.
 
 | arm | n | pass | pass rate | 95% CI |
 | --- | ---: | ---: | ---: | --- |
-| large | 8 | 8 | 1.000 | [0.676, 1.000] |
-| small | 22 | 6 | 0.273 | [0.132, 0.482] |
+| large | 27 | 27 | 1.000 | [0.875, 1.000] |
+| small | 74 | 18 | 0.243 | [0.160, 0.352] |
 
 `intervene(model_call -> small)` on the same corpus returns
-`identifiability=identified` with `outcome_delta=0.332 [0.179, 0.493]` and a
-`next_step.action="increase_n"` recommending ~416 traces to tighten the CI.
+`identifiability=identified` with `outcome_delta=0.270 [0.190, 0.355]` and a
+`next_step.action="increase_n"` recommending ~377 traces to tighten the CI.
 
 ## The single-class regression anchor
 
-A small companion corpus, `runs_single_class` (3 single-class traces from
+A small companion corpus, `single_class_refusal` (3 single-class traces from
 the original `csv_dedupe` pilot), is committed as the regression anchor for
 the engine's "honest refusal" branch. Pointed at it
-(`--runs-dir bench/real/runs_single_class`), the same engine refuses to fit
+(`--runs-dir bench/real/single_class_refusal`), the same engine refuses to fit
 a one-class outcome model and returns `unidentified` with
 `next_step.action=broaden_arm_support`. That refusal is itself the feature.
 
@@ -81,6 +81,6 @@ as SVG with the top-attributed decision highlighted, and one
 `IdentifiabilityStatus`, and numeric `outcome_delta` blocks are
 structurally suppressed when a card is `unidentified` so the report cannot
 emit an estimate the data does not support. Pointing it at a single-class
-run (e.g. anything in `runs_single_class`) renders exactly one
+run (e.g. anything in `single_class_refusal`) renders exactly one
 `unidentified` card with the `broaden_arm_support` next-step callout and no
 point estimate anywhere on the page.

@@ -95,6 +95,34 @@ HIDDEN_FIXTURES: tuple[FixtureSpec, ...] = (
         public_tests_relpath="test_date_window.py",
         hidden_tests_relpath="test_date_window_hidden.py",
     ),
+    FixtureSpec(
+        "rate_limit",
+        source_relpath="rate_limit.py",
+        test_relpath="",  # unused for hidden fixtures
+        public_tests_relpath="test_rate_limit.py",
+        hidden_tests_relpath="test_rate_limit_hidden.py",
+    ),
+    FixtureSpec(
+        "version_range",
+        source_relpath="version_range.py",
+        test_relpath="",  # unused for hidden fixtures
+        public_tests_relpath="test_version_range.py",
+        hidden_tests_relpath="test_version_range_hidden.py",
+    ),
+    FixtureSpec(
+        "unicode_normalize",
+        source_relpath="unicode_normalize.py",
+        test_relpath="",  # unused for hidden fixtures
+        public_tests_relpath="test_unicode_normalize.py",
+        hidden_tests_relpath="test_unicode_normalize_hidden.py",
+    ),
+    FixtureSpec(
+        "streaming_watermark_dedupe",
+        source_relpath="watermark_dedupe.py",
+        test_relpath="",  # unused for hidden fixtures
+        public_tests_relpath="test_watermark_dedupe.py",
+        hidden_tests_relpath="test_watermark_dedupe_hidden.py",
+    ),
 )
 
 HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = tuple(
@@ -103,6 +131,22 @@ HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = tuple(
 
 HARD_HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = tuple(
     fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "date_window"
+)
+
+BROAD_CALIBRATION_FIXTURES: tuple[FixtureSpec, ...] = tuple(
+    fx
+    for fx in HIDDEN_FIXTURES
+    if fx.fixture_id in {"date_window", "rate_limit", "version_range"}
+)
+
+VERY_HARD_HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = tuple(
+    fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "unicode_normalize"
+)
+
+STATEFUL_CALIBRATION_FIXTURES: tuple[FixtureSpec, ...] = tuple(
+    fx
+    for fx in HIDDEN_FIXTURES
+    if fx.fixture_id == "streaming_watermark_dedupe"
 )
 
 

@@ -109,7 +109,7 @@ def test_increase_n_command_uses_estimated_required_n() -> None:
     )
     assert cmd is not None
     assert "--n 180" in cmd
-    assert "--fixture-set hard_hidden_v1" in cmd
+    assert "--fixture-set broad_calibration" in cmd
 
 
 def test_broaden_arm_support_command_uses_hard_hidden_fixture_set() -> None:
@@ -120,7 +120,7 @@ def test_broaden_arm_support_command_uses_hard_hidden_fixture_set() -> None:
         arm_name="small",
     )
     assert cmd is not None
-    assert "--fixture-set hard_hidden_v1" in cmd
+    assert "--fixture-set broad_calibration" in cmd
 
 
 def test_increase_n_command_floors_at_minimum() -> None:

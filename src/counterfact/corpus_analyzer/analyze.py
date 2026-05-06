@@ -253,6 +253,57 @@ def _score_identifiability(
     )
 
 
+def _score_model_arm_outcome_mix(
+    arms: list[ArmSupportRow], thresholds: RubricThresholds
+) -> RubricCriterion:
+    if not thresholds.require_model_arm_outcome_mix:
+        return RubricCriterion(
+            name="model_arm_outcome_mix",
+            passed=True,
+            reason="model_arm_outcome_mix: ok",
+        )
+
+    by_arm = {
+        row.arm: row
+        for row in arms
+        if row.decision_type == "model_call" and row.arm in {"small", "large"}
+    }
+    if not by_arm:
+        return RubricCriterion(
+            name="model_arm_outcome_mix",
+            passed=True,
+            reason="model_arm_outcome_mix: ok",
+        )
+
+    missing = [arm for arm in ("small", "large") if arm not in by_arm]
+    single_class: list[str] = []
+    for arm in ("small", "large"):
+        row = by_arm.get(arm)
+        if row is None:
+            continue
+        fail_count = row.n - row.pass_count
+        if row.pass_count == 0 or fail_count == 0:
+            single_class.append(f"{arm}=pass:{row.pass_count},fail:{fail_count}")
+
+    if not missing and not single_class:
+        return RubricCriterion(
+            name="model_arm_outcome_mix",
+            passed=True,
+            reason="model_arm_outcome_mix: ok",
+        )
+
+    details = []
+    if missing:
+        details.append("missing arms: " + ",".join(missing))
+    if single_class:
+        details.append("single-class arms: " + "; ".join(single_class))
+    return RubricCriterion(
+        name="model_arm_outcome_mix",
+        passed=False,
+        reason="model_arm_outcome_mix: " + "; ".join(details),
+    )
+
+
 def analyze(
     runs: Iterable[Run],
     *,
@@ -272,6 +323,7 @@ def analyze(
         _score_outcome_balance(balance, thresholds, len(runs_list)),
         _score_arm_support(arms, thresholds),
         _score_identifiability(coverage, identified_dts, thresholds),
+        _score_model_arm_outcome_mix(arms, thresholds),
     ]
     promote = all(c.passed for c in criteria)
 

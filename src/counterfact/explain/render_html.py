@@ -359,8 +359,16 @@ def _render_descriptive(report: ExplainReport) -> str:
 # --------------------------------------------------------------------------
 
 
-def _node_label(decision: Decision) -> str:
+def _node_label(decision: Decision, run: Run | None = None) -> str:
     action = decision.chosen_action or "—"
+    if (
+        decision.decision_type == "termination"
+        and action == "success"
+        and run is not None
+        and run.outcome.verifier == "pytest_hidden"
+        and run.outcome.metadata.get("public_pass") is True
+    ):
+        action = "public_tests_passed"
     return f"{decision.decision_type}::{action}"
 
 
@@ -390,8 +398,10 @@ def _render_dag(
             raw(tag("p", {"class": "placeholder"}, "(empty trace)")),
         )
 
-    positions = _layout_positions(dag)
-    box_w, box_h = 168, 32
+    labels = {decision.decision_id: _node_label(decision, dag.run) for decision in dag.nodes}
+    box_w = max(168, max(len(label) for label in labels.values()) * 7 + 16)
+    box_h = 32
+    positions = _layout_positions(dag, x_step=box_w + 32)
     max_x = max(x for x, _ in positions.values()) + box_w + 24
     max_y = max(y for _, y in positions.values()) + box_h + 24
 
@@ -438,7 +448,7 @@ def _render_dag(
         text = tag(
             "text",
             {"x": str(x + 8), "y": str(y + 20)},
-            _node_label(decision),
+            labels[decision.decision_id],
         )
         title = tag(
             "title",

@@ -1,16 +1,16 @@
 """§14 acceptance: hand-labeled root cause is the top-1 attribution.
 
 The labels file at `bench/real/coding_agent/labels.json` is filled in by the
-human (§14.1 HUMAN GATE). Once at least one label is present and the runs_v2
+human (§14.1 HUMAN GATE). Once at least one label is present and the smoke_mixed_outcome
 corpus exists, this test:
 
 * loads each label entry,
-* loads the labeled run from `bench/real/runs_v2/<run_id>.json`,
-* fits the outcome model on the full runs_v2 corpus,
+* loads the labeled run from `bench/real/smoke_mixed_outcome/<run_id>.json`,
+* fits the outcome model on the full smoke_mixed_outcome corpus,
 * calls `attribute_failure(dag, model)` on the labeled run,
 * asserts `top_k(1)[0].decision_id == label.root_cause_decision_id`.
 
-The test SKIPS (not fails) when labels is empty or runs_v2 is absent — that
+The test SKIPS (not fails) when labels is empty or smoke_mixed_outcome is absent — that
 state is the §14.1 gate sitting open, not a regression.
 """
 
@@ -26,7 +26,7 @@ from counterfact.schema import Run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LABELS_PATH = REPO_ROOT / "bench" / "real" / "coding_agent" / "labels.json"
-CORPUS_DIR = REPO_ROOT / "bench" / "real" / "runs_v2"
+CORPUS_DIR = REPO_ROOT / "bench" / "real" / "smoke_mixed_outcome"
 
 
 def _load_labels() -> list[dict]:
@@ -58,7 +58,7 @@ def corpus() -> list[Run]:
     runs = _load_corpus()
     if not runs:
         pytest.skip(
-            f"runs_v2 corpus absent at {CORPUS_DIR}. "
+            f"smoke_mixed_outcome corpus absent at {CORPUS_DIR}. "
             f"Promote a real corpus per bench/real/README.md before running this test."
         )
     return runs
