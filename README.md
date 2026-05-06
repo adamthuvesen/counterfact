@@ -2,15 +2,11 @@
 
 `counterfact` is a small research library for understanding agent decision traces through counterfactual questions: if the agent had called a different model, used a different tool, retried, or stopped later, would it have been more likely to complete the task?
 
-It does not decide whether one benchmark score is enough to switch models. It studies logged agent decisions and labels what the trace corpus can honestly support.
-
 The answer is always labelled:
 
 - `identified` - the logged data supports a point estimate under the graph, support, and assumptions.
 - `bounded` - the data does not support a point estimate, but sensitivity bounds are available.
 - `unidentified` - the corpus does not support the counterfactual without more data, stronger assumptions, or replay.
-
-The useful feature is not confidence. It is knowing when confidence would be fake.
 
 ## Install
 
