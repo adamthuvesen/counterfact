@@ -32,11 +32,20 @@ logged data, graph, support, and assumptions can actually support them. A useful
 - `src/counterfact/intervene/` - intervention API, identifiability labels,
   sensitivity/bounds, and structured `next_step` guidance.
 - `src/counterfact/attribute/` - failure attribution ranking.
+- `src/counterfact/explain/` - per-trace narrative surface: `ExplainReport`
+  model and stdlib HTML renderer (`counterfact explain` CLI), grounded in
+  `CausalEstimate` fields with a hard hide-rule for `unidentified`.
 - `src/counterfact/baselines.py` - descriptive baselines such as pass-rate tables.
-- `bench/synthetic/` - deterministic SCM benchmark. Safe for CI and local work.
+- `bench/synthetic/` - deterministic SCM benchmark. Default mode randomizes
+  uniformly; `confound=True` opts into the canonical showcase where
+  `model_choice` is biased by `tool_choice`. Safe for CI and local work.
 - `bench/real/coding_agent/` - real-agent trace harness. Can call external LLMs
   and spend money; treat it as gated infrastructure.
-- `bench/real/runs_single_class/` - committed real pilot corpus used by the demo story.
+- `bench/real/runs_v2/` - committed mixed-outcome real corpus (30 traces),
+  the real-trace smoke test for the demo (no statistical headline).
+- `bench/real/runs_single_class/` - committed single-class regression anchor
+  (3 traces from the original csv_dedupe pilot), pinning the engine's
+  "honest refusal" branch.
 - `notebooks/demo.ipynb` and `docs/demo-excerpt.md` - naive-vs-honest demo
   surface. Keep these aligned when demo behavior changes.
 - `tests/` - unit and acceptance coverage. Acceptance tests encode the v0
