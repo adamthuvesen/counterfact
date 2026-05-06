@@ -18,6 +18,7 @@ import pytest
 
 from counterfact.attribute import AttributionEntry, FailureAttribution
 from counterfact.explain import build_report, render_html
+from counterfact.explain.render_html import _node_label
 from counterfact.explain.report import ExplainReport
 from counterfact.intervene.estimate import (
     CausalEstimate,
@@ -27,7 +28,7 @@ from counterfact.intervene.estimate import (
     NextStep,
     SensitivityBounds,
 )
-from counterfact.schema import Run
+from counterfact.schema import Decision, Metadata, Outcome, Run
 
 # ---------------------------------------------------------------------------
 # Fixtures and helpers
@@ -42,11 +43,36 @@ def _synthetic_corpus(n: int = 24, seed: int = 7) -> list[Run]:
     return [Run.model_validate(t) for t in generate_traces(n=n, seed=seed)]
 
 
-def _runs_single_class_corpus() -> list[Run]:
+def _single_class_refusal_corpus() -> list[Run]:
     return [
         Run.model_validate_json(p.read_text())
-        for p in sorted(Path("bench/real/runs_single_class").glob("*.json"))
+        for p in sorted(Path("bench/real/single_class_refusal").glob("*.json"))
     ]
+
+
+def test_node_label__hidden_fixture_termination_success_names_public_tests() -> None:
+    run = Run(
+        schema_version="0.1.0",
+        run_id="hidden-fail",
+        outcome=Outcome(
+            kind="binary",
+            value=False,
+            verifier="pytest_hidden",
+            metadata={
+                "public_pass": True,
+                "hidden_pass": False,
+                "generalization_gap": True,
+            },
+        ),
+        metadata=Metadata(),
+    )
+    decision = Decision(
+        decision_id="d-term",
+        decision_type="termination",
+        chosen_action="success",
+    )
+
+    assert _node_label(decision, run) == "termination::public_tests_passed"
 
 
 def _identified_estimate() -> CausalEstimate:
@@ -75,7 +101,7 @@ def _identified_estimate() -> CausalEstimate:
                 "arm_breakdown": [],
                 "suggested_command": (
                     "uv run counterfact bench real --n 416 "
-                    "--fixture-set hard_hidden_v1"
+                    "--fixture-set broad_calibration"
                 ),
             },
             human_text="Tighten the CI by collecting ~416 traces.",
@@ -413,7 +439,7 @@ def test_render__suggested_command_appears_verbatim_in_code_element() -> None:
     report = _hand_built_report(attribution)
     html = render_html(report, now=FIXED_NOW)
 
-    cmd = "uv run counterfact bench real --n 416 --fixture-set hard_hidden_v1"
+    cmd = "uv run counterfact bench real --n 416 --fixture-set broad_calibration"
     expected = f"<code>{cmd}</code>"
     assert expected in html
 
@@ -483,9 +509,9 @@ def test_render__byte_identical_for_fixed_inputs_and_clock() -> None:
 
 
 def test_render__single_class_corpus_produces_no_decimal_point_estimate() -> None:
-    """End-to-end: the runs_single_class single-class path must render the
+    """End-to-end: the single_class_refusal single-class path must render the
     unidentified card with no card-level decimal estimate."""
-    corpus = _runs_single_class_corpus()
+    corpus = _single_class_refusal_corpus()
     focal = corpus[0]
     report = build_report(focal, corpus, bootstrap=20, seed=42)
     html = render_html(report, now=FIXED_NOW)

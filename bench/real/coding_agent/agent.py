@@ -18,6 +18,7 @@ The loop emits a counterfact-native `Run` per fixture. LLM calls go through the
 
 from __future__ import annotations
 
+import ast
 import json
 import random
 import re
@@ -87,11 +88,40 @@ corrected source file inside a fenced ```python``` block.
 _CODE_FENCE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
 
 
-def _extract_python_block(text: str) -> str | None:
-    m = _CODE_FENCE.search(text)
-    if not m:
+def _defines_function(source: str, function_name: str) -> bool:
+    try:
+        module = ast.parse(source)
+    except SyntaxError:
+        return False
+    return any(
+        isinstance(node, ast.FunctionDef) and node.name == function_name
+        for node in module.body
+    )
+
+
+def _first_public_function(source: str) -> str | None:
+    try:
+        module = ast.parse(source)
+    except SyntaxError:
         return None
-    return m.group(1).rstrip() + "\n"
+    for node in module.body:
+        if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
+            return node.name
+    return None
+
+
+def _extract_python_block(text: str, *, expected_function: str | None = None) -> str | None:
+    m = _CODE_FENCE.search(text)
+    if m:
+        return m.group(1).rstrip() + "\n"
+    if expected_function is None:
+        return None
+    source = text.strip()
+    if not source:
+        return None
+    if not _defines_function(source, expected_function):
+        return None
+    return source.rstrip() + "\n"
 
 
 def _charge(
@@ -201,6 +231,7 @@ def run_one_trace(
     sandbox = snapshot_fixture(fixture, sandbox_root)
     src_path = sandbox / "src" / fixture.source_relpath
     hidden = is_hidden_fixture(fixture)
+    expected_function = _first_public_function(src_path.read_text())
 
     def _run_tests_in_loop() -> tuple[bool, str]:
         return run_pytest_public(sandbox) if hidden else run_pytest(sandbox)
@@ -288,7 +319,7 @@ def run_one_trace(
     prompt = build_fix_prompt(fixture, sandbox)
     resp = llm.call(role=model_action, prompt=prompt)
     _charge(budget, resp.cost_usd, ledger_path)
-    patched = _extract_python_block(resp.text)
+    patched = _extract_python_block(resp.text, expected_function=expected_function)
     steps.append(
         Step(
             step_index=step_index,
@@ -385,7 +416,7 @@ def run_one_trace(
     )
     resp2 = llm.call(role=model_action, prompt=retry_prompt)
     _charge(budget, resp2.cost_usd, ledger_path)
-    patched2 = _extract_python_block(resp2.text)
+    patched2 = _extract_python_block(resp2.text, expected_function=expected_function)
     steps.append(
         Step(
             step_index=step_index,

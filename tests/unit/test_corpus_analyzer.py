@@ -22,6 +22,7 @@ def test_default_thresholds_match_v0_spec() -> None:
     assert DEFAULT_THRESHOLDS.min_arms_per_decision_type == 2
     assert DEFAULT_THRESHOLDS.min_n_per_arm == 5
     assert DEFAULT_THRESHOLDS.min_identified_decision_types == 1
+    assert DEFAULT_THRESHOLDS.require_model_arm_outcome_mix is True
 
 
 def test_thresholds_reject_extra_fields() -> None:
@@ -59,12 +60,62 @@ def _all_pass_run(run_id: str, model_arm: str = "large") -> Run:
     )
 
 
+def _model_arm_run(run_id: str, model_arm: str, outcome: bool) -> Run:
+    return Run(
+        schema_version="0.1.0",
+        run_id=run_id,
+        steps=[
+            Step(
+                step_index=0,
+                decisions=[
+                    Decision(
+                        decision_id=f"{run_id}-model",
+                        decision_type="model_call",
+                        chosen_action=model_arm,
+                    )
+                ],
+            )
+        ],
+        outcome=Outcome(kind="binary", value=outcome, verifier="stub"),
+    )
+
+
 def test_single_class_corpus_marks_unfittable_outcome_model() -> None:
     runs = [_all_pass_run(f"r{i}") for i in range(5)]
     report = analyze(runs)
     assert report.identifiability_coverage.unfittable_outcome_model is True
     assert "identified" not in report.identifiability_coverage.reachable
     assert report.promote is False
+
+
+def test_model_arm_outcome_mix_rejects_perfect_large_arm() -> None:
+    runs = [
+        *[_model_arm_run(f"large-pass-{i}", "large", True) for i in range(6)],
+        _model_arm_run("small-pass", "small", True),
+        *[_model_arm_run(f"small-fail-{i}", "small", False) for i in range(6)],
+    ]
+
+    report = analyze(runs)
+    criterion = next(c for c in report.criteria if c.name == "model_arm_outcome_mix")
+
+    assert criterion.passed is False
+    assert "large=pass:6,fail:0" in criterion.reason
+    assert report.promote is False
+
+
+def test_model_arm_outcome_mix_passes_when_both_model_arms_are_mixed() -> None:
+    runs = [
+        *[_model_arm_run(f"large-pass-{i}", "large", True) for i in range(3)],
+        *[_model_arm_run(f"large-fail-{i}", "large", False) for i in range(3)],
+        *[_model_arm_run(f"small-pass-{i}", "small", True) for i in range(3)],
+        *[_model_arm_run(f"small-fail-{i}", "small", False) for i in range(3)],
+    ]
+
+    report = analyze(runs)
+    criterion = next(c for c in report.criteria if c.name == "model_arm_outcome_mix")
+
+    assert criterion.passed is True
+    assert criterion.reason == "model_arm_outcome_mix: ok"
 
 
 def test_outcome_balance_failing_reason_is_pinned_format() -> None:

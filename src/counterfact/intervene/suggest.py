@@ -36,8 +36,8 @@ _RANDOMIZATION_EPSILON = 0.5
 _MIN_BENCH_N = 30
 
 # Hidden-v1 (`csv_dedupe`) is the calibration fixture; future data-collection
-# suggestions target the harder set intended for mixed-outcome pilots.
-_SUGGESTED_FIXTURE_SET = "hard_hidden_v1"
+# suggestions target the broader hard set intended for mixed-outcome pilots.
+_SUGGESTED_FIXTURE_SET = "broad_calibration"
 
 
 def _model_flags(arm_name: str | None) -> list[str]:

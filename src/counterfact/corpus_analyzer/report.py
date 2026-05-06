@@ -40,7 +40,12 @@ class IdentifiabilityCoverage(_Strict):
 
 
 class RubricCriterion(_Strict):
-    name: Literal["outcome_balance", "arm_support", "identifiability_coverage"]
+    name: Literal[
+        "outcome_balance",
+        "arm_support",
+        "identifiability_coverage",
+        "model_arm_outcome_mix",
+    ]
     passed: bool
     reason: str
 

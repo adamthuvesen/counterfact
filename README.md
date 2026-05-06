@@ -1,31 +1,53 @@
 # counterfact
 
-> Causal attribution for LLM-agent traces, with the rare good manners to say when the data cannot support the counterfactual.
+`counterfact` is a small Python research library for causal attribution over LLM-agent decision traces.
 
-`counterfact` is a small Python research library for asking which agent decisions plausibly changed an outcome. It ingests typed decision traces, builds an inspectable per-trace DAG, fits a transparent outcome model, and answers intervention-style questions with an explicit identifiability label:
+It answers questions like:
 
-- `identified` - estimable under the declared graph, support, and assumptions
-- `bounded` - not point-identified, but sensitivity bounds are available
-- `unidentified` - unsupported by the traces without stronger assumptions or replay
+```text
+If this agent system had used a different LLM, tool, or retry policy, would the run have been more likely to pass?
+```
 
-The point is not to turn trace inspection into a confident-looking probability. The point is to keep the causal claim honest.
+The answer is always labelled:
 
-## Quickstart
+- `identified` - the logged data supports a point estimate under the graph,
+  support, and assumptions.
+- `bounded` - the data does not support a point estimate, but sensitivity bounds
+  are available.
+- `unidentified` - the corpus does not support the counterfactual without more
+  data, stronger assumptions, or replay.
+
+The useful feature is not confidence. It is knowing when confidence would be fake.
+
+## Install
 
 ```bash
 uv pip install -e ".[dev]"
-uv run pytest
-uv run counterfact demo --confound
 ```
 
-The headline demo is the **confounded synthetic showcase**. It generates a deterministic synthetic corpus where `model_choice` is biased by `tool_choice` (a textbook back-door confounding scenario), runs the descriptive `pass_rate_by_arm` baseline alongside the engine's g-formula adjustment, and surfaces the gap between them on one labelled line. The synthetic SCM is the right surface to teach the project's product stance — it has ground truth, deterministic seeds, and a controllable causal structure where the marginal table and the causal estimate disagree on purpose.
+Requires Python 3.11+.
 
-Example output:
+## First Run
+
+Run the local demo:
+
+```bash
+uv run counterfact demo --confound --synthetic-n 1000 --seed 42
+```
+
+This uses a deterministic synthetic corpus. It does not call external LLMs.
+
+You should see three things:
+
+1. A descriptive pass-rate table.
+2. A causal intervention estimate.
+3. A contrast between the naive table and the adjusted causal estimate.
+
+Example shape:
 
 ```text
 counterfact demo: naive vs honest
 data: synthetic SCM (confounded, n=1000, seed=42)
-outcomes: 514 pass / 486 fail
 
 pass_rate_by_arm(model_call)
 arm              n  pass  rate    95% CI
@@ -34,63 +56,103 @@ sonnet         419   302 0.721  [0.676, 0.762]
 
 intervene(model_call -> sonnet)
 identifiability: identified
-outcome_delta: 0.663 [0.619, 0.704]
-next_step: none - CI width 0.085 ≤ 0.10; no further action required.
-naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (do-calculus, g-formula) = +0.251; the marginal table overstates what the corpus supports — see DAG and assumptions.
+outcome_delta: 0.663 [...]
+next_step: none - CI width ...; no further action required.
+naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap ... = +0.251; ...
 ```
 
-Without `--confound`, `counterfact demo` is the **messy real-trace smoke test**: it points at the committed `bench/real/runs_v2/` corpus (30 mixed-outcome `date_window` traces from the real-agent harness) and runs the same flow. It falls back to `runs_single_class/` (the single-class regression anchor — three traces kept on disk to keep the engine's "honest refusal" branch exercised) and then to an unconfounded synthetic corpus when neither real corpus is present. It does not call the real-agent LLM harness or require provider credentials.
+The pass-rate table is descriptive. It says what happened in the logged corpus.
 
-Pointing the demo at `runs_single_class` (`uv run counterfact demo --runs-dir bench/real/runs_single_class`) reproduces the "honest refusal" branch — the engine refuses to fit a single-class outcome model and emits an `unidentified` verdict with `next_step: broaden_arm_support`. All three branches (confounded showcase, real-trace smoke test, single-class refusal) are intended.
+The intervention estimate is causal. It asks what the model predicts under a
+declared intervention, using the observed graph, support, and assumptions.
 
-See [docs/demo-excerpt.md](docs/demo-excerpt.md) for the rendered notebook-style excerpt and [bench/real/README.md](bench/real/README.md) for the corpus-promotion convention.
+Those are different claims.
 
-## Why This Matters
+## What It Does
 
-Most agent-debugging tools can show you the trace. Some can score the final outcome. Very few can say, with discipline, whether a decision-level causal question is actually identifiable from the data you logged.
+`counterfact` provides:
 
-That matters because LLM-agent traces invite fake counterfactuals:
+- A strict Pydantic trace schema for agent runs.
+- A per-trace DAG builder.
+- A transparent outcome model.
+- A causal intervention API.
+- Identifiability labels on every estimate.
+- Structured `next_step` guidance when the corpus is not enough.
+- Descriptive baselines such as `pass_rate_by_arm()`.
+- Failure attribution ranking.
+- Synthetic and real-agent benchmark harnesses.
+- A small HTML report renderer for single traces.
 
-> If the agent had used a different model, retried once, or called another tool, would the task have passed?
+## Core Concepts
 
-Sometimes `counterfact` can estimate that. Sometimes it can only bound it. Sometimes the right answer is: no, this corpus does not contain the variation needed to make that claim. That refusal is the product taste.
+### Trace
 
-## What Ships in v0
+A trace is a `Run`.
 
-- Native Pydantic trace schema: `Run`, `Step`, `Decision`, `Observation`, `Outcome`, strict JSON validation
-- Decision taxonomy: `plan_step`, `model_call`, `tool_call`, `memory_read`, `retry`, `termination`
-- Hand-built per-trace DAG builder
-- Logistic-regression outcome model with bootstrap uncertainty
-- `intervene()` returning `identified | bounded | unidentified`, assumptions, warnings, bounds, outcome deltas, and structured `next_step`
-- E-value sensitivity bounds
-- `attribute_failure()` decision ranking
-- `pass_rate_by_arm()` naive baseline table
-- `power_analysis()` rough sample-size guidance
-- Synthetic SCM benchmark with a known treatment effect
-- Real-agent coding harness with randomized decisions, budget gate, hidden/public fixture support, and two committed pilot corpora: `runs_single_class` (3 csv_dedupe traces, single-class regression anchor) and `runs_v2` (30 date_window traces, mixed outcomes, default for the demo)
-- Demo notebook and acceptance tests around the naive-vs-honest story
+It contains:
 
-### NextStep payload contract
+- steps
+- decisions
+- observations
+- one final outcome
 
-Refusals are first-class. Every `CausalEstimate.next_step` carries a structured payload alongside `human_text`:
+The schema lives under `src/counterfact/schema/`.
 
-- `broaden_arm_support` → `arm_name`, `missing_strata`, `observed_arms`, `missing_arms`
-- `increase_n` → `current_n`, `estimated_required_n`, `target_ci_width`, `power_method` (`binomial_wald_two_arm` | `inline_scaling` | `degenerate`), `arm_breakdown`
-- `replay_required` → `intervention_target`, `replay_inputs_required`, `note`
-- `add_arm_randomization` → `arm_name`, `current_policy`
-- `none` → empty
+### Decision
 
-When the harness can generate the missing data, `payload["suggested_command"]` carries a copy-pasteable `uv run counterfact bench …` invocation. The full schema lives in `openspec/specs/causal-engine/spec.md`.
+A decision is a logged choice the agent made.
 
-### Corpus readiness
+Common decision types:
 
-Before any new real corpus is committed under `bench/real/runs_v2/`, run the no-spend analyzer to score it against the promotion rubric:
+- `model_call`
+- `tool_call`
+- `retry`
+- `plan_step`
+- `memory_read`
+- `termination`
 
-```bash
-uv run counterfact analyze corpus bench/real/runs_pilot_<YYYY-MM-DD>/
+The demo focuses on `model_call`, `tool_call`, and `retry` because those have
+clear intervention arms.
+
+### DAG
+
+`build_dag()` builds an inspectable graph for one trace.
+
+The graph is not learned from data. It is built from the trace structure so the
+causal assumptions stay visible.
+
+### Outcome Model
+
+`fit_outcome_model()` fits a simple binary outcome model over a corpus.
+
+It is intentionally transparent. If the corpus has only one outcome class, the
+engine refuses to fit and returns `unidentified`.
+
+### Intervention
+
+`intervene()` asks what changes under a proposed decision edit.
+
+Example:
+
+```python
+intervene(
+    dag=dag,
+    model=model,
+    step=2,
+    intervention={"model_choice": "sonnet"},
+)
 ```
 
-The rubric (`src/counterfact/corpus_analyzer/rubric.py`) requires pass rate in [0.3, 0.7], ≥2 arms with `n ≥ 5` for some randomized decision type, and ≥1 decision type where `intervene()` returns `identified`. Promotion to `runs_v2/` is a deliberate human `mv` — see `bench/real/README.md` for the convention.
+The result is a `CausalEstimate`.
+
+Important fields:
+
+- `identifiability`
+- `outcome_delta`
+- `assumptions`
+- `warnings`
+- `bounds`
+- `next_step`
 
 ## Python API
 
@@ -101,55 +163,194 @@ from counterfact.schema import Run
 
 runs = [Run.model_validate(trace) for trace in generate_traces(n=500, seed=42)]
 
-print(pass_rate_by_arm(runs, "model_call"))
+table = pass_rate_by_arm(runs, "model_call")
+print(table)
 
 model = fit_outcome_model(runs, n_bootstrap=200, seed=42)
+dag = build_dag(runs[0])
+
 estimate = intervene(
-    dag=build_dag(runs[0]),
+    dag=dag,
     model=model,
     step=2,
     intervention={"model_choice": "sonnet"},
 )
 
 print(estimate.identifiability)
-print(estimate.assumptions)
+print(estimate.outcome_delta)
 print(estimate.next_step)
 ```
 
-The default committed real corpus (`runs_v2`) has mixed outcomes, so the CLI demo fits the outcome model and returns an `identified` estimate. The `runs_single_class` corpus is the single-class regression anchor — three traces kept on disk to keep the engine's "honest refusal" path exercised; point the demo at it explicitly to see that branch.
-
 ## CLI
 
-```bash
-# Synthetic SCM traces, deterministic and no LLM calls
-uv run counterfact bench synthetic --n 500 --seed 42 --output-dir /tmp/counterfact-syn
+### Demo
 
-# Headline showcase: confounded synthetic naive-vs-causal demo (no LLM calls)
+Confounded synthetic showcase:
+
+```bash
 uv run counterfact demo --confound --synthetic-n 1000 --seed 42
-
-# Real-trace smoke test (defaults to bench/real/runs_v2)
-uv run counterfact demo
-
-# Force synthetic fallback for the demo (uniform, no confounding)
-uv run counterfact demo --runs-dir /tmp/missing --synthetic-n 500 --target sonnet
-
-# Per-trace HTML report grounded in CausalEstimate
-uv run counterfact explain bench/real/runs_v2/real-date_window-000000.json --runs-dir bench/real/runs_v2
 ```
 
-`counterfact explain` writes a self-contained HTML file (no JS, no CDN, no
-new runtime deps) that pairs the descriptive `pass_rate_by_arm` baseline
-with one CausalEstimate card per ranked decision. Numeric estimates are
-suppressed for `unidentified` cards; `next_step` and any
-`suggested_command` are surfaced verbatim.
-
-The real-agent harness is available behind an explicit budget and first-run approval gate:
+Real-trace smoke test:
 
 ```bash
-uv run counterfact bench real --n 30 --budget-cap 50 --fixture-set hard_hidden_v1
+uv run counterfact demo
 ```
 
-That command can call external LLM APIs. The showcase demo and CI never run it.
+The default demo reads the committed smoke-test corpus at
+`bench/real/smoke_mixed_outcome/`.
+
+This command does not run the real-agent harness and does not call external
+LLMs.
+
+Single-class refusal branch:
+
+```bash
+uv run counterfact demo --runs-dir bench/real/single_class_refusal
+```
+
+This corpus has only one outcome class. The expected result is
+`identifiability: unidentified`.
+
+Synthetic fallback:
+
+```bash
+uv run counterfact demo --runs-dir /tmp/missing --synthetic-n 500 --target sonnet
+```
+
+### Generate Synthetic Traces
+
+```bash
+uv run counterfact bench synthetic --n 500 --seed 42 --output-dir /tmp/counterfact-syn
+```
+
+This is deterministic and local.
+
+### Explain One Trace
+
+```bash
+uv run counterfact explain bench/real/smoke_mixed_outcome/real-date_window-000000.json \
+  --runs-dir bench/real/smoke_mixed_outcome
+```
+
+This writes a self-contained HTML report.
+
+The report includes:
+
+- the descriptive `pass_rate_by_arm()` table
+- the per-trace DAG
+- ranked decision attribution
+- one `CausalEstimate` card per ranked decision
+
+For `unidentified` estimates, numeric outcome deltas are hidden.
+
+### Analyze A Corpus
+
+```bash
+uv run counterfact analyze corpus bench/real/smoke_mixed_outcome
+```
+
+The analyzer checks whether a corpus is ready to be promoted as a committed
+real-trace corpus.
+
+The default rubric expects:
+
+- pass rate between 0.3 and 0.7
+- at least two supported arms for some randomized decision type
+- at least five traces per supported arm
+- at least one decision type where `intervene()` returns `identified`
+- mixed pass/fail outcomes for both real-agent model arms (`small` and `large`)
+
+The analyzer reports. It does not promote or rename anything.
+
+The pilot analyzer gives a different signal: whether a hard corpus is a good
+showcase. A showcase corpus should be dominated by hidden semantic failures, not
+patch-format failures.
+
+## Real-Agent Benchmarks
+
+There are four real-benchmark concepts worth knowing:
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| `single_class_refusal` | corpus | Regression corpus proving honest refusal on single-class outcomes. |
+| `smoke_mixed_outcome` | corpus | Current real demo corpus. Useful, but not the final benchmark corpus. |
+| `broad_calibration` | fixture set | Broad hidden-fixture calibration across date windows, rate limits, and version ranges. |
+| `stateful_calibration` | fixture set | Harder stateful streaming calibration using watermark dedupe semantics. |
+
+The real benchmark harness can call external LLM APIs and spend money.
+
+Broad calibration:
+
+```bash
+uv run counterfact bench real --n 60 \
+  --fixture-set broad_calibration \
+  --model-epsilon 1.0 \
+  --tool-epsilon 0.0 \
+  --retry-epsilon 0.0 \
+  --budget-cap 10 \
+  --output-dir bench/real/pilot_broad_calibration_balanced
+```
+
+Stateful calibration:
+
+```bash
+uv run counterfact bench real --n 60 \
+  --fixture-set stateful_calibration \
+  --model-epsilon 1.0 \
+  --tool-epsilon 0.0 \
+  --retry-epsilon 0.0 \
+  --budget-cap 10 \
+  --output-dir bench/real/pilot_stateful_calibration_balanced
+```
+
+Do not run this as a routine test.
+
+The harness has a first-run approval gate and budget tracking. The local demo,
+synthetic benchmark, analyzer, and tests do not require provider credentials.
+
+See `bench/real/README.md` for the corpus convention.
+
+## Committed Corpora
+
+### Real-Trace Smoke Corpus
+
+Path: `bench/real/smoke_mixed_outcome/`
+
+- 100 mixed-outcome real-agent traces.
+- Default corpus for `uv run counterfact demo`.
+- Used as a smoke test, not a statistical headline.
+- Fails the stricter promotion rubric because the `large` arm is currently
+  all-pass.
+- Replace this only after a new pilot passes both promotion and showcase-quality
+  checks.
+
+### Single-Class Refusal Corpus
+
+Path: `bench/real/single_class_refusal/`
+
+- 3 single-class real-agent traces.
+- Regression anchor for the honest refusal path.
+- Expected to return `unidentified`.
+
+## NextStep Payloads
+
+Every `CausalEstimate.next_step` has:
+
+- `action`
+- `human_text`
+- `payload`
+
+Current actions:
+
+- `broaden_arm_support`
+- `increase_n`
+- `replay_required`
+- `add_arm_randomization`
+- `none`
+
+When the tool can suggest a data-generation command, the payload includes
+`suggested_command`.
 
 ## Validation
 
@@ -158,16 +359,26 @@ uv run ruff check .
 uv run pytest
 ```
 
-CI and a clean checkout should pass all non-skipped tests (`ruff check` + full `pytest`). A small number of tests skip unless optional human labels are present.
+CI expects Ruff and the full non-skipped pytest suite to pass.
 
-## What v0 Does Not Claim
+## What Counterfact Does Not Claim
 
-- No Pearl L3 structural counterfactual for arbitrary prompt changes
-- No DAG learning
-- No multi-agent or token-level graph
-- No calibrated universal `P(success)` story
-- No hidden "LLM quality" latent node
-- No observability UI
-- No provider-specific replay guarantee
+`counterfact` does not provide:
 
-`counterfact` is deliberately a research artifact, not a polished platform. Its useful edge is narrower and sharper: causal attribution for logged agent decisions, with identifiability visible in the API.
+- Pearl L3 structural counterfactuals for arbitrary prompt rewrites
+- DAG learning
+- token-level causal graphs
+- a universal calibrated `P(success)`
+- hidden latent-quality modeling
+- an observability UI
+- provider replay guarantees
+
+It is deliberately narrow: causal attribution for logged agent decisions, with
+identifiability visible in the result.
+
+## More Detail
+
+- `docs/demo-excerpt.md` explains the demo output.
+- `bench/real/README.md` explains real corpus promotion.
+- `openspec/specs/causal-engine/spec.md` documents the `CausalEstimate` and
+  `NextStep` contracts.

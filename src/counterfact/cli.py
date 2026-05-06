@@ -412,8 +412,8 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument(
         "--runs-dir",
         type=Path,
-        default=Path("bench/real/runs_v2"),
-        help="Directory of committed real traces (default: bench/real/runs_v2)",
+        default=Path("bench/real/smoke_mixed_outcome"),
+        help="Directory of committed real traces (default: bench/real/smoke_mixed_outcome)",
     )
     demo.add_argument(
         "--decision-type",
@@ -497,7 +497,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     real.add_argument("--n", type=int, required=True)
     real.add_argument("--budget-cap", type=float, default=50.0)
-    real.add_argument("--output-dir", type=Path, default=Path("bench/real/runs"))
+    real.add_argument("--output-dir", type=Path, default=Path("bench/real/pilot"))
     real.add_argument("--seed", type=int, default=0, help="Per-trace RNG seed (default: 0)")
     real.add_argument(
         "--epsilon",
@@ -546,12 +546,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--fixture-set",
         type=str,
         default=None,
-        choices=["v0", "easy", "hidden_v1", "hard_hidden_v1"],
+        choices=[
+            "v0",
+            "easy",
+            "hidden_v1",
+            "hard_hidden_v1",
+            "broad_calibration",
+            "very_hard_hidden_v1",
+            "stateful_calibration",
+        ],
         help=(
-            "Named fixture-set shortcut. 'v0' is the original hard fixtures "
-            "(default behavior), 'easy' is the original easy fixtures, "
-            "'hidden_v1' is the csv_dedupe calibration fixture set, "
-            "'hard_hidden_v1' is the harder hidden fixture set for corpus pilots."
+            "Named fixture-set shortcut. Use 'broad_calibration' for broad "
+            "date/rate-limit/version calibration, or 'stateful_calibration' "
+            "for the streaming watermark fixture. Other choices are legacy "
+            "harness fixtures kept for tests and historical calibration."
         ),
     )
     real.set_defaults(func=_bench_real)

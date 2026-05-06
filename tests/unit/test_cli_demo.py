@@ -6,18 +6,20 @@ from pathlib import Path
 from counterfact.cli import main
 
 
-def test_demo__defaults_to_runs_v2_and_reports_identified_verdict(
+def test_demo__defaults_to_smoke_mixed_outcome_and_reports_identified_verdict(
     capsys,
 ) -> None:
-    """Default --runs-dir is runs_v2 (mixed-outcome). The engine must fit the
-    outcome model and produce an `identified` verdict with a finite
-    outcome_delta and a structured next_step."""
+    """Default --runs-dir is smoke_mixed_outcome.
+
+    The engine must fit the outcome model and produce an `identified` verdict
+    with a finite outcome_delta and a structured next_step.
+    """
     rc = main(["demo", "--bootstrap", "20"])
     out = capsys.readouterr().out
 
     assert rc == 0
     assert "counterfact demo: naive vs honest" in out
-    assert "data: bench/real/runs_v2" in out
+    assert "data: bench/real/smoke_mixed_outcome" in out
     assert "pass_rate_by_arm(model_call)" in out
     assert "intervene(model_call ->" in out
     assert "identifiability: identified" in out
@@ -25,17 +27,19 @@ def test_demo__defaults_to_runs_v2_and_reports_identified_verdict(
     assert "next_step:" in out
 
 
-def test_demo__on_runs_single_class_reports_honest_refusal(capsys) -> None:
-    """The legacy runs_single_class corpus is single-class by construction. With
-    --runs-dir explicitly pointed at it, the engine must surface the
-    degenerate-corpus refusal rather than fitting a one-class model."""
+def test_demo__on_single_class_refusal_reports_honest_refusal(capsys) -> None:
+    """The single_class_refusal corpus is single-class by construction.
+
+    With --runs-dir explicitly pointed at it, the engine must surface the
+    degenerate-corpus refusal rather than fitting a one-class model.
+    """
     rc = main(
-        ["demo", "--runs-dir", "bench/real/runs_single_class", "--bootstrap", "20"]
+        ["demo", "--runs-dir", "bench/real/single_class_refusal", "--bootstrap", "20"]
     )
     out = capsys.readouterr().out
 
     assert rc == 0
-    assert "data: bench/real/runs_single_class" in out
+    assert "data: bench/real/single_class_refusal" in out
     assert "identifiability: unidentified" in out
     assert "next_step: broaden_arm_support" in out
     assert "suggested_command: uv run counterfact bench real " in out
@@ -115,12 +119,12 @@ def test_demo__confound_runs_confounded_synthetic_showcase(capsys) -> None:
 
 def test_demo__default_invocation_unchanged(capsys) -> None:
     """Regression: without --confound, default `counterfact demo` still
-    points at the committed runs_v2 corpus. Backward compatibility."""
+    points at the committed smoke_mixed_outcome corpus."""
     rc = main(["demo", "--bootstrap", "20"])
     out = capsys.readouterr().out
 
     assert rc == 0
-    assert "data: bench/real/runs_v2" in out
+    assert "data: bench/real/smoke_mixed_outcome" in out
     # Confounded contrast line is suppressed in default mode.
     assert "naive_vs_causal_contrast:" not in out
 

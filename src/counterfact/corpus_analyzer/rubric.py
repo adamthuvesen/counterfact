@@ -25,6 +25,7 @@ class RubricThresholds(BaseModel):
     min_arms_per_decision_type: int = Field(default=2, ge=1)
     min_n_per_arm: int = Field(default=5, ge=1)
     min_identified_decision_types: int = Field(default=1, ge=0)
+    require_model_arm_outcome_mix: bool = True
 
 
 DEFAULT_THRESHOLDS = RubricThresholds()
