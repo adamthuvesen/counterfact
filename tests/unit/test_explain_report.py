@@ -22,9 +22,9 @@ def _synthetic_corpus(n: int = 24, seed: int = 7) -> list[Run]:
     return [Run.model_validate(t) for t in generate_traces(n=n, seed=seed)]
 
 
-def _runs_v1_corpus() -> list[Run]:
-    paths = sorted(Path("bench/real/runs_v1").glob("*.json"))
-    assert paths, "runs_v1 corpus must be committed for this test"
+def _runs_single_class_corpus() -> list[Run]:
+    paths = sorted(Path("bench/real/runs_single_class").glob("*.json"))
+    assert paths, "runs_single_class corpus must be committed for this test"
     return [Run.model_validate_json(p.read_text()) for p in paths]
 
 
@@ -47,9 +47,9 @@ def test_build_report__mixed_outcome_corpus_has_ranked_attribution() -> None:
 
 
 def test_build_report__single_class_corpus_returns_degenerate_refusal() -> None:
-    """The runs_v1 single-class corpus must surface the unidentified
+    """The runs_single_class single-class corpus must surface the unidentified
     refusal and yield zero attribution entries."""
-    corpus = _runs_v1_corpus()
+    corpus = _runs_single_class_corpus()
     focal = corpus[0]
 
     report = build_report(
@@ -79,7 +79,7 @@ def test_build_report__never_calls_fit_outcome_model_on_single_class(
 
     monkeypatch.setattr(report_module, "fit_outcome_model", fail_if_called)
 
-    corpus = _runs_v1_corpus()
+    corpus = _runs_single_class_corpus()
     focal = corpus[0]
     report = build_report(focal, corpus, bootstrap=20, seed=42)
 
@@ -100,6 +100,6 @@ def test_build_report__deterministic_for_fixed_inputs() -> None:
 
 def test_build_report__rejects_focal_run_not_in_corpus() -> None:
     corpus = _synthetic_corpus()
-    intruder = _runs_v1_corpus()[0]
+    intruder = _runs_single_class_corpus()[0]
     with pytest.raises(ValueError, match="not present in the supplied corpus"):
         build_report(intruder, corpus, bootstrap=20, seed=42)

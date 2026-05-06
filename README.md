@@ -15,31 +15,33 @@ The point is not to turn trace inspection into a confident-looking probability. 
 ```bash
 uv pip install -e ".[dev]"
 uv run pytest
-uv run counterfact demo
+uv run counterfact demo --confound
 ```
 
-The demo command is local-only. It defaults to the committed `bench/real/runs_v2/` corpus (30 mixed-outcome `date_window` traces) and falls back to `runs_v1/` (single-class anchor) and then to synthetic SCM traces when neither real corpus is present. It does not call the real-agent LLM harness or require provider credentials.
+The headline demo is the **confounded synthetic showcase**. It generates a deterministic synthetic corpus where `model_choice` is biased by `tool_choice` (a textbook back-door confounding scenario), runs the descriptive `pass_rate_by_arm` baseline alongside the engine's g-formula adjustment, and surfaces the gap between them on one labelled line. The synthetic SCM is the right surface to teach the project's product stance — it has ground truth, deterministic seeds, and a controllable causal structure where the marginal table and the causal estimate disagree on purpose.
 
 Example output:
 
 ```text
 counterfact demo: naive vs honest
-data: bench/real/runs_v2
-outcomes: 14 pass / 16 fail
+data: synthetic SCM (confounded, n=1000, seed=42)
+outcomes: 514 pass / 486 fail
 
 pass_rate_by_arm(model_call)
 arm              n  pass  rate    95% CI
-large            8     8 1.000  [0.676, 1.000]
-small           22     6 0.273  [0.132, 0.482]
+haiku          581   212 0.365  [0.327, 0.405]
+sonnet         419   302 0.721  [0.676, 0.762]
 
-intervene(model_call -> small)
+intervene(model_call -> sonnet)
 identifiability: identified
-outcome_delta: 0.332 [0.179, 0.493]
-next_step: increase_n - CI width 0.314 > 0.10; ~416 traces would tighten it.
-suggested_command: uv run counterfact bench real --n 416 --fixture-set hard_hidden_v1
+outcome_delta: 0.663 [0.619, 0.704]
+next_step: none - CI width 0.085 ≤ 0.10; no further action required.
+naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (do-calculus, g-formula) = +0.251; the marginal table overstates what the corpus supports — see DAG and assumptions.
 ```
 
-Pointing the demo at `runs_v1` (`uv run counterfact demo --runs-dir bench/real/runs_v1`) reproduces the original "honest refusal" branch — the engine refuses to fit a single-class outcome model and emits an `unidentified` verdict with `next_step: broaden_arm_support`. Both branches are intended.
+Without `--confound`, `counterfact demo` is the **messy real-trace smoke test**: it points at the committed `bench/real/runs_v2/` corpus (30 mixed-outcome `date_window` traces from the real-agent harness) and runs the same flow. It falls back to `runs_single_class/` (the single-class regression anchor — three traces kept on disk to keep the engine's "honest refusal" branch exercised) and then to an unconfounded synthetic corpus when neither real corpus is present. It does not call the real-agent LLM harness or require provider credentials.
+
+Pointing the demo at `runs_single_class` (`uv run counterfact demo --runs-dir bench/real/runs_single_class`) reproduces the "honest refusal" branch — the engine refuses to fit a single-class outcome model and emits an `unidentified` verdict with `next_step: broaden_arm_support`. All three branches (confounded showcase, real-trace smoke test, single-class refusal) are intended.
 
 See [docs/demo-excerpt.md](docs/demo-excerpt.md) for the rendered notebook-style excerpt and [bench/real/README.md](bench/real/README.md) for the corpus-promotion convention.
 
@@ -65,7 +67,7 @@ Sometimes `counterfact` can estimate that. Sometimes it can only bound it. Somet
 - `pass_rate_by_arm()` naive baseline table
 - `power_analysis()` rough sample-size guidance
 - Synthetic SCM benchmark with a known treatment effect
-- Real-agent coding harness with randomized decisions, budget gate, hidden/public fixture support, and two committed pilot corpora: `runs_v1` (30 csv_dedupe traces, single-class anchor) and `runs_v2` (30 date_window traces, mixed outcomes, default for the demo)
+- Real-agent coding harness with randomized decisions, budget gate, hidden/public fixture support, and two committed pilot corpora: `runs_single_class` (3 csv_dedupe traces, single-class regression anchor) and `runs_v2` (30 date_window traces, mixed outcomes, default for the demo)
 - Demo notebook and acceptance tests around the naive-vs-honest story
 
 ### NextStep payload contract
@@ -114,7 +116,7 @@ print(estimate.assumptions)
 print(estimate.next_step)
 ```
 
-The default committed real corpus (`runs_v2`) has mixed outcomes, so the CLI demo fits the outcome model and returns an `identified` estimate. The legacy `runs_v1` corpus is single-class by construction and exists to keep the engine's "honest refusal" path exercised — point the demo at it explicitly to see that branch.
+The default committed real corpus (`runs_v2`) has mixed outcomes, so the CLI demo fits the outcome model and returns an `identified` estimate. The `runs_single_class` corpus is the single-class regression anchor — three traces kept on disk to keep the engine's "honest refusal" path exercised; point the demo at it explicitly to see that branch.
 
 ## CLI
 
@@ -122,10 +124,13 @@ The default committed real corpus (`runs_v2`) has mixed outcomes, so the CLI dem
 # Synthetic SCM traces, deterministic and no LLM calls
 uv run counterfact bench synthetic --n 500 --seed 42 --output-dir /tmp/counterfact-syn
 
-# Local showcase demo
+# Headline showcase: confounded synthetic naive-vs-causal demo (no LLM calls)
+uv run counterfact demo --confound --synthetic-n 1000 --seed 42
+
+# Real-trace smoke test (defaults to bench/real/runs_v2)
 uv run counterfact demo
 
-# Force synthetic fallback for the demo
+# Force synthetic fallback for the demo (uniform, no confounding)
 uv run counterfact demo --runs-dir /tmp/missing --synthetic-n 500 --target sonnet
 
 # Per-trace HTML report grounded in CausalEstimate

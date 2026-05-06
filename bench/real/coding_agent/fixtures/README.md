@@ -10,7 +10,7 @@ The product question this directory answers is *not* "can an LLM write code?"
 warmup. The question is **"does this fixture produce real outcome variation
 when randomized model and tool choices are flipped?"** Without that, the
 generated traces are causally degenerate (every trace passes; see
-`bench/real/runs_v1/`) and `counterfact intervene` correctly refuses to
+`bench/real/runs_single_class/`) and `counterfact intervene` correctly refuses to
 attribute anything.
 
 ## Properties of a useful fixture

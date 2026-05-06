@@ -25,17 +25,17 @@ def test_demo__defaults_to_runs_v2_and_reports_identified_verdict(
     assert "next_step:" in out
 
 
-def test_demo__on_runs_v1_reports_honest_refusal(capsys) -> None:
-    """The legacy runs_v1 corpus is single-class by construction. With
+def test_demo__on_runs_single_class_reports_honest_refusal(capsys) -> None:
+    """The legacy runs_single_class corpus is single-class by construction. With
     --runs-dir explicitly pointed at it, the engine must surface the
     degenerate-corpus refusal rather than fitting a one-class model."""
     rc = main(
-        ["demo", "--runs-dir", "bench/real/runs_v1", "--bootstrap", "20"]
+        ["demo", "--runs-dir", "bench/real/runs_single_class", "--bootstrap", "20"]
     )
     out = capsys.readouterr().out
 
     assert rc == 0
-    assert "data: bench/real/runs_v1" in out
+    assert "data: bench/real/runs_single_class" in out
     assert "identifiability: unidentified" in out
     assert "next_step: broaden_arm_support" in out
     assert "suggested_command: uv run counterfact bench real " in out
@@ -80,3 +80,75 @@ def test_demo__falls_back_to_synthetic_without_real_harness_import(
     # suggestion is printed. Either is valid.
     if "next_step: none" in out:
         assert "suggested_command:" not in out
+
+
+def test_demo__confound_runs_confounded_synthetic_showcase(capsys) -> None:
+    """`counterfact demo --confound` generates a confounded synthetic corpus,
+    runs the naive-vs-causal flow, and surfaces the contrast line. No real
+    corpus is touched. The contrast line uses the project's epistemic voice."""
+    rc = main(
+        [
+            "demo",
+            "--confound",
+            "--synthetic-n",
+            "1000",
+            "--seed",
+            "42",
+            "--bootstrap",
+            "20",
+        ]
+    )
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "data: synthetic SCM (confounded, n=1000, seed=42)" in out
+    assert "pass_rate_by_arm(model_call)" in out
+    assert "intervene(model_call ->" in out
+    assert "identifiability: identified" in out
+    assert "naive_vs_causal_contrast:" in out
+    # No real corpus paths in --confound mode.
+    assert "bench/real" not in out
+    # Voice contract: don't undersell or accuse the descriptive baseline.
+    for forbidden in ("lie", "lies", "lying", "false", "fake"):
+        assert forbidden not in out, f"forbidden token {forbidden!r} found in output"
+
+
+def test_demo__default_invocation_unchanged(capsys) -> None:
+    """Regression: without --confound, default `counterfact demo` still
+    points at the committed runs_v2 corpus. Backward compatibility."""
+    rc = main(["demo", "--bootstrap", "20"])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "data: bench/real/runs_v2" in out
+    # Confounded contrast line is suppressed in default mode.
+    assert "naive_vs_causal_contrast:" not in out
+
+
+def test_demo__confound_suppresses_contrast_line_when_gap_below_threshold(
+    monkeypatch, capsys
+) -> None:
+    """When the measured naive-vs-causal gap is below the threshold, the
+    contrast line is suppressed — the demo never asserts a contrast the
+    sample does not show."""
+    import counterfact.cli as cli
+
+    # Push the threshold above any measurable gap so the contrast can never fire.
+    monkeypatch.setattr(cli, "_DEMO_CONTRAST_THRESHOLD", 10.0)
+
+    rc = cli.main(
+        [
+            "demo",
+            "--confound",
+            "--synthetic-n",
+            "1000",
+            "--seed",
+            "42",
+            "--bootstrap",
+            "20",
+        ]
+    )
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "naive_vs_causal_contrast:" not in out

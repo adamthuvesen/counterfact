@@ -1,7 +1,7 @@
 # csv_dedupe pilot (Pilot 3) — n=30
 
 These notes explain how the hidden/public harness was exercised on `csv_dedupe`
-and why the committed showcase traces live under `bench/real/runs_v1/`.
+and why the committed showcase traces live under `bench/real/runs_single_class/`.
 
 **Date:** 2026-05-02  
 **Command (historical output dir):**
@@ -90,8 +90,9 @@ shelved as "implementation works, signal too weak to drive the corpus."
   `pytest_hidden`, and test invariants — none of those need changing.
 - `csv_dedupe` stays in the registry as a regression fixture for
   harness-level tests; it drives the qualitative demo via the committed corpus.
-- These 30 traces are the **`bench/real/runs_v1/`** corpus: same content as was
-  produced during this pilot, kept as the canonical public artifact.
+- A trimmed subset of these traces lives at **`bench/real/runs_single_class/`**
+  (3 keepers — same content as was produced during this pilot, kept as the
+  canonical public artifact and as the engine's single-class regression anchor).
 
 ## Identifiability-first pivot
 
@@ -102,6 +103,6 @@ CI-width ship-gate criteria. The reframed v0 ships with a smaller, honest corpus
 and a demo whose headline is "naive vs honest" rather than "identified effect =
 X".
 
-The committed `runs_v1` traces demonstrate the failure mode the pivot was built
+The committed `runs_single_class` traces demonstrate the failure mode the pivot was built
 to surface — a causally degenerate corpus where outcome variation is absent and
 `intervene()` correctly refuses to invent a causal difference between arms.

@@ -36,7 +36,7 @@ logged data, graph, support, and assumptions can actually support them. A useful
 - `bench/synthetic/` - deterministic SCM benchmark. Safe for CI and local work.
 - `bench/real/coding_agent/` - real-agent trace harness. Can call external LLMs
   and spend money; treat it as gated infrastructure.
-- `bench/real/runs_v1/` - committed real pilot corpus used by the demo story.
+- `bench/real/runs_single_class/` - committed real pilot corpus used by the demo story.
 - `notebooks/demo.ipynb` and `docs/demo-excerpt.md` - naive-vs-honest demo
   surface. Keep these aligned when demo behavior changes.
 - `tests/` - unit and acceptance coverage. Acceptance tests encode the v0
@@ -68,7 +68,8 @@ make ci
 Useful local demos:
 
 ```bash
-uv run counterfact demo
+uv run counterfact demo --confound --synthetic-n 1000 --seed 42  # canonical showcase
+uv run counterfact demo                                           # real-trace smoke test
 uv run counterfact demo --runs-dir /tmp/missing --synthetic-n 500 --target sonnet
 uv run counterfact bench synthetic --n 500 --seed 42 --output-dir /tmp/counterfact-syn
 ```

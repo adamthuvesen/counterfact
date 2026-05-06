@@ -21,10 +21,25 @@ def _load_trace_dir(path: Path) -> list[Run]:
     return [Run.model_validate_json(p.read_text()) for p in sorted(path.glob("*.json"))]
 
 
-def _synthetic_runs(n: int, seed: int) -> list[Run]:
+def _synthetic_runs(n: int, seed: int, confound: bool = False) -> list[Run]:
     from bench.synthetic import generate_traces
 
-    return [Run.model_validate(trace) for trace in generate_traces(n=n, seed=seed)]
+    return [
+        Run.model_validate(trace)
+        for trace in generate_traces(n=n, seed=seed, confound=confound)
+    ]
+
+
+# Demo's naive-vs-causal contrast threshold and one-line template. Centralized
+# so future tuning is one edit. The contrast line is sourced from printed
+# numbers — no editorial copy beyond named values and this fixed template.
+_DEMO_CONTRAST_THRESHOLD = 0.05
+_DEMO_CONTRAST_TEMPLATE = (
+    "naive_vs_causal_contrast: naive arm gap = {naive:+.3f}; "
+    "causal arm gap (do-calculus, g-formula) = {causal:+.3f}; "
+    "the marginal table overstates what the corpus supports — see "
+    "DAG and assumptions."
+)
 
 
 def _outcome_classes(runs: list[Run]) -> set[bool]:
@@ -86,18 +101,31 @@ def _format_pass_rate_table(runs: list[Run], decision_type: str) -> list[str]:
 
 
 def _demo(args: argparse.Namespace) -> int:
-    from counterfact import fit_outcome_model, intervene
+    from counterfact import fit_outcome_model, intervene, pass_rate_by_arm
     from counterfact.dag import build_dag
 
-    runs = _load_trace_dir(args.runs_dir)
-    source = str(args.runs_dir)
-    if not runs:
-        runs = _synthetic_runs(n=args.synthetic_n, seed=args.seed)
-        source = f"synthetic SCM (n={args.synthetic_n}, seed={args.seed})"
+    if args.confound:
+        runs = _synthetic_runs(n=args.synthetic_n, seed=args.seed, confound=True)
+        source = (
+            f"synthetic SCM (confounded, n={args.synthetic_n}, seed={args.seed})"
+        )
+    else:
+        runs = _load_trace_dir(args.runs_dir)
+        source = str(args.runs_dir)
+        if not runs:
+            runs = _synthetic_runs(n=args.synthetic_n, seed=args.seed)
+            source = f"synthetic SCM (n={args.synthetic_n}, seed={args.seed})"
 
     decision_type = args.decision_type
     intervention_kind = _intervention_kind(decision_type)
-    target = args.target or _first_arm(runs, decision_type)
+    if args.target is not None:
+        target = args.target
+    elif args.confound and decision_type == "model_call":
+        # Confounded showcase: sonnet is the headline arm (the one that looks
+        # most inflated by the confounded marginal table).
+        target = "sonnet"
+    else:
+        target = _first_arm(runs, decision_type)
 
     pass_count = sum(1 for run in runs if bool(run.outcome.value))
     print("counterfact demo: naive vs honest")
@@ -107,6 +135,7 @@ def _demo(args: argparse.Namespace) -> int:
     print("\n".join(_format_pass_rate_table(runs, decision_type)))
     print()
 
+    model = None
     if len(_outcome_classes(runs)) == 1:
         estimate = _degenerate_estimate(
             runs,
@@ -140,6 +169,38 @@ def _demo(args: argparse.Namespace) -> int:
     suggested = estimate.next_step.payload.get("suggested_command")
     if suggested:
         print(f"suggested_command: {suggested}")
+
+    # Confounded showcase: when both arms have observed support, pair the
+    # focal arm with its sibling and surface the naive-vs-causal contrast.
+    if (
+        args.confound
+        and decision_type == "model_call"
+        and estimate.outcome_delta is not None
+        and model is not None
+    ):
+        table = pass_rate_by_arm(runs, decision_type)
+        rates = {row.arm: row.pass_rate for row in table.rows}
+        sibling = "haiku" if target == "sonnet" else "sonnet"
+        if target in rates and sibling in rates:
+            run_for_intervene, step = _first_step_for_decision_type(runs, decision_type)
+            sibling_estimate = intervene(
+                dag=build_dag(run_for_intervene),
+                model=model,
+                step=step,
+                intervention={intervention_kind: sibling},
+            )
+            if sibling_estimate.outcome_delta is not None:
+                naive_gap = rates[target] - rates[sibling]
+                causal_gap = (
+                    estimate.outcome_delta.point
+                    - sibling_estimate.outcome_delta.point
+                )
+                if abs(naive_gap - causal_gap) >= _DEMO_CONTRAST_THRESHOLD:
+                    print(
+                        _DEMO_CONTRAST_TEMPLATE.format(
+                            naive=naive_gap, causal=causal_gap
+                        )
+                    )
     return 0
 
 
@@ -348,6 +409,15 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--synthetic-n", type=int, default=500)
     demo.add_argument("--seed", type=int, default=42)
     demo.add_argument("--bootstrap", type=int, default=200)
+    demo.add_argument(
+        "--confound",
+        action="store_true",
+        help=(
+            "Run the confounded synthetic showcase: generate a fresh "
+            "synthetic corpus where model_choice is biased by tool_choice, "
+            "and surface the naive-vs-causal contrast."
+        ),
+    )
     demo.set_defaults(func=_demo)
 
     explain = sub.add_parser(

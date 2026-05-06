@@ -1,7 +1,7 @@
 """End-to-end acceptance tests for the `counterfact explain` CLI.
 
 Runs `counterfact.cli.main([...])` directly (not subprocess) and asserts on
-the resulting HTML file. Covers the synthetic-corpus path, the runs_v1
+the resulting HTML file. Covers the synthetic-corpus path, the runs_single_class
 single-class path, and the missing-input error path.
 """
 
@@ -54,9 +54,9 @@ def test_explain__synthetic_run_writes_identified_report(tmp_path: Path) -> None
     assert "https://" not in html.replace("https://www.w3.org/2000/svg", "")
 
 
-def test_explain__runs_v1_run_writes_unidentified_report(tmp_path: Path) -> None:
-    runs_v1 = Path("bench/real/runs_v1")
-    focal = sorted(runs_v1.glob("*.json"))[0]
+def test_explain__runs_single_class_run_writes_unidentified_report(tmp_path: Path) -> None:
+    runs_single_class = Path("bench/real/runs_single_class")
+    focal = sorted(runs_single_class.glob("*.json"))[0]
     output = tmp_path / "report.html"
 
     rc = main(
@@ -64,7 +64,7 @@ def test_explain__runs_v1_run_writes_unidentified_report(tmp_path: Path) -> None
             "explain",
             str(focal),
             "--runs-dir",
-            str(runs_v1),
+            str(runs_single_class),
             "--bootstrap",
             "20",
             "--output",
