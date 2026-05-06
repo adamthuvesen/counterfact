@@ -78,17 +78,36 @@ def _combined_identifiability(
     return IdentifiabilityStatus.BOUNDED
 
 
-def _sibling_action(model: object, decision_type: str, chosen_action: str) -> str | None:
-    """Return the most-different sibling arm with observed support."""
+def _decision_type_repeats(run: object, step_index: int, decision_type: str) -> bool:
+    """True iff `decision_type` appears in any *other* step in this run.
+
+    The g-formula in `intervene` treats a (decision_type, action) one-hot as a
+    single feature, so it cannot disambiguate between repeated occurrences in a
+    single trace. Attribution mirrors `intervene`'s honest refusal here rather
+    than catching `InvalidInterventionError` (which could mask unrelated bugs).
+    """
+    steps = getattr(run, "steps", []) or []
+    for s in steps:
+        if s.step_index == step_index:
+            continue
+        if any(d.decision_type == decision_type for d in s.decisions):
+            return True
+    return False
+
+
+def _sibling_actions(model: object, decision_type: str, chosen_action: str) -> list[str]:
+    """Return every observed sibling arm for `decision_type`, in feature-index order.
+
+    The caller picks among them. We deliberately do not preselect here —
+    "most-different" is decided after the per-sibling intervene runs, since the
+    feature-index alone says nothing about predicted outcome.
+    """
     feat_index: dict[str, int] = getattr(model, "feature_index", {})
-    siblings = [
+    return [
         k.split("::", 1)[1]
         for k in feat_index
         if k.startswith(f"{decision_type}::") and k != f"{decision_type}::{chosen_action}"
     ]
-    if not siblings:
-        return None
-    return siblings[0]
 
 
 def attribute_failure(
@@ -110,8 +129,8 @@ def attribute_failure(
             intervention_kind = _intervention_kind_for(d.decision_type)
             if intervention_kind is None:
                 continue
-            sibling = _sibling_action(model, d.decision_type, d.chosen_action)
-            if sibling is None:
+            siblings = _sibling_actions(model, d.decision_type, d.chosen_action)
+            if not siblings:
                 # No alternative arm with support: nothing to counterfact-factualize against.
                 entries.append(
                     AttributionEntry(
@@ -134,6 +153,21 @@ def attribute_failure(
                     )
                 )
                 continue
+            if _decision_type_repeats(dag.run, step.step_index, d.decision_type):
+                # The trace has another step of the same decision_type — the
+                # corpus-wide g-formula cannot answer "intervene only here".
+                # Surface as unidentified rather than producing the misleading
+                # "set everywhere" estimate the v0 engine would otherwise emit.
+                entries.append(
+                    AttributionEntry(
+                        decision_id=d.decision_id,
+                        decision_type=d.decision_type,
+                        chosen_action=d.chosen_action,
+                        influence=0.0,
+                        identifiability=IdentifiabilityStatus.UNIDENTIFIED,
+                    )
+                )
+                continue
 
             actual = _intervene(
                 dag=dag,
@@ -141,31 +175,55 @@ def attribute_failure(
                 step=step.step_index,
                 intervention={intervention_kind: d.chosen_action},
             )
-            counterfactual = _intervene(
-                dag=dag,
-                model=model,
-                step=step.step_index,
-                intervention={intervention_kind: sibling},
-            )
 
-            ident = _combined_identifiability(actual, counterfactual)
+            if actual.outcome_delta is None:
+                entries.append(
+                    AttributionEntry(
+                        decision_id=d.decision_id,
+                        decision_type=d.decision_type,
+                        chosen_action=d.chosen_action,
+                        influence=0.0,
+                        identifiability=IdentifiabilityStatus.UNIDENTIFIED,
+                        estimate=actual,
+                    )
+                )
+                continue
 
-            if (
-                actual.outcome_delta is not None
-                and counterfactual.outcome_delta is not None
-                and ident != IdentifiabilityStatus.UNIDENTIFIED
-            ):
-                influence = abs(actual.outcome_delta.point - counterfactual.outcome_delta.point)
-            else:
-                influence = 0.0
+            # Evaluate every sibling arm and keep the one whose predicted
+            # outcome is the most different from the actual arm's prediction.
+            # This is the contrast the report ranks by — picking the first
+            # sibling silently underestimated influence on three-or-more-arm
+            # decision types.
+            best_influence: float | None = None
+            best_ident = IdentifiabilityStatus.UNIDENTIFIED
+            for sibling in siblings:
+                cf = _intervene(
+                    dag=dag,
+                    model=model,
+                    step=step.step_index,
+                    intervention={intervention_kind: sibling},
+                )
+                ident = _combined_identifiability(actual, cf)
+                if (
+                    cf.outcome_delta is not None
+                    and ident != IdentifiabilityStatus.UNIDENTIFIED
+                ):
+                    influence = abs(
+                        actual.outcome_delta.point - cf.outcome_delta.point
+                    )
+                else:
+                    influence = 0.0
+                if best_influence is None or influence > best_influence:
+                    best_influence = influence
+                    best_ident = ident
 
             entries.append(
                 AttributionEntry(
                     decision_id=d.decision_id,
                     decision_type=d.decision_type,
                     chosen_action=d.chosen_action,
-                    influence=influence,
-                    identifiability=ident,
+                    influence=best_influence or 0.0,
+                    identifiability=best_ident,
                     estimate=actual,
                 )
             )

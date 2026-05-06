@@ -126,6 +126,11 @@ def fit_outcome_model(
     _assert_binary(runs)
     if not runs:
         raise ValueError("fit_outcome_model requires at least one trace")
+    if n_bootstrap < 1:
+        # `intervene` percentiles over an empty bootstrap distribution; NumPy
+        # also rejects negative shapes. Fail at the public boundary with a
+        # clear message rather than at a low-level allocation site.
+        raise ValueError(f"n_bootstrap must be >= 1; got {n_bootstrap!r}")
 
     X, y, names, index = _featurize(runs)
     classes = set(y.tolist())

@@ -18,6 +18,7 @@ The loop emits a counterfact-native `Run` per fixture. LLM calls go through the
 
 from __future__ import annotations
 
+import json
 import random
 import re
 from dataclasses import dataclass
@@ -91,6 +92,21 @@ def _extract_python_block(text: str) -> str | None:
     if not m:
         return None
     return m.group(1).rstrip() + "\n"
+
+
+def _charge(
+    budget: BudgetTracker, cost_usd: float, ledger_path: Path | None
+) -> None:
+    """Record `cost_usd` to the resume ledger, then add it to the live budget.
+
+    The ledger entry is written *before* `budget.add` so a `BudgetExceeded`
+    raise still leaves an on-disk record of the paid call. Resume includes this
+    ledger alongside completed trace spend.
+    """
+    if ledger_path is not None:
+        with ledger_path.open("a") as f:
+            f.write(json.dumps({"cost_usd": cost_usd}) + "\n")
+    budget.add(cost_usd)
 
 
 def build_fix_prompt(fixture: FixtureSpec, sandbox: Path) -> str:
@@ -170,6 +186,7 @@ def run_one_trace(
     budget: BudgetTracker,
     sandbox_root: Path,
     config: AgentRunConfig,
+    ledger_path: Path | None = None,
 ) -> Run:
     """Run the agent against one fixture sandbox; return a counterfact-native Run."""
     tool_eps = config.resolved_tool_epsilon()
@@ -270,7 +287,7 @@ def run_one_trace(
     model_action, model_prop = eg_model.choose(MODEL_ARMS, greedy=config.model_greedy)
     prompt = build_fix_prompt(fixture, sandbox)
     resp = llm.call(role=model_action, prompt=prompt)
-    budget.add(resp.cost_usd)
+    _charge(budget, resp.cost_usd, ledger_path)
     patched = _extract_python_block(resp.text)
     steps.append(
         Step(
@@ -367,7 +384,7 @@ def run_one_trace(
         test_output=tail[-1000:]
     )
     resp2 = llm.call(role=model_action, prompt=retry_prompt)
-    budget.add(resp2.cost_usd)
+    _charge(budget, resp2.cost_usd, ledger_path)
     patched2 = _extract_python_block(resp2.text)
     steps.append(
         Step(
