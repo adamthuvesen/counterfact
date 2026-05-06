@@ -48,6 +48,8 @@ class ExplainReport(BaseModel):
     run_path: str | None = None
     corpus_dir: str | None = None
     notes: list[str] = Field(default_factory=list)
+    diagnosis_summary: str | None = None
+    counterfactual_lookup: list[CausalEstimate] = Field(default_factory=list)
 
 
 def _first_arm(runs: list[Run], decision_type: str) -> str | None:

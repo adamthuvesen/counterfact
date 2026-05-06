@@ -114,6 +114,28 @@ tr:last-child td { border-bottom: none; }
   border: 1px solid var(--rule);
   padding: 12px;
 }
+details.decision-card summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+.diagnosis-summary {
+  font-size: 15px;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-left: 4px solid #1e40af;
+}
+.lookup-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+.lookup-row {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  padding: 8px 10px;
+  font-size: 12px;
+}
 .timeline-step .step-head,
 .decision-card .decision-head {
   display: flex;
@@ -321,6 +343,17 @@ def _render_story(report: ExplainReport) -> str:
     return tag("p", {"class": "story"}, sentence)
 
 
+def _render_diagnosis_summary(report: ExplainReport) -> str:
+    if report.diagnosis_summary is None:
+        return ""
+    return tag(
+        "section",
+        {"class": "diagnosis"},
+        raw(tag("h2", None, "Diagnosis summary")),
+        raw(tag("p", {"class": "diagnosis-summary"}, report.diagnosis_summary)),
+    )
+
+
 # --------------------------------------------------------------------------
 # Trace timeline and decision cards
 # --------------------------------------------------------------------------
@@ -483,6 +516,19 @@ def _render_decision_cards(report: ExplainReport) -> str:
             )
         else:
             step_pill = tag("span", {"class": "subtle"}, f"step={step_index}")
+        summary = tag(
+            "summary",
+            None,
+            raw(
+                tag("code", {"class": "inline"}, entry.decision_id)
+                + " "
+                + tag("span", None, entry.decision_type)
+                + " "
+                + step_pill
+                + " "
+                + _render_badge(entry.identifiability)
+            ),
+        )
         body_parts = [
             tag(
                 "div",
@@ -516,9 +562,12 @@ def _render_decision_cards(report: ExplainReport) -> str:
             )
         cards.append(
             tag(
-                "article",
-                {"class": f"decision-card ident-{entry.identifiability.value}"},
-                raw("".join(body_parts)),
+                "details",
+                {
+                    "class": f"decision-card ident-{entry.identifiability.value}",
+                    "open": "open" if len(cards) == 0 else None,
+                },
+                raw(summary + "".join(body_parts)),
             )
         )
     if not cards:
@@ -537,6 +586,43 @@ def _render_decision_cards(report: ExplainReport) -> str:
             )
         ),
         raw(tag("div", {"class": "decision-card-list"}, raw("".join(cards)))),
+    )
+
+
+def _render_counterfactual_lookup(report: ExplainReport) -> str:
+    if not report.counterfactual_lookup:
+        return ""
+    rows: list[str] = []
+    for estimate in report.counterfactual_lookup:
+        parts = [
+            f"{estimate.query.decision_type}.{estimate.query.intervention_kind}",
+            f"target={estimate.query.target}",
+            f"identifiability={estimate.identifiability.value}",
+        ]
+        if (
+            estimate.identifiability != IdentifiabilityStatus.UNIDENTIFIED
+            and estimate.outcome_delta is not None
+        ):
+            delta = estimate.outcome_delta
+            parts.append(
+                f"outcome_delta={delta.point:.3f} "
+                f"[{delta.ci_low:.3f}, {delta.ci_high:.3f}]"
+            )
+        else:
+            parts.append(f"next_step={estimate.next_step.action}")
+        rows.append(tag("div", {"class": "lookup-row"}, " | ".join(parts)))
+    return tag(
+        "section",
+        {"class": "counterfactual-lookup"},
+        raw(tag("h2", None, "Counterfactual lookup")),
+        raw(
+            tag(
+                "p",
+                {"class": "section-subtitle"},
+                "Precomputed estimates only. Unidentified entries do not display numeric effects.",
+            )
+        ),
+        raw(tag("div", {"class": "lookup-list"}, raw("".join(rows)))),
     )
 
 
@@ -1085,10 +1171,12 @@ def render_html(report: ExplainReport, *, now: datetime | None = None) -> str:
                 {"class": "page"},
                 raw(_render_header(report, generated_at=generated_at)),
                 raw(_render_story(report)),
+                raw(_render_diagnosis_summary(report)),
                 raw(_render_timeline(report)),
                 raw(_render_descriptive(report)),
                 raw(_render_dag(report.dag, focal_decision_id=focal_id)),
                 raw(_render_decision_cards(report)),
+                raw(_render_counterfactual_lookup(report)),
                 raw(_render_verdict(report)),
                 raw(_render_footer(report, generated_at=generated_at)),
             )
