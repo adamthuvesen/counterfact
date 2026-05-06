@@ -2,7 +2,7 @@
 
 Repo-local instructions for AI coding agents working in `counterfact`.
 
-`counterfact` is a Python research library for causal attribution over LLM-agent decision traces. Its taste is simple: make causal claims only when the logged data, graph, support, and assumptions can actually support them. A useful `unidentified` result is better than a confident fake counterfactual.
+`counterfact` is a Python research library for understanding agent decision traces through counterfactual questions: if the agent had called a different model, used a different tool, retried, or stopped later, would it have been more likely to complete the task? Its taste is simple: make causal claims only when the logged data, graph, support, and assumptions can actually support them. A useful `unidentified` result is better than a confident fake counterfactual.
 
 ## Working Contract
 

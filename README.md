@@ -1,12 +1,14 @@
 # counterfact
 
-`counterfact` is a small Python research library for causal attribution over LLM-agent decision traces.
+`counterfact` helps researchers understand agent decision traces by asking counterfactual questions about what the agent did.
 
-It answers questions like:
+For agent traces:
 
 ```text
-If this agent system had used a different LLM, tool, or retry policy, would the run have been more likely to pass?
+If the agent had called a different model, used a different tool, retried, or stopped later, would it have been more likely to complete the task?
 ```
+
+It does not decide whether one benchmark score is enough to switch models. It studies logged agent decisions and labels what the trace corpus can honestly support.
 
 The answer is always labelled:
 
