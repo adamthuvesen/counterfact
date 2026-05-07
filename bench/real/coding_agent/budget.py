@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -41,6 +42,8 @@ class BudgetTracker:
         return self.halt_threshold - self.spent_usd
 
     def add(self, usd: float) -> None:
+        if not math.isfinite(usd):
+            raise ValueError(f"spend must be finite; got {usd!r}")
         if usd < 0:
             raise ValueError(f"cannot add negative spend: {usd!r}")
         self.spent_usd += usd

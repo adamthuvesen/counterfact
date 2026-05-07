@@ -1,0 +1,37 @@
+{
+  "trace_id": "trace-ai-error",
+  "spans": [
+    {
+      "object": "trace.span",
+      "id": "span-root",
+      "trace_id": "trace-ai-error",
+      "parent_id": null,
+      "started_at": "2026-05-06T19:20:00.000Z",
+      "ended_at": "2026-05-06T19:20:00.700Z",
+      "span_data": {
+        "type": "agent",
+        "name": "research_agent",
+        "handoffs": [],
+        "tools": [],
+        "output_type": "string"
+      },
+      "error": {"message": "tool timed out", "code": "tool_timeout"}
+    },
+    {
+      "object": "trace.span",
+      "id": "span-fn-fail",
+      "trace_id": "trace-ai-error",
+      "parent_id": "span-root",
+      "started_at": "2026-05-06T19:20:00.100Z",
+      "ended_at": "2026-05-06T19:20:00.500Z",
+      "span_data": {
+        "type": "function",
+        "name": "fetch_url",
+        "input": {"url": "https://broken.example.com"},
+        "output": null,
+        "mcp_data": null
+      },
+      "error": {"message": "tool timed out"}
+    }
+  ]
+}

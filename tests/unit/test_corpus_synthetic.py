@@ -87,6 +87,17 @@ def test_synthetic__different_seeds_yield_different_traces(tmp_path: Path) -> No
     assert diffs > 0
 
 
+def test_synthetic__rejects_non_empty_json_output_dir(tmp_path: Path) -> None:
+    out = tmp_path / "syn"
+    out.mkdir()
+    (out / "stale.json").write_text("{}")
+
+    with pytest.raises(ValueError, match="already contains JSON"):
+        generate_corpus(n=1, seed=1, output_dir=out)
+
+    assert (out / "stale.json").exists()
+
+
 # --- CLI scenarios -----------------------------------------------------------
 
 
@@ -110,6 +121,7 @@ def test_cli__synthetic_subcommand_runs_end_to_end(tmp_path: Path) -> None:
         ],
         capture_output=True,
         text=True,
+        timeout=30,
     )
     assert proc.returncode == 0, f"stderr: {proc.stderr}"
     assert len(list(out.glob("*.json"))) == 50
@@ -122,6 +134,7 @@ def test_cli__bench_help_describes_both_subcommands() -> None:
         [sys.executable, "-m", "counterfact.cli", "bench", "--help"],
         capture_output=True,
         text=True,
+        timeout=30,
     )
     assert proc.returncode == 0
     assert "synthetic" in proc.stdout

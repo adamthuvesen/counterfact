@@ -14,6 +14,8 @@ means editing one line.
 
 from __future__ import annotations
 
+import json
+import math
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -23,6 +25,8 @@ ROLE_TO_MODEL: dict[str, str] = {
 }
 
 DEFAULT_MAX_TOKENS = 4096
+DEFAULT_REQUEST_TIMEOUT_S = 120
+DEFAULT_NUM_RETRIES = 1
 
 
 @dataclass
@@ -57,6 +61,8 @@ def extract_cost(resp: object) -> float:
     elif hasattr(resp, "response_cost"):
         raw = resp.response_cost
     cost = float(raw or 0.0)
+    if not math.isfinite(cost):
+        raise CostUnknownError(f"non-finite response cost: {cost!r}")
     if cost > 0.0:
         return cost
     try:
@@ -68,7 +74,7 @@ def extract_cost(resp: object) -> float:
             "could not determine LLM response cost from provider response or "
             "litellm.completion_cost; refusing to treat the call as free"
         ) from exc
-    if fallback <= 0.0:
+    if not math.isfinite(fallback) or fallback <= 0.0:
         # Production budget accounting fails closed: a zero / negative fallback
         # almost always means litellm has no price for this model, not that the
         # call was actually free. Mocked test clients never hit this path —
@@ -78,6 +84,29 @@ def extract_cost(resp: object) -> float:
             f"({fallback!r}); refusing to treat the call as free"
         )
     return fallback
+
+
+def _message_content_to_text(content: object) -> str:
+    """Normalize provider message content to text for the patch extractor."""
+    if isinstance(content, str):
+        return content
+    if content is None:
+        return ""
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "\n".join(parts)
+    if isinstance(content, dict) and isinstance(content.get("text"), str):
+        return str(content["text"])
+    # Preserve the run as a controlled extraction failure rather than crashing
+    # after a paid response. Keep a compact structured breadcrumb if possible.
+    if isinstance(content, dict):
+        return json.dumps(content, sort_keys=True)
+    return ""
 
 
 class LiteLLMClient:
@@ -102,9 +131,11 @@ class LiteLLMClient:
             model=model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=DEFAULT_MAX_TOKENS,
+            timeout=DEFAULT_REQUEST_TIMEOUT_S,
+            num_retries=DEFAULT_NUM_RETRIES,
         )
         choice = resp["choices"][0]
-        text = choice["message"]["content"]
+        text = _message_content_to_text(choice["message"].get("content"))
         finish_reason = choice.get("finish_reason")
         cost = extract_cost(resp)
         return LLMResponse(text=text, cost_usd=cost, finish_reason=finish_reason)

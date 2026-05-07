@@ -1,0 +1,66 @@
+{
+  "trace_id": "trace-ai-001",
+  "spans": [
+    {
+      "object": "trace.span",
+      "id": "span-root",
+      "trace_id": "trace-ai-001",
+      "parent_id": null,
+      "started_at": "2026-05-06T19:00:00.000Z",
+      "ended_at": "2026-05-06T19:00:01.500Z",
+      "span_data": {
+        "type": "agent",
+        "name": "research_agent",
+        "handoffs": [],
+        "tools": ["web_search"],
+        "output_type": "string"
+      },
+      "error": null
+    },
+    {
+      "object": "trace.span",
+      "id": "span-fn-1",
+      "trace_id": "trace-ai-001",
+      "parent_id": "span-root",
+      "started_at": "2026-05-06T19:00:00.100Z",
+      "ended_at": "2026-05-06T19:00:00.500Z",
+      "span_data": {
+        "type": "function",
+        "name": "web_search",
+        "input": {"query": "counterfact docs"},
+        "output": "https://example.com/counterfact",
+        "mcp_data": null
+      },
+      "error": null
+    },
+    {
+      "object": "trace.span",
+      "id": "span-gen-1",
+      "trace_id": "trace-ai-001",
+      "parent_id": "span-root",
+      "started_at": "2026-05-06T19:00:00.600Z",
+      "ended_at": "2026-05-06T19:00:01.200Z",
+      "span_data": {
+        "type": "generation",
+        "model": "gpt-5-mini",
+        "model_config": {"temperature": 0},
+        "usage": {"prompt_tokens": 200, "completion_tokens": 50}
+      },
+      "error": null
+    },
+    {
+      "object": "trace.span",
+      "id": "span-resp-1",
+      "trace_id": "trace-ai-001",
+      "parent_id": "span-gen-1",
+      "started_at": "2026-05-06T19:00:01.250Z",
+      "ended_at": "2026-05-06T19:00:01.300Z",
+      "span_data": {
+        "type": "response",
+        "response_id": "resp_abc",
+        "usage": {"prompt_tokens": 200, "completion_tokens": 50}
+      },
+      "error": null
+    }
+  ]
+}

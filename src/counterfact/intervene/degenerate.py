@@ -19,12 +19,13 @@ from counterfact.intervene.estimate import (
     NextStep,
 )
 from counterfact.intervene.suggest import known_arms, suggest_harness_command
+from counterfact.outcome.binary import binary_outcome_value
 from counterfact.schema import Run
 
 
 def outcome_classes(runs: Iterable[Run]) -> set[bool]:
     """Distinct boolean outcome values across `runs` (binary outcomes only)."""
-    return {bool(run.outcome.value) for run in runs}
+    return {binary_outcome_value(run) for run in runs}
 
 
 def degenerate_estimate(
