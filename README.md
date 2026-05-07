@@ -1,6 +1,6 @@
 # counterfact
 
-`counterfact` helps you find where an agent run went wrong.
+`counterfact` is a small research library for understanding agent decision traces through counterfactual questions.
 
 Given a decision the agent actually logged, such as a model call, tool call, retry, or stop decision, it asks:
 
@@ -11,8 +11,6 @@ Every answer is labelled:
 - `identified` - the trace corpus supports a point estimate under the graph, support, and assumptions.
 - `bounded` - a point estimate is not supported, but sensitivity bounds are available.
 - `unidentified` - the corpus cannot support the counterfactual without more data, stronger assumptions, or replay.
-
-The useful feature is not confidence. It is knowing when confidence would be fake.
 
 ## Install
 
