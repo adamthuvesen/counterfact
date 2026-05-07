@@ -106,19 +106,6 @@ uv run counterfact diagnose bench/real/smoke_mixed_outcome/real-streaming_waterm
 questions the corpus can honestly support, and gives the next data-collection
 step when the answer is `unidentified`.
 
-For a faster tour of common failure shapes, use the committed trace-forensics gallery:
-
-```bash
-uv run counterfact diagnose examples/trace-forensics/runs/syn-000000.json \
-  --runs-dir examples/trace-forensics/runs \
-  --decision-type model_call \
-  --html /tmp/counterfact-wrong-model.html
-```
-
-The gallery covers wrong model choice, bad tool choice, missed retry, stopped
-too early, unsupported counterfactuals, single-class support refusal, and
-pass/fail trace diffs. It is illustrative, not benchmark evidence.
-
 Run the deterministic local demo:
 
 ```bash
