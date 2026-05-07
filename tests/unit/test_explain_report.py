@@ -13,7 +13,7 @@ import pytest
 
 from counterfact.explain import build_report
 from counterfact.intervene.estimate import IdentifiabilityStatus
-from counterfact.schema import Run
+from counterfact.schema import Outcome, Run
 
 
 def _synthetic_corpus(n: int = 24, seed: int = 7) -> list[Run]:
@@ -85,6 +85,30 @@ def test_build_report__never_calls_fit_outcome_model_on_single_class(
 
     assert calls["n"] == 0
     assert report.degenerate_estimate is not None
+
+
+def test_build_report__mixed_outcome_without_features_returns_unidentified() -> None:
+    corpus = [
+        Run(
+            schema_version="0.1.0",
+            run_id="no-features-pass",
+            steps=[],
+            outcome=Outcome(kind="binary", value=True, verifier="test"),
+        ),
+        Run(
+            schema_version="0.1.0",
+            run_id="no-features-fail",
+            steps=[],
+            outcome=Outcome(kind="binary", value=False, verifier="test"),
+        ),
+    ]
+
+    report = build_report(corpus[0], corpus, bootstrap=10, seed=42)
+
+    assert report.attribution.entries == []
+    assert report.degenerate_estimate is not None
+    assert report.degenerate_estimate.identifiability == IdentifiabilityStatus.UNIDENTIFIED
+    assert "intervenable decision" in (report.degenerate_estimate.reason or "")
 
 
 def test_build_report__deterministic_for_fixed_inputs() -> None:

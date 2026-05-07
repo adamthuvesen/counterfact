@@ -24,6 +24,7 @@ from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import LogisticRegression
 
 from counterfact.errors import InsufficientOutcomeSupportError, UnsupportedOutcomeError
+from counterfact.outcome.binary import binary_outcome_value
 from counterfact.schema import Run
 
 
@@ -101,7 +102,7 @@ def _row_for_run(run: Run, index: dict[str, int]) -> np.ndarray:
 def _featurize(runs: list[Run]) -> tuple[np.ndarray, np.ndarray, list[str], dict[str, int]]:
     names, index = _build_feature_index(runs)
     X = np.vstack([_row_for_run(r, index) for r in runs])
-    y = np.array([1 if r.outcome.value else 0 for r in runs], dtype=int)
+    y = np.array([1 if binary_outcome_value(r) else 0 for r in runs], dtype=int)
     return X, y, names, index
 
 
@@ -133,6 +134,13 @@ def fit_outcome_model(
         raise ValueError(f"n_bootstrap must be >= 1; got {n_bootstrap!r}")
 
     X, y, names, index = _featurize(runs)
+    if X.shape[1] == 0:
+        raise InsufficientOutcomeSupportError(
+            "fit_outcome_model requires at least one intervenable decision feature; "
+            "observed no decisions with supported interventions and chosen_action values. "
+            "Collect traces with model_call, tool_call, retry, or other intervenable "
+            "decisions before fitting an outcome model."
+        )
     classes = set(y.tolist())
     if len(classes) < 2:
         observed = sorted(classes)

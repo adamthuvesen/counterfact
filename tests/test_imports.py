@@ -2,9 +2,11 @@
 
 
 def test_package_imports() -> None:
+    from importlib.metadata import version
+
     import counterfact
 
-    assert counterfact.__version__ == "0.0.0"
+    assert counterfact.__version__ == version("counterfact")
 
 
 def test_errors_module_imports() -> None:

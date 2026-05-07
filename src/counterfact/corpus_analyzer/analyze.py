@@ -26,6 +26,7 @@ from counterfact.errors import (
 )
 from counterfact.intervene import intervene
 from counterfact.outcome import fit_outcome_model
+from counterfact.outcome.binary import binary_outcome_value
 from counterfact.schema import Run
 from counterfact.taxonomy import DECISION_TYPES, valid_interventions
 
@@ -37,7 +38,7 @@ _PROBE_SEED = 42
 
 
 def _outcome_balance(runs: list[Run]) -> OutcomeBalance:
-    n_pass = sum(1 for r in runs if bool(r.outcome.value))
+    n_pass = sum(1 for r in runs if binary_outcome_value(r))
     n_fail = len(runs) - n_pass
     pass_rate = (n_pass / len(runs)) if runs else 0.0
     return OutcomeBalance(pass_rate=pass_rate, n_pass=n_pass, n_fail=n_fail)
@@ -93,7 +94,7 @@ def _identifiability_coverage(
     can target and collect which identifiability labels came back. Also returns
     the set of decision types that produced at least one `identified` result.
     """
-    classes = {bool(r.outcome.value) for r in runs}
+    classes = {binary_outcome_value(r) for r in runs}
     reachable: set[IdentifiabilityName] = set()
     identified_decision_types: set[str] = set()
 
@@ -309,7 +310,7 @@ def analyze(
     *,
     thresholds: RubricThresholds = DEFAULT_THRESHOLDS,
 ) -> CorpusReadinessReport:
-    """Score a candidate corpus against the promotion rubric.
+    """Check whether a corpus is ready for counterfactual support questions.
 
     Returns a `CorpusReadinessReport`. The function is deterministic, makes
     no LLM calls, and writes no files. Empty inputs are reported (not raised).

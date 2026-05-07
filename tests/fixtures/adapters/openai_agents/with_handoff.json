@@ -1,0 +1,64 @@
+{
+  "trace_id": "trace-ai-handoff",
+  "spans": [
+    {
+      "object": "trace.span",
+      "id": "span-root",
+      "trace_id": "trace-ai-handoff",
+      "parent_id": null,
+      "started_at": "2026-05-06T19:10:00.000Z",
+      "ended_at": "2026-05-06T19:10:02.000Z",
+      "span_data": {
+        "type": "agent",
+        "name": "router",
+        "handoffs": ["coder"],
+        "tools": [],
+        "output_type": "string"
+      },
+      "error": null
+    },
+    {
+      "object": "trace.span",
+      "id": "span-handoff-1",
+      "trace_id": "trace-ai-handoff",
+      "parent_id": "span-root",
+      "started_at": "2026-05-06T19:10:00.100Z",
+      "ended_at": "2026-05-06T19:10:00.150Z",
+      "span_data": {
+        "type": "handoff",
+        "from_agent": "router",
+        "to_agent": "coder"
+      },
+      "error": null
+    },
+    {
+      "object": "trace.span",
+      "id": "span-gen-1",
+      "trace_id": "trace-ai-handoff",
+      "parent_id": "span-root",
+      "started_at": "2026-05-06T19:10:00.300Z",
+      "ended_at": "2026-05-06T19:10:01.500Z",
+      "span_data": {
+        "type": "generation",
+        "model": "gpt-5",
+        "model_config": {"temperature": 0.1},
+        "usage": {"prompt_tokens": 500, "completion_tokens": 120}
+      },
+      "error": null
+    },
+    {
+      "object": "trace.span",
+      "id": "span-marker",
+      "trace_id": "trace-ai-handoff",
+      "parent_id": "span-root",
+      "started_at": "2026-05-06T19:10:01.700Z",
+      "ended_at": "2026-05-06T19:10:01.750Z",
+      "span_data": {
+        "type": "custom",
+        "name": "counterfact.outcome",
+        "data": {"value": true}
+      },
+      "error": null
+    }
+  ]
+}

@@ -344,6 +344,10 @@ def intervene(
                         "one-hot per trace; no step index in features"
                     ),
                     "duplicate_steps": duplicate_steps,
+                    "localization_limit": (
+                        "v0 outcome features are keyed by decision_type/action, "
+                        "not by decision_id or step"
+                    ),
                 },
                 human_text=(
                     f"{decision_type!r} occurs at multiple steps in this trace; "

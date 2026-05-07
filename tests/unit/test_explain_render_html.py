@@ -9,7 +9,9 @@ framed and ordered before the causal one, and the document is self-contained.
 
 from __future__ import annotations
 
+import html as html_lib
 import re
+import shlex
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
@@ -17,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from counterfact.attribute import AttributionEntry, FailureAttribution
+from counterfact.diagnose import build_diagnosis_pair
 from counterfact.explain import build_report, render_html
 from counterfact.explain.render_html import _node_label
 from counterfact.explain.report import ExplainReport
@@ -134,6 +137,39 @@ def _unidentified_estimate() -> CausalEstimate:
     )
 
 
+def _unidentified_support_estimate() -> CausalEstimate:
+    return CausalEstimate(
+        query=InterventionQuery(
+            decision_type="model_call",
+            intervention_kind="model_choice",
+            target="opus",
+            step=2,
+        ),
+        identifiability=IdentifiabilityStatus.UNIDENTIFIED,
+        reason="missing target arm",
+        next_step=NextStep(
+            action="broaden_arm_support",
+            payload={
+                "arm_name": "model_call",
+                "missing_strata": ["model_call::opus"],
+                "observed_arms": [
+                    {
+                        "arm": "haiku",
+                        "n": 10,
+                        "pass_count": 4,
+                        "pass_rate": 0.4,
+                        "ci_low": 0.1,
+                        "ci_high": 0.7,
+                    }
+                ],
+                "missing_arms": ["opus"],
+                "localization_limit": "decision-id support is absent",
+            },
+            human_text="Collect traces with opus support.",
+        ),
+    )
+
+
 class _SectionLocator(HTMLParser):
     """Find the byte offsets of `<h2>` text within the rendered document."""
 
@@ -186,6 +222,23 @@ def _collect_data_decision_ids(html: str) -> tuple[list[str], list[str]]:
 
 def _count_substring(html: str, needle: str) -> int:
     return html.count(needle)
+
+
+def _extract_section(html: str, h2_text: str) -> str:
+    """Return the substring between `<h2>{h2_text}</h2>` and the next `<h2>`.
+
+    Used to scope assertions to a single rendered section so substring
+    matches in unrelated tables (e.g., the descriptive baseline) cannot
+    silently satisfy a section-specific test.
+    """
+    needle = f"<h2>{h2_text}</h2>"
+    start = html.find(needle)
+    if start == -1:
+        raise AssertionError(f"section heading not found: {h2_text!r}")
+    end = html.find("<h2>", start + len(needle))
+    if end == -1:
+        end = len(html)
+    return html[start:end]
 
 
 def _build_synthetic_report(
@@ -263,6 +316,8 @@ def _hand_built_report(
         update={
             "attribution": attribution,
             "degenerate_estimate": degenerate,
+            "run_path": "runs/syn-000000.json",
+            "corpus_dir": "runs",
         }
     )
 
@@ -277,6 +332,52 @@ def test_render__starts_with_doctype_and_lang() -> None:
     html = render_html(report, now=FIXED_NOW)
     assert html.lstrip()[:15].lower().startswith("<!doctype html>")
     assert '<html lang="en">' in html
+
+
+def test_render__timeline_lists_steps_and_decision_metadata() -> None:
+    report = _build_synthetic_report()
+    html = render_html(report, now=FIXED_NOW)
+
+    assert '<section class="timeline">' in html
+    for step in report.run.steps:
+        assert f'data-step-index="{step.step_index}"' in html
+        for decision in step.decisions:
+            assert decision.decision_id in html
+            assert decision.decision_type in html
+            if decision.chosen_action:
+                assert decision.chosen_action in html
+    first = html.find(f'data-step-index="{report.run.steps[0].step_index}"')
+    last = html.find(f'data-step-index="{report.run.steps[-1].step_index}"')
+    assert first < last
+
+
+def test_render__timeline_omits_raw_observation_content() -> None:
+    corpus = _synthetic_corpus(n=12, seed=11)
+    focal = corpus[0].model_copy(
+        update={
+            "steps": [
+                step.model_copy(
+                    update={
+                        "observations": [
+                            {
+                                "observation_id": "o-secret",
+                                "content": {"stdout_tail": "RAW_OBSERVATION_SECRET"},
+                            }
+                        ]
+                    }
+                )
+                if step.step_index == 1
+                else step
+                for step in corpus[0].steps
+            ]
+        }
+    )
+    corpus = [focal, *corpus[1:]]
+    report = build_report(focal, corpus, bootstrap=10, seed=11)
+
+    html = render_html(report, now=FIXED_NOW)
+    assert "observations=1" in html
+    assert "RAW_OBSERVATION_SECRET" not in html
 
 
 def test_render__badge_text_matches_identifiability_value_for_each_status() -> None:
@@ -442,6 +543,197 @@ def test_render__suggested_command_appears_verbatim_in_code_element() -> None:
     cmd = "uv run counterfact bench real --n 416 --fixture-set broad_calibration"
     expected = f"<code>{cmd}</code>"
     assert expected in html
+
+
+def test_render__decision_card_renders_support_diagnostics() -> None:
+    identified = _identified_estimate()
+    unid = _unidentified_support_estimate()
+    attribution = _make_synthetic_attribution(identified, unid)
+    report = _hand_built_report(attribution)
+
+    html = render_html(report, now=FIXED_NOW)
+    section = _extract_section(html, "Decision cards")
+
+    assert '<section class="decision-cards">' in html
+    assert "support diagnostics" in section
+    assert "observed arms: haiku" in section
+    assert "missing arms: opus" in section
+    assert "localization limit: decision-id support is absent" in section
+
+
+def test_render__diagnosis_report_shows_summary_entries_and_support_context() -> None:
+    corpus = [
+        Run.model_validate_json(p.read_text())
+        for p in sorted(Path("examples/trace-forensics/single-arm-model").glob("*.json"))
+    ]
+    diagnosis, report = build_diagnosis_pair(
+        corpus[0],
+        corpus,
+        top_k=3,
+        bootstrap=10,
+        seed=42,
+        run_path="examples/trace-forensics/single-arm-model/single-arm-000000.json",
+        corpus_dir="examples/trace-forensics/single-arm-model",
+    )
+
+    html = render_html(report, now=FIXED_NOW)
+    section = _extract_section(html, "Decision cards")
+
+    assert "<h1>counterfact diagnose</h1>" in html
+    assert diagnosis.summary in html
+    assert diagnosis.entries
+    assert len(diagnosis.entries) <= 3
+    for entry in diagnosis.entries:
+        assert entry.decision_id in section
+        assert entry.identifiability.value in section
+    assert "support diagnostics" in html
+    assert "Trace timeline" in html
+    assert "RAW_OBSERVATION_SECRET" not in html
+
+
+def test_render__diagnosis_report_is_deterministic_with_frozen_clock() -> None:
+    corpus = _synthetic_corpus(n=48, seed=42)
+    _, report = build_diagnosis_pair(corpus[0], corpus, bootstrap=10, seed=42)
+
+    a = render_html(report, now=FIXED_NOW)
+    b = render_html(report, now=FIXED_NOW)
+
+    assert a == b
+
+
+def test_render__diagnosis_report_is_self_contained() -> None:
+    corpus = _synthetic_corpus(n=48, seed=42)
+    _, report = build_diagnosis_pair(corpus[0], corpus, bootstrap=10, seed=42)
+
+    html = render_html(report, now=FIXED_NOW)
+
+    assert re.search(r'(?:src|href)="https?://', html) is None
+    assert re.search(r'<(?:script|link)\b[^>]+(?:src|href)="', html) is None
+
+
+def test_render__decision_card_includes_intervene_json_command() -> None:
+    identified = _identified_estimate()
+    unid = _unidentified_estimate()
+    attribution = _make_synthetic_attribution(identified, unid)
+    report = _hand_built_report(attribution)
+
+    html = render_html(report, now=FIXED_NOW)
+
+    assert "uv run counterfact intervene" in html
+    assert "--decision-id d-id-001" in html
+    assert "--set model_choice=small --json" in html
+
+
+def test_render__decision_card_command_quotes_paths_with_spaces() -> None:
+    identified = _identified_estimate()
+    unid = _unidentified_estimate()
+    attribution = _make_synthetic_attribution(identified, unid)
+    base = _hand_built_report(attribution)
+    report = base.model_copy(
+        update={
+            "run_path": "runs/My Traces/run-000.json",
+            "corpus_dir": "runs/My Traces",
+        }
+    )
+
+    html = render_html(report, now=FIXED_NOW)
+    section = _extract_section(html, "Decision cards")
+
+    match = re.search(r"uv run counterfact intervene[^<]+", section)
+    assert match is not None, "intervene command not found in decision-cards section"
+    command = html_lib.unescape(match.group(0).strip())
+
+    parts = shlex.split(command)
+    assert "runs/My Traces/run-000.json" in parts
+    runs_dir_idx = parts.index("--runs-dir")
+    assert parts[runs_dir_idx + 1] == "runs/My Traces"
+
+
+def test_render__decision_card_unresolved_step_does_not_leak_none() -> None:
+    identified = _identified_estimate()
+    unid = _unidentified_estimate()
+    base_attribution = _make_synthetic_attribution(identified, unid)
+    orphan_entry = AttributionEntry(
+        decision_id="d-not-in-run",
+        decision_type="model_call",
+        chosen_action="haiku",
+        influence=0.0,
+        identifiability=IdentifiabilityStatus.UNIDENTIFIED,
+        estimate=unid,
+    )
+    attribution = FailureAttribution(
+        entries=[*base_attribution.entries, orphan_entry]
+    )
+    report = _hand_built_report(attribution)
+
+    html = render_html(report, now=FIXED_NOW)
+    section = _extract_section(html, "Decision cards")
+
+    assert "step=None" not in section
+    assert "step=?" in section
+
+
+def test_render__decision_card_unidentified_has_no_decimal_estimate() -> None:
+    identified = _identified_estimate()
+    unid = _unidentified_support_estimate()
+    attribution = _make_synthetic_attribution(identified, unid)
+    report = _hand_built_report(attribution)
+    html = render_html(report, now=FIXED_NOW)
+
+    start = html.find('<details class="decision-card ident-unidentified"')
+    assert start != -1
+    end = html.find("</details>", start)
+    card = html[start:end]
+    assert re.search(r"\d+\.\d+\s*\[", card) is None
+    assert "next_step.action=broaden_arm_support" in card
+
+
+def test_render__decision_cards_are_collapsible_details() -> None:
+    identified = _identified_estimate()
+    unid = _unidentified_estimate()
+    attribution = _make_synthetic_attribution(identified, unid)
+    report = _hand_built_report(attribution)
+    html = render_html(report, now=FIXED_NOW)
+
+    section = _extract_section(html, "Decision cards")
+    assert "<details" in section
+    assert "<summary>" in section
+    assert "https://" not in section
+
+
+def test_render__diagnosis_summary_renders_before_timeline() -> None:
+    report = _build_synthetic_report().model_copy(
+        update={
+            "diagnosis_summary": (
+                "Run syn-000000: most plausible supported failure point is d-model."
+            )
+        }
+    )
+    html = render_html(report, now=FIXED_NOW)
+
+    diagnosis_pos = html.find("<h2>Diagnosis summary</h2>")
+    timeline_pos = html.find("<h2>Trace timeline</h2>")
+    assert diagnosis_pos != -1
+    assert timeline_pos != -1
+    assert diagnosis_pos < timeline_pos
+    assert "most plausible supported failure point" in html
+
+
+def test_render__counterfactual_lookup_hides_unidentified_numbers() -> None:
+    identified = _identified_estimate()
+    unid = _unidentified_estimate()
+    report = _build_synthetic_report().model_copy(
+        update={"counterfactual_lookup": [identified, unid]}
+    )
+    html = render_html(report, now=FIXED_NOW)
+    section = _extract_section(html, "Counterfactual lookup")
+
+    assert "outcome_delta=0.332 [0.179, 0.493]" in section
+    assert "identifiability=unidentified" in section
+    unidentified_row_start = section.find("identifiability=unidentified")
+    unidentified_row_end = section.find("</div>", unidentified_row_start)
+    unidentified_row = section[unidentified_row_start:unidentified_row_end]
+    assert re.search(r"\d+\.\d+\s*\[", unidentified_row) is None
 
 
 def test_render__svg_node_set_matches_dag() -> None:

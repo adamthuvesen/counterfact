@@ -1,7 +1,8 @@
 """Corpus-readiness analyzer.
 
-Score a candidate corpus against the promotion rubric. No LLM calls, no file
-writes. See `openspec/specs/corpus-analyzer/spec.md` for the public contract.
+Check whether a trace corpus has enough support for counterfactual diagnosis
+and intervention estimates. No LLM calls, no file writes. See
+`openspec/specs/corpus-analyzer/spec.md` for the public contract.
 """
 
 from counterfact.corpus_analyzer.analyze import analyze

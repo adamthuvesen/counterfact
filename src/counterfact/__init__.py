@@ -1,5 +1,7 @@
 """counterfact — causal attribution for agent traces."""
 
+from importlib.metadata import PackageNotFoundError, version
+
 from counterfact.attribute import attribute_failure
 from counterfact.baselines import PassRateRow, PassRateTable, pass_rate_by_arm
 from counterfact.corpus_analyzer import CorpusReadinessReport, RubricThresholds, analyze_corpus
@@ -8,7 +10,10 @@ from counterfact.intervene import intervene
 from counterfact.outcome import fit_outcome_model
 from counterfact.power import PowerReport, power_analysis
 
-__version__ = "0.0.0"
+try:
+    __version__ = version("counterfact")
+except PackageNotFoundError:
+    __version__ = "0.1.0"
 
 __all__ = [
     "CorpusReadinessReport",
