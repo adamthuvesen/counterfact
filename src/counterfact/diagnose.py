@@ -159,12 +159,17 @@ def _degenerate_entries(
     focal_run: Run,
     estimate: CausalEstimate,
     *,
+    decision_type: str,
     top_k: int,
 ) -> list[DiagnosisEntry]:
     entries: list[DiagnosisEntry] = []
     for step in focal_run.steps:
         for decision in step.decisions:
-            if decision.chosen_action is None or not valid_interventions(decision.decision_type):
+            if (
+                decision.decision_type != decision_type
+                or decision.chosen_action is None
+                or not valid_interventions(decision.decision_type)
+            ):
                 continue
             query = estimate.query.model_copy(
                 update={
@@ -195,11 +200,16 @@ def _degenerate_entries(
     return entries
 
 
-def _summary_for(entries: list[DiagnosisEntry], run: Run) -> str:
+def _summary_for(
+    entries: list[DiagnosisEntry],
+    run: Run,
+    *,
+    decision_type: str,
+) -> str:
     if not entries:
         return (
-            f"Run {run.run_id} ({_outcome_label(run)}): no targetable decisions "
-            "were found for counterfactual diagnosis."
+            f"Run {run.run_id} ({_outcome_label(run)}): no targetable "
+            f"{decision_type} decisions were found for counterfactual diagnosis."
         )
     supported = [
         entry
@@ -225,6 +235,7 @@ def _summary_for(entries: list[DiagnosisEntry], run: Run) -> str:
 def _diagnosis_from_explain_report(
     report: ExplainReport,
     *,
+    decision_type: str,
     top_k: int,
     run_path: str | None,
     corpus_dir: str | None,
@@ -232,18 +243,26 @@ def _diagnosis_from_explain_report(
     decisions = _decision_index(report.run)
     if report.degenerate_estimate is not None:
         entries = _degenerate_entries(
-            report.run, report.degenerate_estimate, top_k=top_k
+            report.run,
+            report.degenerate_estimate,
+            decision_type=decision_type,
+            top_k=top_k,
         )
     else:
+        ranked_entries = [
+            entry
+            for entry in report.attribution.entries
+            if entry.decision_type == decision_type
+        ]
         entries = [
             _entry_from_attribution(entry, decisions)
-            for entry in report.attribution.entries[:top_k]
+            for entry in ranked_entries[:top_k]
         ]
     return DiagnosisReport(
         run_id=report.run.run_id,
         outcome=_outcome_label(report.run),
         corpus_size=report.corpus_size,
-        summary=_summary_for(entries, report.run),
+        summary=_summary_for(entries, report.run, decision_type=decision_type),
         entries=entries,
         warnings=list(report.notes),
         run_path=run_path,
@@ -307,6 +326,7 @@ def build_diagnosis_pair(
     )
     diagnosis = _diagnosis_from_explain_report(
         explain_report,
+        decision_type=decision_type,
         top_k=top_k,
         run_path=run_path,
         corpus_dir=corpus_dir,

@@ -31,6 +31,32 @@ def test_build_diagnosis__deterministic_for_fixed_inputs() -> None:
     assert a.summary.startswith(f"Run {corpus[0].run_id}")
 
 
+def test_build_diagnosis__decision_type_filters_ranked_entries() -> None:
+    corpus = _synthetic_corpus(n=60, seed=42)
+
+    model_report = build_diagnosis(
+        corpus[0],
+        corpus,
+        decision_type="model_call",
+        top_k=10,
+        bootstrap=10,
+        seed=42,
+    )
+    tool_report = build_diagnosis(
+        corpus[0],
+        corpus,
+        decision_type="tool_call",
+        top_k=10,
+        bootstrap=10,
+        seed=42,
+    )
+
+    assert model_report.entries
+    assert tool_report.entries
+    assert {entry.decision_type for entry in model_report.entries} == {"model_call"}
+    assert {entry.decision_type for entry in tool_report.entries} == {"tool_call"}
+
+
 def test_build_diagnosis__single_class_refusal_has_no_outcome_delta() -> None:
     paths = sorted(Path("bench/real/single_class_refusal").glob("*.json"))
     corpus = [Run.model_validate_json(path.read_text()) for path in paths]
