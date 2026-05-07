@@ -8,7 +8,7 @@ import pytest
 
 from bench.synthetic import generate_traces
 from counterfact.cli import main
-from counterfact.schema import Run
+from counterfact.schema import Outcome, Run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SINGLE_CLASS_REFUSAL_DIR = REPO_ROOT / "bench" / "real" / "single_class_refusal"
@@ -57,6 +57,36 @@ def test_analyze_synthetic_corpus_exits_0(tmp_path: Path, capsys) -> None:
     fail_lines = [line for line in out.splitlines() if line.startswith("FAIL ")]
     assert pass_lines, "no PASS lines in synthetic analyzer output"
     assert not fail_lines, f"unexpected FAIL lines: {fail_lines}"
+
+
+def test_analyze_mixed_outcome_without_features_reports_not_ready(
+    tmp_path: Path, capsys
+) -> None:
+    out_dir = tmp_path / "no-features"
+    out_dir.mkdir()
+    runs = [
+        Run(
+            schema_version="0.1.0",
+            run_id="pass",
+            steps=[],
+            outcome=Outcome(kind="binary", value=True, verifier="test"),
+        ),
+        Run(
+            schema_version="0.1.0",
+            run_id="fail",
+            steps=[],
+            outcome=Outcome(kind="binary", value=False, verifier="test"),
+        ),
+    ]
+    for run in runs:
+        (out_dir / f"{run.run_id}.json").write_text(run.model_dump_json())
+
+    rc = main(["analyze", "corpus", str(out_dir)])
+    out = capsys.readouterr().out
+
+    assert rc == 1
+    assert "outcome model unfittable" in out
+    assert "support_ready: False" in out
 
 
 def test_analyze_missing_directory_exits_2(tmp_path: Path, capsys) -> None:

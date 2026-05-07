@@ -105,6 +105,40 @@ def test_fit_outcome_model__mixed_binary_corpus_still_fits() -> None:
     assert model.train_n == len(runs)
 
 
+def test_fit_outcome_model__mixed_binary_without_features_raises_domain_error() -> None:
+    runs = [
+        Run(
+            schema_version="0.1.0",
+            run_id="no-features-pass",
+            steps=[],
+            outcome=Outcome(kind="binary", value=True, verifier="test"),
+        ),
+        Run(
+            schema_version="0.1.0",
+            run_id="no-features-fail",
+            steps=[],
+            outcome=Outcome(kind="binary", value=False, verifier="test"),
+        ),
+    ]
+
+    with pytest.raises(InsufficientOutcomeSupportError, match="intervenable decision"):
+        fit_outcome_model(runs)
+
+
+def test_degenerate_outcome_classes_rejects_non_binary_outcomes() -> None:
+    from counterfact.intervene.degenerate import outcome_classes
+
+    run = Run(
+        schema_version="0.1.0",
+        run_id="categorical",
+        steps=[],
+        outcome=Outcome(kind="categorical", value="unknown", verifier="test"),
+    )
+
+    with pytest.raises(UnsupportedOutcomeError, match="categorical"):
+        outcome_classes([run])
+
+
 # --- intervene spec scenarios ------------------------------------------------
 
 
@@ -269,8 +303,8 @@ def test_intervene__increase_n_power_method_inline_scaling_on_single_arm() -> No
     y = (rng.random(n) < 0.55).astype(int)
     coefs = np.zeros(1)
     intercept = 0.0
-    boot_coefs = rng.normal(loc=0.0, scale=2.5, size=(50, 1))  # wide bootstrap CI
-    boot_intercepts = rng.normal(loc=0.0, scale=2.5, size=50)
+    boot_coefs = np.zeros((50, 1), dtype=float)
+    boot_intercepts = np.linspace(-8.0, 8.0, 50)
 
     model = OutcomeModel(
         feature_names=["tool_call::run_tests"],
@@ -310,12 +344,7 @@ def test_intervene__increase_n_power_method_inline_scaling_on_single_arm() -> No
         intervention={"tool_choice": "run_tests"},
     )
     payload = est.next_step.payload
-    if est.next_step.action != "increase_n":
-        # If the bootstrap happened to land tight, the result is `none`; rerun
-        # with a wider bootstrap is overkill for this test — just assert what
-        # we actually got matches the documented behavior.
-        assert est.next_step.action in {"none", "increase_n"}
-        return
+    assert est.next_step.action == "increase_n"
     assert payload["power_method"] == "inline_scaling"
     assert payload["estimated_required_n"] >= payload["current_n"] + 1
 
