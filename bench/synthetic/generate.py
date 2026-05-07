@@ -27,6 +27,12 @@ def generate_corpus(
     """Write `n` traces to `output_dir` as `syn-<i>.json` files. Returns the dir."""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
+    existing = sorted(out.glob("*.json"))
+    if existing:
+        raise ValueError(
+            f"output directory already contains JSON trace files: {out}. "
+            "Use an empty directory for synthetic generation."
+        )
     for trace in generate_traces(n, seed=seed, confound=confound):
         trace_path = out / f"{trace['run_id']}.json"
         trace_path.write_text(json.dumps(trace, sort_keys=True, indent=2))

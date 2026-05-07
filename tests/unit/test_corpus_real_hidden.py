@@ -1223,6 +1223,7 @@ def test_cli_real_subcommand_accepts_fixtures_flag(tmp_path: Path) -> None:
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        timeout=30,
     )
     # Exit 2 is the HUMAN-GATE refusal, which proves the CLI parsed the args.
     assert proc.returncode == 2, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"

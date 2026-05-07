@@ -7,6 +7,7 @@ corpus is a HUMAN GATE (§12.3) and is not exercised here.
 from __future__ import annotations
 
 import json
+import math
 import random
 import shutil
 import subprocess
@@ -29,6 +30,8 @@ from bench.real.coding_agent.agent import (
 from bench.real.coding_agent.fixtures import EASY_FIXTURES, run_pytest
 from bench.real.coding_agent.llm import (
     DEFAULT_MAX_TOKENS,
+    DEFAULT_NUM_RETRIES,
+    DEFAULT_REQUEST_TIMEOUT_S,
     CostUnknownError,
     LiteLLMClient,
     LLMResponse,
@@ -51,13 +54,16 @@ def test_epsilon_greedy__greedy_action_propensity() -> None:
     # math directly by computing expected values for both branches.
     # Run many draws, every "greedy" outcome must have propensity 0.85.
     rng = random.Random(123)
+    saw_greedy = False
     for _ in range(200):
         eg2 = EpsilonGreedy(epsilon=0.2, seed=rng.randint(0, 1_000_000))
         chosen, prop = eg2.choose(actions, greedy="b")
         if chosen == "b":
+            saw_greedy = True
             assert prop == pytest.approx(0.85)
         else:
             assert prop == pytest.approx(0.05)
+    assert saw_greedy, "greedy branch never fired across 200 draws at ε=0.2"
 
 
 def test_epsilon_greedy__non_greedy_action_propensity() -> None:
@@ -106,6 +112,13 @@ def test_budget__rejects_negative_spend() -> None:
     tracker = BudgetTracker(cap_usd=10.0)
     with pytest.raises(ValueError):
         tracker.add(-1.0)
+
+
+@pytest.mark.parametrize("cost", [math.nan, math.inf, -math.inf])
+def test_budget__rejects_non_finite_spend(cost: float) -> None:
+    tracker = BudgetTracker(cap_usd=10.0)
+    with pytest.raises(ValueError, match="finite"):
+        tracker.add(cost)
 
 
 # --- Fixture spec scenarios -------------------------------------------------
@@ -736,6 +749,13 @@ def test_extract_cost__prefers_response_cost_when_present() -> None:
     assert extract_cost(resp) == pytest.approx(0.0237)
 
 
+@pytest.mark.parametrize("cost", [math.nan, math.inf, -math.inf])
+def test_extract_cost__rejects_non_finite_response_cost(cost: float) -> None:
+    resp = {"choices": [{"message": {"content": "x"}}], "response_cost": cost}
+    with pytest.raises(CostUnknownError, match="non-finite"):
+        extract_cost(resp)
+
+
 def test_extract_cost__falls_back_to_completion_cost(monkeypatch: pytest.MonkeyPatch) -> None:
     """When response_cost is absent or 0, derive cost via litellm.completion_cost."""
     import litellm  # type: ignore[import-not-found]
@@ -743,6 +763,19 @@ def test_extract_cost__falls_back_to_completion_cost(monkeypatch: pytest.MonkeyP
     resp = {"choices": [{"message": {"content": "x"}}], "response_cost": 0}
     monkeypatch.setattr(litellm, "completion_cost", lambda completion_response: 0.0123)
     assert extract_cost(resp) == pytest.approx(0.0123)
+
+
+@pytest.mark.parametrize("cost", [math.nan, math.inf, -math.inf, 0.0])
+def test_extract_cost__rejects_non_positive_or_non_finite_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    cost: float,
+) -> None:
+    import litellm  # type: ignore[import-not-found]
+
+    resp = {"choices": [{"message": {"content": "x"}}], "response_cost": 0}
+    monkeypatch.setattr(litellm, "completion_cost", lambda completion_response: cost)
+    with pytest.raises(CostUnknownError):
+        extract_cost(resp)
 
 
 def test_extract_cost__raises_when_both_paths_fail(
@@ -805,7 +838,55 @@ def test_litellm_client__requests_large_enough_patch_budget_and_records_finish_r
     response = client.call(role="small", prompt="fix this")
 
     assert captured["max_tokens"] == DEFAULT_MAX_TOKENS
+    assert captured["timeout"] == DEFAULT_REQUEST_TIMEOUT_S
+    assert captured["num_retries"] == DEFAULT_NUM_RETRIES
     assert response.finish_reason == "stop"
+
+
+def test_litellm_client__normalizes_missing_content_to_extraction_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import litellm  # type: ignore[import-not-found]
+
+    monkeypatch.setattr(
+        litellm,
+        "completion",
+        lambda **kw: {
+            "choices": [{"message": {"content": None}, "finish_reason": "stop"}],
+            "response_cost": 0.01,
+        },
+    )
+    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"})
+
+    response = client.call(role="small", prompt="fix this")
+
+    assert response.text == ""
+    assert response.finish_reason == "stop"
+
+
+def test_pytest_helper_caps_output_and_scrubs_provider_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import bench.real.coding_agent.fixtures as fixtures_module
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "secret")
+    captured_env: dict[str, str] = {}
+
+    def _fake_run(*args, stdout, stderr, env, **kwargs):
+        captured_env.update(env)
+        stdout.write(b"x" * 3000)
+        return subprocess.CompletedProcess(args=args, returncode=1)
+
+    monkeypatch.setattr(fixtures_module.subprocess, "run", _fake_run)
+
+    passed, tail = fixtures_module._run_pytest_at(tmp_path, "tests/")
+
+    assert passed is False
+    assert len(tail) == 2000
+    assert set(tail) == {"x"}
+    assert "ANTHROPIC_API_KEY" not in captured_env
+    assert captured_env["HOME"] != str(Path.home())
 
 
 def test_check_credentials__missing_anthropic_key_returns_error() -> None:
@@ -884,6 +965,7 @@ def test_cli_real_subcommand_first_run_prints_approval(tmp_path: Path) -> None:
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        timeout=30,
     )
     assert proc.returncode == 2, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
     combined = proc.stdout + proc.stderr

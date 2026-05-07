@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -150,28 +152,60 @@ STATEFUL_CALIBRATION_FIXTURES: tuple[FixtureSpec, ...] = tuple(
 )
 
 
+_PROVIDER_ENV_NEEDLES = ("API_KEY", "AUTH_TOKEN", "ACCESS_TOKEN", "SECRET")
+_OUTPUT_TAIL_CHARS = 2000
+
+
+def _scrubbed_pytest_env(home: Path) -> dict[str, str]:
+    env: dict[str, str] = {}
+    for key in ("PATH", "PYTHONPATH", "VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"):
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    env["HOME"] = str(home)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    return {
+        key: value
+        for key, value in env.items()
+        if not any(needle in key for needle in _PROVIDER_ENV_NEEDLES)
+    }
+
+
+def _tail_text(path: Path, limit: int = _OUTPUT_TAIL_CHARS) -> str:
+    if not path.exists():
+        return ""
+    with path.open("rb") as f:
+        try:
+            f.seek(-limit, os.SEEK_END)
+        except OSError:
+            f.seek(0)
+        return f.read().decode(errors="replace")
+
+
 def _run_pytest_at(
     fixture_root: Path, target: str, *, timeout_s: int = 30
 ) -> tuple[bool, str]:
-    try:
-        proc = subprocess.run(
-            [sys.executable, "-m", "pytest", target, "-q", "--tb=line"],
-            cwd=fixture_root,
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-        )
-    except subprocess.TimeoutExpired as exc:
-        # An untrusted patch or test suite hung past `timeout_s`. Surface this
-        # as a normal verifier failure with diagnostic tail rather than letting
-        # it crash the corpus runner.
-        captured = exc.stdout or exc.stderr or b""
-        if isinstance(captured, bytes):
-            captured = captured.decode(errors="replace")
-        tail = f"<pytest timed out after {timeout_s}s>\n{captured[-2000:]}"
-        return False, tail
-    tail = proc.stdout[-2000:] if proc.stdout else proc.stderr[-2000:]
-    return proc.returncode == 0, tail
+    with tempfile.TemporaryDirectory(prefix="counterfact-pytest-") as tmp:
+        tmp_path = Path(tmp)
+        stdout_path = tmp_path / "stdout.txt"
+        stderr_path = tmp_path / "stderr.txt"
+        home = tmp_path / "home"
+        home.mkdir()
+        with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "-m", "pytest", target, "-q", "--tb=line"],
+                    cwd=fixture_root,
+                    stdout=stdout,
+                    stderr=stderr,
+                    timeout=timeout_s,
+                    env=_scrubbed_pytest_env(home),
+                )
+            except subprocess.TimeoutExpired:
+                tail = _tail_text(stdout_path) or _tail_text(stderr_path)
+                return False, f"<pytest timed out after {timeout_s}s>\n{tail}"
+        tail = _tail_text(stdout_path) or _tail_text(stderr_path)
+        return proc.returncode == 0, tail
 
 
 def run_pytest(fixture_root: Path, *, timeout_s: int = 30) -> tuple[bool, str]:
