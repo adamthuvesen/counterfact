@@ -45,6 +45,33 @@ def test_diagnose_cli__json_round_trips(tmp_path: Path, capsys: pytest.CaptureFi
     assert report.entries[0].decision_id
 
 
+def test_diagnose_cli__decision_type_filters_ranked_entries(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    paths = _write_synthetic_corpus(tmp_path / "runs", n=60)
+
+    rc = main(
+        [
+            "diagnose",
+            str(paths[0]),
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            "--decision-type",
+            "model_call",
+            "--top-k",
+            "10",
+            "--bootstrap",
+            "10",
+            "--json",
+        ]
+    )
+
+    assert rc == 0
+    report = DiagnosisReport.model_validate_json(capsys.readouterr().out)
+    assert report.entries
+    assert {entry.decision_type for entry in report.entries} == {"model_call"}
+
+
 def test_diagnose_cli__html_writes_report_and_keeps_text_summary(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
