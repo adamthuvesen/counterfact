@@ -125,6 +125,14 @@ def test_is_error_true_produces_fail_outcome() -> None:
     assert run.outcome.value is False
 
 
+def test_is_error_string_false_is_rejected() -> None:
+    msgs = _pass_messages()
+    msgs[-1]["is_error"] = "false"
+
+    with pytest.raises(IngestError, match="JSON boolean"):
+        run_from_messages(msgs)
+
+
 def test_terminal_step_is_highest_index_and_marks_termination() -> None:
     run = run_from_messages(_pass_messages())
 

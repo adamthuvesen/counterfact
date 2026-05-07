@@ -75,6 +75,19 @@ def test_outcome_marker_span_drives_outcome_without_flag() -> None:
     assert run.outcome.verifier == "counterfact_outcome_marker"
 
 
+def test_outcome_marker_rejects_string_boolean() -> None:
+    trace = _load("with_handoff.json")
+    marker = next(
+        span
+        for span in trace["spans"]
+        if span["span_data"].get("name") == "counterfact.outcome"
+    )
+    marker["span_data"]["data"]["value"] = "false"
+
+    with pytest.raises(IngestError, match="JSON boolean"):
+        run_from_trace(trace)
+
+
 def test_root_error_drives_fail_outcome_without_flag() -> None:
     run = run_from_trace(_load("root_error.json"))
     assert run.outcome.value is False
@@ -110,6 +123,35 @@ def test_unknown_span_type_aborts() -> None:
         }
     )
     with pytest.raises(IngestError, match="future_widget"):
+        run_from_trace(bad, outcome=True)
+
+
+def test_unreachable_span_aborts() -> None:
+    bad = _load("minimal.json")
+    bad["spans"].append(
+        {
+            "object": "trace.span",
+            "id": "span-orphan",
+            "trace_id": "trace-ai-001",
+            "parent_id": "span-missing",
+            "started_at": "2026-05-06T19:00:01.400Z",
+            "ended_at": "2026-05-06T19:00:01.450Z",
+            "span_data": {"type": "function", "name": "lost_tool"},
+            "error": None,
+        }
+    )
+
+    with pytest.raises(IngestError, match=r"unreachable.*span-orphan"):
+        run_from_trace(bad, outcome=True)
+
+
+def test_duplicate_span_id_aborts() -> None:
+    bad = _load("minimal.json")
+    duplicate = dict(bad["spans"][1])
+    duplicate["parent_id"] = "span-root"
+    bad["spans"].append(duplicate)
+
+    with pytest.raises(IngestError, match="duplicate span id"):
         run_from_trace(bad, outcome=True)
 
 
