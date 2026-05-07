@@ -23,6 +23,7 @@ from counterfact.adapters._common import (
     IngestError,
     IngestReceipt,
     randomization_warning,
+    strict_bool,
     write_corpus,
 )
 from counterfact.schema import Decision, Observation, Outcome, Run, Step
@@ -65,9 +66,20 @@ def _validate_span_types(spans: list[dict[str, Any]]) -> None:
 def _topological_order(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """DFS the parent_id tree from the root, sorting siblings by started_at then span_id."""
 
+    seen_ids: set[str] = set()
+    duplicate_ids: set[str] = set()
     by_parent: dict[str | None, list[dict[str, Any]]] = {}
     for span in spans:
+        span_id = str(span.get("id"))
+        if span_id in seen_ids:
+            duplicate_ids.add(span_id)
+        seen_ids.add(span_id)
         by_parent.setdefault(span.get("parent_id"), []).append(span)
+    if duplicate_ids:
+        raise IngestError(
+            "openai-agents trace has duplicate span id(s): "
+            + ", ".join(sorted(duplicate_ids))
+        )
     for siblings in by_parent.values():
         siblings.sort(
             key=lambda s: (s.get("started_at") or "", s.get("id") or "")
@@ -89,6 +101,13 @@ def _topological_order(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
         # Reverse so DFS pops in sorted order.
         for child in reversed(children):
             stack.append(child)
+    visited = {str(span.get("id")) for span in ordered}
+    unreachable = sorted(seen_ids - visited)
+    if unreachable:
+        raise IngestError(
+            "openai-agents trace contains span(s) unreachable from the root: "
+            + ", ".join(unreachable)
+        )
     return ordered
 
 
@@ -182,7 +201,10 @@ def _outcome_marker_value(spans: list[dict[str, Any]]) -> bool | None:
             continue
         data = sdata.get("data") or {}
         if "value" in data:
-            return bool(data["value"])
+            return strict_bool(
+                data["value"],
+                field_name=f"{_OUTCOME_MARKER_NAME}.data.value",
+            )
     return None
 
 

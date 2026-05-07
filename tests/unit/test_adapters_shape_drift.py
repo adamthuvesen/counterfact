@@ -7,11 +7,21 @@ from pathlib import Path
 
 import pytest
 
-from counterfact.adapters._common import IngestError
+from counterfact.adapters._common import IngestError, IngestReceipt, write_corpus
 from counterfact.adapters.claude_agent_sdk import (
     ingest_claude_agent_sdk,
     run_from_messages,
 )
+from counterfact.schema import Outcome, Run
+
+
+def _empty_run(run_id: str) -> Run:
+    return Run(
+        schema_version="0.1.0",
+        run_id=run_id,
+        steps=[],
+        outcome=Outcome(kind="binary", value=True, verifier="test"),
+    )
 
 
 def test_claude_unknown_block_aborts() -> None:
@@ -37,6 +47,26 @@ def test_claude_unknown_block_aborts() -> None:
         run_from_messages(messages)
 
     assert "FutureWidgetBlock" in str(excinfo.value)
+
+
+def test_write_corpus_rejects_path_traversal_run_id(tmp_path: Path) -> None:
+    receipt = IngestReceipt(source_format="test", source_file="source", generated_count=1)
+
+    with pytest.raises(IngestError, match="unsafe run_id"):
+        write_corpus([_empty_run("../escaped")], tmp_path / "out", receipt)
+
+    assert not (tmp_path / "escaped.json").exists()
+    assert not (tmp_path / "out").exists()
+
+
+def test_write_corpus_rejects_duplicate_run_ids_before_writing(tmp_path: Path) -> None:
+    receipt = IngestReceipt(source_format="test", source_file="source", generated_count=2)
+    out_dir = tmp_path / "out"
+
+    with pytest.raises(IngestError, match="duplicate run_id"):
+        write_corpus([_empty_run("same"), _empty_run("same")], out_dir, receipt)
+
+    assert not out_dir.exists()
 
 
 def test_claude_unknown_message_type_aborts() -> None:

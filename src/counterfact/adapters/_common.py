@@ -9,6 +9,7 @@ adapters under `counterfact.adapters` reuse these primitives.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -36,6 +37,15 @@ class IngestReceipt(BaseModel):
 
 class IngestError(RuntimeError):
     """Raised when an ingest adapter cannot produce a valid native corpus."""
+
+
+def strict_bool(value: Any, *, field_name: str) -> bool:
+    """Return a JSON boolean or reject ambiguous truthy/falsy values."""
+    if isinstance(value, bool):
+        return value
+    raise IngestError(
+        f"{field_name} must be a JSON boolean; got {type(value).__name__}"
+    )
 
 
 def randomization_warning(source_format: str) -> str:
@@ -92,9 +102,26 @@ def write_corpus(runs: list[Run], output_dir: Path, receipt: IngestReceipt) -> N
     making sure run_ids are unique across the corpus.
     """
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    planned: list[tuple[Run, Path]] = []
+    seen: set[str] = set()
+    base = output_dir.resolve()
     for run in runs:
-        (output_dir / f"{run.run_id}.json").write_text(
+        if run.run_id in seen:
+            raise IngestError(f"duplicate run_id in corpus: {run.run_id!r}")
+        seen.add(run.run_id)
+        if not run.run_id or run.run_id in {".", ".."} or "\\" in run.run_id:
+            raise IngestError(f"unsafe run_id for output filename: {run.run_id!r}")
+        run_id_path = Path(run.run_id)
+        if run_id_path.is_absolute() or len(run_id_path.parts) != 1:
+            raise IngestError(f"unsafe run_id for output filename: {run.run_id!r}")
+        out_path = base / f"{run.run_id}.json"
+        if base not in out_path.resolve().parents:
+            raise IngestError(f"run_id escapes output directory: {run.run_id!r}")
+        planned.append((run, out_path))
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for run, out_path in planned:
+        out_path.write_text(
             run.model_dump_json(indent=2) + "\n"
         )
     (output_dir / "ingest-receipt.json").write_text(
@@ -107,5 +134,6 @@ __all__ = [
     "IngestReceipt",
     "per_decision_randomization_warnings",
     "randomization_warning",
+    "strict_bool",
     "write_corpus",
 ]

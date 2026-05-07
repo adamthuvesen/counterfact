@@ -21,6 +21,7 @@ from counterfact.adapters._common import (
     IngestError,
     IngestReceipt,
     randomization_warning,
+    strict_bool,
     write_corpus,
 )
 from counterfact.schema import Decision, Observation, Outcome, Run, Step
@@ -223,7 +224,7 @@ def _assistant_decisions(
 def _terminal_step(
     result: dict[str, Any], *, run_id: str, step_index: int
 ) -> Step:
-    is_error = bool(result.get("is_error", False))
+    is_error = strict_bool(result.get("is_error"), field_name="ResultMessage.is_error")
     return Step(
         step_index=step_index,
         decisions=[
@@ -246,7 +247,7 @@ def _outcome(result: dict[str, Any] | None) -> Outcome:
         raise IngestError(
             "claude-agent-sdk message stream has no ResultMessage; cannot derive Outcome"
         )
-    is_error = bool(result.get("is_error", False))
+    is_error = strict_bool(result.get("is_error"), field_name="ResultMessage.is_error")
     return Outcome(
         kind="binary",
         value=not is_error,
@@ -338,7 +339,9 @@ def run_from_messages(messages: list[dict[str, Any]]) -> Run:
         )
         next_step_index += 1
 
-    steps.append(_terminal_step(result_msg or {}, run_id=run_id, step_index=next_step_index))
+    if result_msg is None:
+        _outcome(result_msg)
+    steps.append(_terminal_step(result_msg, run_id=run_id, step_index=next_step_index))
 
     metadata_extra: dict[str, Any] = {"source_format": SOURCE_FORMAT}
     if result_msg is not None:
