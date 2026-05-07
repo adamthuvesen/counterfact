@@ -14,6 +14,7 @@ from collections.abc import Iterable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from counterfact.outcome.binary import binary_outcome_value
 from counterfact.schema import Run
 
 
@@ -77,7 +78,7 @@ def pass_rate_by_arm(
     bucket_n: dict[str, int] = {}
     bucket_pass: dict[str, int] = {}
     for run in corpus:
-        outcome_pass = bool(run.outcome.value)
+        outcome_pass = binary_outcome_value(run)
         for step in run.steps:
             for d in step.decisions:
                 if d.decision_type != decision_type:

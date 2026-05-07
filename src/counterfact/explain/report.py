@@ -16,9 +16,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from counterfact.attribute import FailureAttribution, attribute_failure
 from counterfact.baselines import PassRateTable, pass_rate_by_arm
 from counterfact.dag import DAG, build_dag
+from counterfact.errors import InsufficientOutcomeSupportError
 from counterfact.intervene.degenerate import degenerate_estimate, outcome_classes
-from counterfact.intervene.estimate import CausalEstimate
+from counterfact.intervene.estimate import (
+    CausalEstimate,
+    IdentifiabilityStatus,
+    InterventionQuery,
+    NextStep,
+)
 from counterfact.outcome import fit_outcome_model
+from counterfact.outcome.binary import binary_outcome_value
 from counterfact.schema import DecisionTypeLiteral, Run
 
 _INTERVENTION_KIND_BY_DECISION_TYPE: dict[str, str] = {
@@ -61,6 +68,41 @@ def _first_arm(runs: list[Run], decision_type: str) -> str | None:
     return None
 
 
+def _no_feature_estimate(
+    *,
+    decision_type: str,
+    intervention_kind: str,
+    target: str | None,
+    reason: str,
+) -> CausalEstimate:
+    return CausalEstimate(
+        query=InterventionQuery(
+            decision_type=decision_type,
+            intervention_kind=intervention_kind,
+            target=target,
+            step=-1,
+        ),
+        identifiability=IdentifiabilityStatus.UNIDENTIFIED,
+        reason=reason,
+        warnings=["fit_outcome_model is skipped because the corpus has no features"],
+        next_step=NextStep(
+            action="broaden_arm_support",
+            payload={
+                "arm_name": decision_type,
+                "missing_strata": [
+                    "no intervenable decisions with chosen_action values were observed"
+                ],
+                "observed_arms": [],
+                "missing_arms": [],
+            },
+            human_text=(
+                "Collect traces with supported decisions and chosen actions before "
+                "estimating decision-level effects."
+            ),
+        ),
+    )
+
+
 def build_report(
     focal_run: Run,
     corpus: list[Run],
@@ -91,7 +133,7 @@ def build_report(
     dag = build_dag(focal_run)
 
     classes = outcome_classes(corpus)
-    n_pass = sum(1 for r in corpus if bool(r.outcome.value))
+    n_pass = sum(1 for r in corpus if binary_outcome_value(r))
     pass_rate: float | None = n_pass / len(corpus) if corpus else None
 
     if len(classes) < 2:
@@ -121,7 +163,33 @@ def build_report(
             corpus_dir=corpus_dir,
         )
 
-    model = fit_outcome_model(corpus, n_bootstrap=bootstrap, seed=seed)
+    try:
+        model = fit_outcome_model(corpus, n_bootstrap=bootstrap, seed=seed)
+    except InsufficientOutcomeSupportError as exc:
+        target = _first_arm(corpus, decision_type)
+        estimate = _no_feature_estimate(
+            decision_type=decision_type,
+            intervention_kind=intervention_kind,
+            target=target,
+            reason=str(exc),
+        )
+        return ExplainReport(
+            run=focal_run,
+            corpus_size=len(corpus),
+            corpus_pass_rate=pass_rate,
+            pass_rate_table=table,
+            dag=dag,
+            attribution=FailureAttribution(entries=[]),
+            degenerate_estimate=estimate,
+            summary_decision_type=decision_type,
+            decision_type_intervention_kind=intervention_kind,
+            target_arm=target,
+            bootstrap=bootstrap,
+            seed=seed,
+            run_path=run_path,
+            corpus_dir=corpus_dir,
+            notes=[str(exc)],
+        )
     attribution = attribute_failure(dag=dag, model=model)
     return ExplainReport(
         run=focal_run,

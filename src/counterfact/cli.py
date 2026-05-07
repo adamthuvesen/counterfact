@@ -304,6 +304,7 @@ def _format_pass_rate_table(runs: list[Run], decision_type: str) -> list[str]:
 def _demo(args: argparse.Namespace) -> int:
     from counterfact import fit_outcome_model, intervene, pass_rate_by_arm
     from counterfact.dag import build_dag
+    from counterfact.outcome.binary import binary_outcome_value
 
     if args.confound:
         runs = _synthetic_runs(n=args.synthetic_n, seed=args.seed, confound=True)
@@ -328,7 +329,7 @@ def _demo(args: argparse.Namespace) -> int:
     else:
         target = _first_arm(runs, decision_type)
 
-    pass_count = sum(1 for run in runs if bool(run.outcome.value))
+    pass_count = sum(1 for run in runs if binary_outcome_value(run))
     print("counterfact demo: naive vs honest")
     print(f"data: {source}")
     print(f"outcomes: {pass_count} pass / {len(runs) - pass_count} fail")
@@ -408,7 +409,11 @@ def _demo(args: argparse.Namespace) -> int:
 def _bench_synthetic(args: argparse.Namespace) -> int:
     from bench.synthetic.generate import generate_corpus
 
-    out = generate_corpus(n=args.n, seed=args.seed, output_dir=args.output_dir)
+    try:
+        out = generate_corpus(n=args.n, seed=args.seed, output_dir=args.output_dir)
+    except ValueError as exc:
+        print(f"counterfact bench synthetic: {exc}", file=sys.stderr)
+        return 2
     print(f"Wrote {args.n} synthetic traces to {out}")
     return 0
 
