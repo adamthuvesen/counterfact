@@ -87,12 +87,6 @@ the data does not support. Pointing it at a single-class run (e.g. anything in
 `broaden_arm_support` next-step callout and no point estimate anywhere on the
 page.
 
-For a hands-on tour, see `examples/trace-forensics/`. The gallery has small
-synthetic fixtures for wrong model choice, bad tool choice, missed retry,
-stopped too early, unsupported counterfactuals, single-class support refusal,
-and pass/fail trace diffs. It is deliberately illustrative, not benchmark
-evidence.
-
 For a reusable artifact, `counterfact intervene <run-json> --decision-id <id>
 --set model_choice=large --json` emits the raw `CausalEstimate` JSON for one
 decision edit. That is the trace-forensics loop: use `diagnose` to find the

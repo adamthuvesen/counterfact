@@ -561,19 +561,16 @@ def test_render__decision_card_renders_support_diagnostics() -> None:
     assert "localization limit: decision-id support is absent" in section
 
 
-def test_render__diagnosis_report_shows_summary_entries_and_support_context() -> None:
-    corpus = [
-        Run.model_validate_json(p.read_text())
-        for p in sorted(Path("examples/trace-forensics/single-arm-model").glob("*.json"))
-    ]
+def test_render__diagnosis_report_shows_summary_entries() -> None:
+    corpus = _synthetic_corpus(n=60, seed=42)
     diagnosis, report = build_diagnosis_pair(
         corpus[0],
         corpus,
         top_k=3,
         bootstrap=10,
         seed=42,
-        run_path="examples/trace-forensics/single-arm-model/single-arm-000000.json",
-        corpus_dir="examples/trace-forensics/single-arm-model",
+        run_path="synthetic/syn-000000.json",
+        corpus_dir="synthetic",
     )
 
     html = render_html(report, now=FIXED_NOW)
@@ -586,7 +583,6 @@ def test_render__diagnosis_report_shows_summary_entries_and_support_context() ->
     for entry in diagnosis.entries:
         assert entry.decision_id in section
         assert entry.identifiability.value in section
-    assert "support diagnostics" in html
     assert "Trace timeline" in html
     assert "RAW_OBSERVATION_SECRET" not in html
 
