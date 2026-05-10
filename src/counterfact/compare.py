@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from counterfact._fmt import outcome_label as _outcome_label
 from counterfact.diagnose import DiagnosisReport
 from counterfact.schema import Run
 
@@ -39,15 +40,7 @@ class TraceComparison(_Strict):
     decision_diffs: list[DecisionDiff] = Field(default_factory=list)
     step_diffs: list[StepDiff] = Field(default_factory=list)
     diagnosis: DiagnosisReport | None = None
-    note: str = (
-        "descriptive trace diff only; causal claims require a corpus-backed diagnosis"
-    )
-
-
-def _outcome_label(run: Run) -> str:
-    if run.outcome.kind == "binary":
-        return "pass" if bool(run.outcome.value) else "fail"
-    return f"{run.outcome.kind}={run.outcome.value!r}"
+    note: str = "descriptive trace diff only; causal claims require a corpus-backed diagnosis"
 
 
 def _decision_rows(run: Run) -> dict[tuple[int, str, int], tuple[str, str | None]]:

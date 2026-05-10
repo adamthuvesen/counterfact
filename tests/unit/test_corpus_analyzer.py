@@ -118,15 +118,60 @@ def test_model_arm_outcome_mix_passes_when_both_model_arms_are_mixed() -> None:
     assert criterion.reason == "model_arm_outcome_mix: ok"
 
 
+def test_model_arm_outcome_mix_passes_for_real_model_identifier_arms() -> None:
+    """Real corpora use arm names like `claude-sonnet-4-6`, not `small`/`large`.
+
+    The arm-agnostic check operates on whatever model_call arms appear, so a
+    real corpus with two mixed-outcome model arms passes without any
+    synthetic-benchmark naming convention.
+    """
+    runs = [
+        *[_model_arm_run(f"sonnet-pass-{i}", "claude-sonnet-4-6", True) for i in range(3)],
+        *[_model_arm_run(f"sonnet-fail-{i}", "claude-sonnet-4-6", False) for i in range(3)],
+        *[_model_arm_run(f"gpt-pass-{i}", "gpt-4o", True) for i in range(3)],
+        *[_model_arm_run(f"gpt-fail-{i}", "gpt-4o", False) for i in range(3)],
+    ]
+
+    report = analyze(runs)
+    criterion = next(c for c in report.criteria if c.name == "model_arm_outcome_mix")
+    assert criterion.passed is True
+    assert criterion.reason == "model_arm_outcome_mix: ok"
+
+
+def test_model_arm_outcome_mix_rejects_perfect_real_model_arm() -> None:
+    """A real corpus with one perfect arm must fail, just like synthetic."""
+    runs = [
+        *[_model_arm_run(f"sonnet-pass-{i}", "claude-sonnet-4-6", True) for i in range(6)],
+        _model_arm_run("gpt-pass", "gpt-4o", True),
+        *[_model_arm_run(f"gpt-fail-{i}", "gpt-4o", False) for i in range(6)],
+    ]
+
+    report = analyze(runs)
+    criterion = next(c for c in report.criteria if c.name == "model_arm_outcome_mix")
+    assert criterion.passed is False
+    assert "claude-sonnet-4-6=pass:6,fail:0" in criterion.reason
+
+
+def test_model_arm_outcome_mix_rejects_single_model_arm_corpus() -> None:
+    """A corpus with only one model_call arm cannot demonstrate mix."""
+    runs = [
+        *[_model_arm_run(f"only-pass-{i}", "claude-sonnet-4-6", True) for i in range(3)],
+        *[_model_arm_run(f"only-fail-{i}", "claude-sonnet-4-6", False) for i in range(3)],
+    ]
+
+    report = analyze(runs)
+    criterion = next(c for c in report.criteria if c.name == "model_arm_outcome_mix")
+    assert criterion.passed is False
+    assert "only one model_call arm" in criterion.reason
+
+
 def test_outcome_balance_failing_reason_is_pinned_format() -> None:
     """Pin the failure reason format character-for-character so any future
     change to the formatting is deliberate."""
     runs = [_all_pass_run(f"r{i}") for i in range(10)]
     report = analyze(runs)
     outcome_balance = next(c for c in report.criteria if c.name == "outcome_balance")
-    assert outcome_balance.reason == (
-        "outcome_balance: pass_rate=1.000 outside [0.300, 0.700]"
-    )
+    assert outcome_balance.reason == ("outcome_balance: pass_rate=1.000 outside [0.300, 0.700]")
 
 
 def test_passing_criteria_reasons_end_with_ok() -> None:
@@ -151,9 +196,7 @@ def test_custom_thresholds_can_reject_a_previously_promoted_corpus() -> None:
     )
     strict_report = analyze(runs, thresholds=strict)
     assert strict_report.promote is False
-    outcome_balance = next(
-        c for c in strict_report.criteria if c.name == "outcome_balance"
-    )
+    outcome_balance = next(c for c in strict_report.criteria if c.name == "outcome_balance")
     assert outcome_balance.passed is False
 
 

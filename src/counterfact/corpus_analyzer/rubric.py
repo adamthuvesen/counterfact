@@ -14,8 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field
 class RubricThresholds(BaseModel):
     """Thresholds the analyzer scores a corpus against.
 
-    See `openspec/specs/corpus-analyzer/spec.md` for the requirements text and
-    `design.md` decision 2 for why this lives in code rather than config.
+    Lives in code (not config or env) so threshold changes show up as a visible
+    diff and require a deliberate PR. Bumping the bar is a product decision.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

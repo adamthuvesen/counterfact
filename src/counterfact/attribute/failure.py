@@ -204,13 +204,8 @@ def attribute_failure(
                     intervention={intervention_kind: sibling},
                 )
                 ident = _combined_identifiability(actual, cf)
-                if (
-                    cf.outcome_delta is not None
-                    and ident != IdentifiabilityStatus.UNIDENTIFIED
-                ):
-                    influence = abs(
-                        actual.outcome_delta.point - cf.outcome_delta.point
-                    )
+                if cf.outcome_delta is not None and ident != IdentifiabilityStatus.UNIDENTIFIED:
+                    influence = abs(actual.outcome_delta.point - cf.outcome_delta.point)
                 else:
                     influence = 0.0
                 if best_influence is None or influence > best_influence:

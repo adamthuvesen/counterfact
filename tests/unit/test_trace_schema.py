@@ -16,8 +16,6 @@ def _fixture() -> dict:
 
 
 def test_native_json_format__round_trip_preserves_run_fixture() -> None:
-    """WHEN a canonical fixture trace JSON is loaded into a `Run` model and re-serialized to JSON
-    THEN the resulting JSON parses back into an equal `Run` instance with no field loss."""
     from counterfact.schema import Run
 
     raw = FIXTURE_PATH.read_text()
@@ -28,8 +26,6 @@ def test_native_json_format__round_trip_preserves_run_fixture() -> None:
 
 
 def test_native_json_format__unknown_fields_are_rejected() -> None:
-    """WHEN a JSON document containing a top-level key not present in the `Run` schema is loaded
-    THEN the system raises a `pydantic.ValidationError` (no silent acceptance of extra fields)."""
     from counterfact.schema import Run
 
     payload = _fixture()
@@ -40,8 +36,6 @@ def test_native_json_format__unknown_fields_are_rejected() -> None:
 
 
 def test_native_json_format__required_fields_are_enforced() -> None:
-    """WHEN a JSON document is missing a required field on Run, Step, Decision, or Outcome
-    THEN the system raises a pydantic.ValidationError naming the missing field."""
     from counterfact.schema import Run
 
     payload = _fixture()
@@ -52,9 +46,6 @@ def test_native_json_format__required_fields_are_enforced() -> None:
 
 
 def test_outcome_tagged_union__binary_outcome_accepted_end_to_end() -> None:
-    """WHEN a trace with Outcome(kind="binary", value=True, verifier="pytest") is loaded
-    and passed to fit_outcome_model
-    THEN the call succeeds and the outcome is fit as a binary target."""
     from counterfact import fit_outcome_model
     from counterfact.schema import Run
 
@@ -73,9 +64,6 @@ def test_outcome_tagged_union__binary_outcome_accepted_end_to_end() -> None:
 
 
 def test_outcome_tagged_union__categorical_outcome_rejected_at_fit_time() -> None:
-    """WHEN a trace with Outcome(kind="categorical", value="tool_error", verifier="manual")
-    is loaded and passed to fit_outcome_model
-    THEN the system raises UnsupportedOutcomeError referencing kind="categorical"."""
     from counterfact import fit_outcome_model
     from counterfact.errors import UnsupportedOutcomeError
     from counterfact.schema import Run
@@ -94,8 +82,6 @@ def test_outcome_tagged_union__categorical_outcome_rejected_at_fit_time() -> Non
 
 
 def test_outcome_tagged_union__continuous_outcome_rejected_at_intervene_time() -> None:
-    """WHEN a model is somehow configured with kind="continuous" outcomes and intervene() is called
-    THEN the system raises UnsupportedOutcomeError."""
     from counterfact import build_dag, intervene
     from counterfact.errors import UnsupportedOutcomeError
     from counterfact.schema import Run
@@ -123,8 +109,6 @@ def test_outcome_tagged_union__continuous_outcome_rejected_at_intervene_time() -
 
 
 def test_decisions_log_randomization__randomized_decision_round_trips_with_propensity() -> None:
-    """WHEN a Decision with full randomization metadata is round-tripped through JSON
-    THEN all six randomization fields are preserved."""
     from counterfact.schema import Decision
 
     src = Decision(
@@ -149,8 +133,6 @@ def test_decisions_log_randomization__randomized_decision_round_trips_with_prope
 
 
 def test_decisions_log_randomization__unrandomized_decision_has_no_propensity() -> None:
-    """WHEN a Decision is created without randomization metadata
-    THEN the decision serializes without a propensity field and is loadable again without error."""
     from counterfact.schema import Decision
 
     src = Decision(decision_id="d-plain", decision_type="plan_step", chosen_action="investigate")
@@ -194,8 +176,6 @@ def test_decisions_log_randomization__chosen_action_must_be_valid_action() -> No
 
 
 def test_decisions_log_randomization__propensity_must_be_in_zero_one_inclusive() -> None:
-    """WHEN a Decision is constructed with propensity=0.0 or propensity=1.5
-    THEN the system raises a pydantic.ValidationError."""
     from counterfact.schema import Decision
 
     base = dict(decision_id="d-bad", decision_type="tool_call")
@@ -243,8 +223,6 @@ def test_run_rejects_duplicate_decision_ids() -> None:
 
 
 def test_schema_versioning__unrecognized_version_is_rejected() -> None:
-    """WHEN a trace with schema_version="0.99.0" is loaded by a runtime that only recognizes "0.1.0"
-    THEN the system raises a clear error naming both the seen and supported versions."""
     from counterfact.schema import SCHEMA_VERSION, Run
 
     payload = _fixture()
@@ -257,8 +235,6 @@ def test_schema_versioning__unrecognized_version_is_rejected() -> None:
 
 
 def test_schema_versioning__current_version_round_trips() -> None:
-    """WHEN a trace produced by the current runtime is loaded by the same runtime
-    THEN load succeeds and schema_version survives the round-trip."""
     from counterfact.schema import SCHEMA_VERSION, Run
 
     payload = _fixture()

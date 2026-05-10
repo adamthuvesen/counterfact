@@ -1,8 +1,8 @@
 """Corpus-readiness analyzer.
 
 Check whether a trace corpus has enough support for counterfactual diagnosis
-and intervention estimates. No LLM calls, no file writes. See
-`openspec/specs/corpus-analyzer/spec.md` for the public contract.
+and intervention estimates. No LLM calls, no file writes. The public contract
+is the `CorpusReadinessReport` shape returned by `analyze`.
 """
 
 from counterfact.corpus_analyzer.analyze import analyze

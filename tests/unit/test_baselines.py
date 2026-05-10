@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from counterfact.baselines import pass_rate_by_arm
+from bench.synthetic import generate_traces
+from counterfact import build_dag, fit_outcome_model, intervene
+from counterfact.baselines import PassRateTable, pass_rate_by_arm
+from counterfact.intervene import CausalEstimate, IdentifiabilityStatus
 from counterfact.schema import Decision, Outcome, Run, Step
 
 
@@ -127,8 +130,6 @@ def test_all_actionless_matching_decisions_return_empty_table() -> None:
 
 
 def test_decision_type_filter_excludes_other_types() -> None:
-    """A run with both retry and model_call decisions should only count one
-    when queried for a single decision_type."""
     run = _make_run(
         run_id="r",
         arms_for_decision=[("retry", "no_retry"), ("model_call", "large")],
@@ -140,9 +141,35 @@ def test_decision_type_filter_excludes_other_types() -> None:
     assert table.rows[0].n == 1
 
 
-def test_docstring_labels_naive_caveat() -> None:
-    """Per spec: docstring must explicitly call this the naive marginal estimator
-    and direct callers to intervene()."""
-    doc = pass_rate_by_arm.__doc__ or ""
-    assert "naive marginal estimator" in doc.lower()
-    assert "intervene" in doc.lower()
+def test_naive_baseline_and_causal_estimator_return_distinct_structures() -> None:
+    """Behavioral pin on the descriptive-vs-causal distinction.
+
+    `pass_rate_by_arm` is the naive marginal baseline: a tabular per-arm
+    breakdown with raw rates and Wilson CIs. `intervene` is the causal
+    estimator: a structured `CausalEstimate` with an identifiability label.
+    Running both on the same corpus must produce different result types — if
+    a future refactor accidentally aliases one to the other, this test fails.
+    """
+    corpus = [Run.model_validate(t) for t in generate_traces(n=120, seed=11)]
+
+    table = pass_rate_by_arm(corpus, "model_call")
+    model = fit_outcome_model(corpus, n_bootstrap=10, seed=11)
+    estimate = intervene(
+        dag=build_dag(corpus[0]),
+        model=model,
+        step=2,  # model_call step in synthetic SCM
+        intervention={"model_choice": "sonnet"},
+    )
+
+    assert isinstance(table, PassRateTable)
+    assert isinstance(estimate, CausalEstimate)
+    assert type(table) is not type(estimate)
+
+    # Descriptive: tabular rows of raw rates, no identifiability concept.
+    assert hasattr(table, "rows")
+    assert not hasattr(table, "identifiability")
+    assert all(0.0 <= row.pass_rate <= 1.0 for row in table.rows)
+
+    # Causal: identifiability is required and lives on a known enum.
+    assert hasattr(estimate, "identifiability")
+    assert isinstance(estimate.identifiability, IdentifiabilityStatus)

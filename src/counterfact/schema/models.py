@@ -35,7 +35,8 @@ class Outcome(_Strict):
 
     `kind` selects the value type. v0 only fits `kind="binary"` at runtime, but
     the schema accepts all three kinds at parse time so v1 can extend without a
-    rewrite (see design.md D2).
+    rewrite — `categorical` and `continuous` traces parse cleanly today and
+    fail at fit time with a clear `UnsupportedOutcomeError`.
     """
 
     kind: Literal["binary", "categorical", "continuous"]
@@ -135,9 +136,7 @@ class Run(_Strict):
     def _check_schema_version(cls, v: str) -> str:
         if v not in SUPPORTED_SCHEMA_VERSIONS:
             supported = ", ".join(sorted(SUPPORTED_SCHEMA_VERSIONS))
-            raise ValueError(
-                f"unrecognized schema_version={v!r}; supported versions: {supported}"
-            )
+            raise ValueError(f"unrecognized schema_version={v!r}; supported versions: {supported}")
         return v
 
     @model_validator(mode="after")

@@ -55,9 +55,7 @@ def _wilson_ci(k: int, n: int, z: float = 1.959963984540054) -> tuple[float, flo
     return (max(0.0, center - half), min(1.0, center + half))
 
 
-def pass_rate_by_arm(
-    corpus: Iterable[Run], decision_type: str
-) -> PassRateTable:
+def pass_rate_by_arm(corpus: Iterable[Run], decision_type: str) -> PassRateTable:
     """Naive marginal pass-rate per `chosen_action` for `decision_type`.
 
     This is the **naive marginal estimator** — comparison baseline, not the
@@ -87,9 +85,7 @@ def pass_rate_by_arm(
                     continue
                 bucket_n[d.chosen_action] = bucket_n.get(d.chosen_action, 0) + 1
                 if outcome_pass:
-                    bucket_pass[d.chosen_action] = (
-                        bucket_pass.get(d.chosen_action, 0) + 1
-                    )
+                    bucket_pass[d.chosen_action] = bucket_pass.get(d.chosen_action, 0) + 1
     rows: list[PassRateRow] = []
     for arm in sorted(bucket_n):
         n = bucket_n[arm]

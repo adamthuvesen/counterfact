@@ -73,18 +73,25 @@ def _intervention_kinds_for(decision_type: str) -> tuple[str, ...]:
     return tuple(sorted(valid_interventions(decision_type)))
 
 
-def _find_single_decision_step(
-    runs: list[Run], decision_type: str, arm: str
-) -> tuple[Run, int] | None:
-    """Locate any (run, step_index) where this arm appears as the sole decision."""
+def _index_single_decision_steps(
+    runs: list[Run],
+) -> dict[tuple[str, str], tuple[Run, int]]:
+    """Build a (decision_type, chosen_action) -> (run, step_index) index.
+
+    The probe loop hits this lookup in a triple loop; computing it once turns
+    the inner search from O(runs * steps) per probe into O(1).
+    """
+    index: dict[tuple[str, str], tuple[Run, int]] = {}
     for run in runs:
         for step in run.steps:
             if len(step.decisions) != 1:
                 continue
             d = step.decisions[0]
-            if d.decision_type == decision_type and d.chosen_action == arm:
-                return run, step.step_index
-    return None
+            if not d.chosen_action:
+                continue
+            key = (d.decision_type, d.chosen_action)
+            index.setdefault(key, (run, step.step_index))
+    return index
 
 
 def _identifiability_coverage(
@@ -103,21 +110,15 @@ def _identifiability_coverage(
         # paths (always-replay, degenerate) are reachable through the engine.
         # We mark that explicitly so the rubric reasoning is honest.
         return (
-            IdentifiabilityCoverage(
-                reachable=["unidentified"], unfittable_outcome_model=True
-            ),
+            IdentifiabilityCoverage(reachable=["unidentified"], unfittable_outcome_model=True),
             identified_decision_types,
         )
 
     try:
-        model = fit_outcome_model(
-            runs, n_bootstrap=_PROBE_BOOTSTRAP, seed=_PROBE_SEED
-        )
+        model = fit_outcome_model(runs, n_bootstrap=_PROBE_BOOTSTRAP, seed=_PROBE_SEED)
     except InsufficientOutcomeSupportError:
         return (
-            IdentifiabilityCoverage(
-                reachable=["unidentified"], unfittable_outcome_model=True
-            ),
+            IdentifiabilityCoverage(reachable=["unidentified"], unfittable_outcome_model=True),
             identified_decision_types,
         )
 
@@ -126,10 +127,16 @@ def _identifiability_coverage(
     for row in arms:
         by_dt.setdefault(row.decision_type, []).append(row.arm)
 
+    # Precompute once: intervention kinds per decision type and a single-step
+    # lookup index. Both were recomputed inside the triple loop before, which
+    # made probing O(decision_types * arms * runs * steps).
+    kinds_by_dt = {dt: _intervention_kinds_for(dt) for dt in by_dt}
+    step_index = _index_single_decision_steps(runs)
+
     for dt, dt_arms in by_dt.items():
-        for kind in _intervention_kinds_for(dt):
+        for kind in kinds_by_dt[dt]:
             for arm in dt_arms:
-                located = _find_single_decision_step(runs, dt, arm)
+                located = step_index.get((dt, arm))
                 if located is None:
                     continue
                 run, step_idx = located
@@ -142,7 +149,7 @@ def _identifiability_coverage(
                     )
                 except InvalidInterventionError:
                     continue
-                label: IdentifiabilityName = est.identifiability.value  # type: ignore[assignment]
+                label: IdentifiabilityName = est.identifiability.value
                 reachable.add(label)
                 if label == "identified":
                     identified_decision_types.add(dt)
@@ -178,9 +185,7 @@ def _score_outcome_balance(
     )
 
 
-def _score_arm_support(
-    arms: list[ArmSupportRow], thresholds: RubricThresholds
-) -> RubricCriterion:
+def _score_arm_support(arms: list[ArmSupportRow], thresholds: RubricThresholds) -> RubricCriterion:
     by_dt: dict[str, list[ArmSupportRow]] = {}
     for row in arms:
         by_dt.setdefault(row.decision_type, []).append(row)
@@ -207,10 +212,7 @@ def _score_arm_support(
             ),
         )
 
-    arm_strs = [
-        f"{r.arm}={r.n}"
-        for r in sorted(by_dt[best_dt], key=lambda r: -r.n)
-    ]
+    arm_strs = [f"{r.arm}={r.n}" for r in sorted(by_dt[best_dt], key=lambda r: -r.n)]
     return RubricCriterion(
         name="arm_support",
         passed=False,
@@ -257,6 +259,14 @@ def _score_identifiability(
 def _score_model_arm_outcome_mix(
     arms: list[ArmSupportRow], thresholds: RubricThresholds
 ) -> RubricCriterion:
+    """Arm-agnostic check: at least 2 model_call arms with both pass and fail.
+
+    Earlier versions hardcoded `small`/`large` from the synthetic SCM and
+    silently passed for any real corpus that uses real model identifiers
+    (`claude-sonnet-4-6`, `gpt-4o`, ...). The check now operates on whatever
+    model_call arms the corpus actually contains: the criterion is meaningful
+    if *any* two arms exist and at least two of them carry mixed outcomes.
+    """
     if not thresholds.require_model_arm_outcome_mix:
         return RubricCriterion(
             name="model_arm_outcome_mix",
@@ -264,44 +274,47 @@ def _score_model_arm_outcome_mix(
             reason="model_arm_outcome_mix: ok",
         )
 
-    by_arm = {
-        row.arm: row
-        for row in arms
-        if row.decision_type == "model_call" and row.arm in {"small", "large"}
-    }
-    if not by_arm:
+    model_arms = [row for row in arms if row.decision_type == "model_call"]
+    # No model_call decisions at all: criterion does not apply (consistent with
+    # the old "no recognized arms" branch).
+    if not model_arms:
         return RubricCriterion(
             name="model_arm_outcome_mix",
             passed=True,
             reason="model_arm_outcome_mix: ok",
         )
 
-    missing = [arm for arm in ("small", "large") if arm not in by_arm]
+    if len(model_arms) < 2:
+        only = model_arms[0]
+        return RubricCriterion(
+            name="model_arm_outcome_mix",
+            passed=False,
+            reason=(
+                f"model_arm_outcome_mix: only one model_call arm "
+                f"({only.arm}); need >=2 arms with mixed outcomes"
+            ),
+        )
+
+    mixed_arms: list[str] = []
     single_class: list[str] = []
-    for arm in ("small", "large"):
-        row = by_arm.get(arm)
-        if row is None:
-            continue
+    for row in sorted(model_arms, key=lambda r: r.arm):
         fail_count = row.n - row.pass_count
-        if row.pass_count == 0 or fail_count == 0:
-            single_class.append(f"{arm}=pass:{row.pass_count},fail:{fail_count}")
+        if row.pass_count > 0 and fail_count > 0:
+            mixed_arms.append(row.arm)
+        else:
+            single_class.append(f"{row.arm}=pass:{row.pass_count},fail:{fail_count}")
 
-    if not missing and not single_class:
+    if len(mixed_arms) >= 2:
         return RubricCriterion(
             name="model_arm_outcome_mix",
             passed=True,
             reason="model_arm_outcome_mix: ok",
         )
 
-    details = []
-    if missing:
-        details.append("missing arms: " + ",".join(missing))
-    if single_class:
-        details.append("single-class arms: " + "; ".join(single_class))
     return RubricCriterion(
         name="model_arm_outcome_mix",
         passed=False,
-        reason="model_arm_outcome_mix: " + "; ".join(details),
+        reason="model_arm_outcome_mix: single-class arms: " + "; ".join(single_class),
     )
 
 

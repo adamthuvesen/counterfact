@@ -27,21 +27,15 @@ from counterfact.schema import Run
 
 @pytest.fixture(scope="module")
 def confounded_corpus() -> tuple[list[Run], object]:
-    runs = [
-        Run.model_validate(t) for t in generate_traces(n=1000, seed=42, confound=True)
-    ]
+    runs = [Run.model_validate(t) for t in generate_traces(n=1000, seed=42, confound=True)]
     model = fit_outcome_model(runs, n_bootstrap=50, seed=42)
     return runs, model
 
 
 def _arm_gap(model: object, runs: list[Run]) -> float:
     dag = build_dag(runs[0])
-    e_sonnet = intervene(
-        dag=dag, model=model, step=2, intervention={"model_choice": "sonnet"}
-    )
-    e_haiku = intervene(
-        dag=dag, model=model, step=2, intervention={"model_choice": "haiku"}
-    )
+    e_sonnet = intervene(dag=dag, model=model, step=2, intervention={"model_choice": "sonnet"})
+    e_haiku = intervene(dag=dag, model=model, step=2, intervention={"model_choice": "haiku"})
     assert e_sonnet.identifiability == IdentifiabilityStatus.IDENTIFIED
     assert e_haiku.identifiability == IdentifiabilityStatus.IDENTIFIED
     assert e_sonnet.outcome_delta is not None and e_haiku.outcome_delta is not None

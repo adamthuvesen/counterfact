@@ -110,11 +110,8 @@ def test_top1_attribution_matches_hand_labeled_root_cause(
             continue
         actual = top[0].decision_id
         if actual != expected:
-            failures.append(
-                f"run_id={run_id!r}: top_1={actual!r}, labeled root cause={expected!r}"
-            )
+            failures.append(f"run_id={run_id!r}: top_1={actual!r}, labeled root cause={expected!r}")
     assert not failures, (
         "Top-1 attribution disagrees with hand-labeled root cause for "
-        f"{len(failures)}/{len(labels)} label(s):\n  - "
-        + "\n  - ".join(failures)
+        f"{len(failures)}/{len(labels)} label(s):\n  - " + "\n  - ".join(failures)
     )

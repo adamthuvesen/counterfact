@@ -1,7 +1,7 @@
 """Decision-type taxonomy.
 
-The reusable abstraction is not the DAG; it is the typed decision schema (see
-README and design.md D5). Each decision type declares:
+The reusable abstraction is not the DAG; it is the typed decision schema.
+Each decision type declares:
 
 * the set of intervention kinds it accepts
 * an identifiability stance per intervention kind
@@ -96,9 +96,7 @@ def identifiability_stance(decision_type: str, intervention_kind: str) -> Identi
     _ensure_known(decision_type)
     key = (decision_type, intervention_kind)
     if key not in _IDENTIFIABILITY_STANCE:
-        raise UnknownDecisionTypeError(
-            f"no identifiability stance declared for {key!r}"
-        )
+        raise UnknownDecisionTypeError(f"no identifiability stance declared for {key!r}")
     return _IDENTIFIABILITY_STANCE[key]
 
 
@@ -112,29 +110,41 @@ def extract_features(decision: Decision, run: Run) -> dict[str, Any]:
     """Map a Decision (in the context of its Run) to a feature dict for the outcome model.
 
     Per-type feature extractors live in this module so the taxonomy stays the
-    single source of truth. Initial v0 set per design.md D3.
+    single source of truth for both feature key naming and per-type metadata.
+
+    The `feature_key` field is the one-hot identifier the outcome model uses
+    (`"<decision_type>::<chosen_action>"`). It is `None` when the decision has
+    no `chosen_action` or its type has no declared interventions, in which
+    case the row is not included in the design matrix.
     """
     dt = getattr(decision, "decision_type", None)
     if dt not in DECISION_TYPES:
-        raise UnknownDecisionTypeError(
-            f"cannot extract features for unknown decision_type={dt!r}"
-        )
+        raise UnknownDecisionTypeError(f"cannot extract features for unknown decision_type={dt!r}")
 
     step_index = _step_index_for(decision, run)
-    base = {"decision_type": dt, "step_index": step_index}
+    chosen = decision.chosen_action
+    feature_key: str | None = None
+    if chosen is not None and _VALID_INTERVENTIONS[dt]:
+        feature_key = f"{dt}::{chosen}"
+
+    base: dict[str, Any] = {
+        "decision_type": dt,
+        "step_index": step_index,
+        "feature_key": feature_key,
+    }
 
     if dt == "tool_call":
-        base["tool_name"] = decision.chosen_action or "<none>"
+        base["tool_name"] = chosen or "<none>"
     elif dt == "model_call":
-        base["model_name"] = decision.chosen_action or "<none>"
+        base["model_name"] = chosen or "<none>"
     elif dt == "retry":
-        base["retry_action"] = decision.chosen_action or "<none>"
+        base["retry_action"] = chosen or "<none>"
     elif dt == "memory_read":
-        base["memory_action"] = decision.chosen_action or "<none>"
+        base["memory_action"] = chosen or "<none>"
     elif dt == "plan_step":
-        base["plan_action"] = decision.chosen_action or "<none>"
+        base["plan_action"] = chosen or "<none>"
     elif dt == "termination":
-        base["termination_action"] = decision.chosen_action or "<none>"
+        base["termination_action"] = chosen or "<none>"
 
     return base
 

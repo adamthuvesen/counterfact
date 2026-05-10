@@ -1,18 +1,17 @@
 """Hand-rolled DAG over agent decisions.
 
-Single-agent only, tool-call/plan-step granularity (design.md D4). Edges are
-derived from the decision-taxonomy `parent_types` declarations and the
-temporal order of steps: a decision at step `t` may have edges from any
-declared parent type at any step `s <= t`. We attach the *most recent* parent
-decision of each declared type — keeping edge density manageable and making
-the graph inspectable.
+Single-agent only, tool-call/plan-step granularity. Edges are derived from
+the decision-taxonomy `parent_types` declarations and the temporal order of
+steps: a decision at step `t` may have edges from any declared parent type at
+any step `s <= t`. We attach the *most recent* parent decision of each
+declared type — keeping edge density manageable and making the graph
+inspectable.
 """
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any
 
 from counterfact.errors import DAGCycleError
 from counterfact.schema import Decision, Run
@@ -25,8 +24,18 @@ class DAG:
     nodes: list[Decision] = field(default_factory=list)
     edges: list[tuple[str, str]] = field(default_factory=list)
     run: Run | None = None
+    # Adjacency dicts built once at construction so query-time graph lookups
+    # are O(1) rather than scanning the edge list on every call.
+    _adj: dict[str, list[str]] = field(default_factory=dict, init=False, repr=False)
+    _radj: dict[str, list[str]] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
+        ids = self.node_ids()
+        self._adj = {nid: [] for nid in ids}
+        self._radj = {nid: [] for nid in ids}
+        for parent, child in self.edges:
+            self._adj.setdefault(parent, []).append(child)
+            self._radj.setdefault(child, []).append(parent)
         # Acyclicity check fires on every construction (including DAG(...) directly,
         # which is what the cycle-rejection scenario uses).
         if self.nodes or self.edges:
@@ -36,17 +45,17 @@ class DAG:
         return [n.decision_id for n in self.nodes]
 
     def parents_of(self, decision_id: str) -> list[str]:
-        return [p for (p, c) in self.edges if c == decision_id]
+        return list(self._radj.get(decision_id, ()))
 
     def children_of(self, decision_id: str) -> list[str]:
-        return [c for (p, c) in self.edges if p == decision_id]
+        return list(self._adj.get(decision_id, ()))
 
     def ancestors_of(self, decision_id: str) -> list[str]:
         seen: set[str] = set()
         stack = [decision_id]
         while stack:
             cur = stack.pop()
-            for p in self.parents_of(cur):
+            for p in self._radj.get(cur, ()):
                 if p not in seen:
                     seen.add(p)
                     stack.append(p)
@@ -57,7 +66,7 @@ class DAG:
         stack = [decision_id]
         while stack:
             cur = stack.pop()
-            for c in self.children_of(cur):
+            for c in self._adj.get(cur, ()):
                 if c not in seen:
                     seen.add(c)
                     stack.append(c)
@@ -66,12 +75,10 @@ class DAG:
     def topological_sort(self) -> list[str]:
         """Kahn's algorithm. Raises DAGCycleError if a cycle is present."""
         indeg: dict[str, int] = defaultdict(int)
-        adj: dict[str, list[str]] = defaultdict(list)
         ids = self.node_ids()
         for nid in ids:
-            indeg[nid] += 0
-        for parent, child in self.edges:
-            adj[parent].append(child)
+            indeg.setdefault(nid, 0)
+        for _, child in self.edges:
             indeg[child] += 1
 
         ready = [nid for nid in ids if indeg[nid] == 0]
@@ -79,7 +86,7 @@ class DAG:
         while ready:
             cur = ready.pop()
             order.append(cur)
-            for nxt in adj[cur]:
+            for nxt in self._adj.get(cur, ()):
                 indeg[nxt] -= 1
                 if indeg[nxt] == 0:
                     ready.append(nxt)
@@ -90,12 +97,15 @@ class DAG:
         return order
 
 
-def build_dag(trace: Run, schema: Any | None = None) -> DAG:
+def build_dag(trace: Run) -> DAG:
     """Build a DAG over the decisions in `trace`.
 
     Edges connect each decision to the most recent eligible parent of each
     declared parent type, where "eligible" means: same trace, earlier or equal
     step index, and (for same-step parents) earlier list position.
+
+    Decision-ID uniqueness is enforced by `Run._decision_ids_are_unique` at
+    schema-validation time; we trust that invariant here rather than re-check.
     """
     # Avoid a circular import: the taxonomy module imports schema, which in
     # turn lives below this module's package; deferring keeps the surface tidy.
@@ -107,15 +117,6 @@ def build_dag(trace: Run, schema: Any | None = None) -> DAG:
         for pos, d in enumerate(step.decisions):
             flat.append((step.step_index, pos, d))
             nodes.append(d)
-    ids = [d.decision_id for _, _, d in flat]
-    duplicate_ids = sorted(
-        decision_id for decision_id, count in Counter(ids).items() if count > 1
-    )
-    if duplicate_ids:
-        raise ValueError(
-            "cannot build DAG with duplicate decision_id values: "
-            + ", ".join(duplicate_ids)
-        )
 
     edges: list[tuple[str, str]] = []
 
