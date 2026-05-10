@@ -9,11 +9,11 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from counterfact.compare import TraceComparison
+from counterfact.corpus_analyzer import CorpusReadinessReport
+from counterfact.diagnose import DiagnosisReport
 from counterfact.errors import InvalidInterventionError
-from counterfact.intervene.degenerate import (
-    degenerate_estimate as _shared_degenerate_estimate,
-)
-from counterfact.intervene.degenerate import outcome_classes as _shared_outcome_classes
+from counterfact.intervene.degenerate import degenerate_estimate, outcome_classes
 from counterfact.intervene.estimate import CausalEstimate
 from counterfact.schema import Decision, Run, Step
 
@@ -71,12 +71,7 @@ def _require_focal_in_corpus(
 
 
 def _positive_int(raw: str) -> int:
-    """argparse type for ints that must be >= 1.
-
-    Used by every flag that drives bootstrap counts — passing 0 would have
-    `intervene` percentile over an empty array and a negative value would
-    crash NumPy at allocation.
-    """
+    """argparse type for ints that must be >= 1 (bootstrap counts)."""
     try:
         value = int(raw)
     except ValueError as exc:
@@ -86,18 +81,24 @@ def _positive_int(raw: str) -> int:
     return value
 
 
+_BENCH_UNAVAILABLE_MESSAGE = (
+    "counterfact bench: the bench harness is not included in the wheel. "
+    "Install the development extras with `pip install counterfact[bench]` "
+    'or use an editable dev install (`uv pip install -e ".[dev]"`).'
+)
+
+
 def _synthetic_runs(n: int, seed: int, confound: bool = False) -> list[Run]:
-    from bench.synthetic import generate_traces
+    try:
+        from bench.synthetic import generate_traces
+    except ImportError as exc:
+        raise ImportError(_BENCH_UNAVAILABLE_MESSAGE) from exc
 
     return [
-        Run.model_validate(trace)
-        for trace in generate_traces(n=n, seed=seed, confound=confound)
+        Run.model_validate(trace) for trace in generate_traces(n=n, seed=seed, confound=confound)
     ]
 
 
-# Demo's naive-vs-causal contrast threshold and one-line template. Centralized
-# so future tuning is one edit. The contrast line is sourced from printed
-# numbers — no editorial copy beyond named values and this fixed template.
 _DEMO_CONTRAST_THRESHOLD = 0.05
 _DEMO_CONTRAST_TEMPLATE = (
     "naive_vs_causal_contrast: naive arm gap = {naive:+.3f}; "
@@ -105,10 +106,6 @@ _DEMO_CONTRAST_TEMPLATE = (
     "the marginal table overstates what the corpus supports — see "
     "DAG and assumptions."
 )
-
-
-def _outcome_classes(runs: list[Run]) -> set[bool]:
-    return _shared_outcome_classes(runs)
 
 
 def _first_step_for_decision_type(runs: list[Run], decision_type: str) -> tuple[Run, int]:
@@ -138,17 +135,6 @@ def _intervention_kind(decision_type: str) -> str:
     }[decision_type]
 
 
-def _degenerate_estimate(
-    runs: list[Run], *, decision_type: str, intervention_kind: str, target: Any
-) -> CausalEstimate:
-    return _shared_degenerate_estimate(
-        runs,
-        decision_type=decision_type,
-        intervention_kind=intervention_kind,
-        target=target,
-    )
-
-
 def _decision_by_id(run: Run, decision_id: str) -> tuple[Step, Decision] | None:
     for step in run.steps:
         for decision in step.decisions:
@@ -162,8 +148,7 @@ def _resolve_intervention_target(
 ) -> tuple[Step, Decision] | None:
     if args.decision_id is not None and args.step is not None:
         print(
-            "counterfact intervene: only one targeting mode is allowed: "
-            "--decision-id or --step",
+            "counterfact intervene: only one targeting mode is allowed: --decision-id or --step",
             file=sys.stderr,
         )
         return None
@@ -265,10 +250,7 @@ def _format_intervention_estimate(
     ]
     if estimate.outcome_delta is not None:
         delta = estimate.outcome_delta
-        lines.append(
-            "outcome_delta: "
-            f"{delta.point:.3f} [{delta.ci_low:.3f}, {delta.ci_high:.3f}]"
-        )
+        lines.append(f"outcome_delta: {delta.point:.3f} [{delta.ci_low:.3f}, {delta.ci_high:.3f}]")
     if estimate.reason:
         lines.append(f"reason: {estimate.reason}")
     if estimate.warnings:
@@ -279,9 +261,7 @@ def _format_intervention_estimate(
     localization_limit = estimate.next_step.payload.get("localization_limit")
     if localization_limit:
         lines.append(f"localization_limit: {localization_limit}")
-    lines.append(
-        f"next_step: {estimate.next_step.action} - {estimate.next_step.human_text}"
-    )
+    lines.append(f"next_step: {estimate.next_step.action} - {estimate.next_step.human_text}")
     return "\n".join(lines)
 
 
@@ -306,17 +286,19 @@ def _demo(args: argparse.Namespace) -> int:
     from counterfact.dag import build_dag
     from counterfact.outcome.binary import binary_outcome_value
 
-    if args.confound:
-        runs = _synthetic_runs(n=args.synthetic_n, seed=args.seed, confound=True)
-        source = (
-            f"synthetic SCM (confounded, n={args.synthetic_n}, seed={args.seed})"
-        )
-    else:
-        runs = _load_trace_dir(args.runs_dir)
-        source = str(args.runs_dir)
-        if not runs:
-            runs = _synthetic_runs(n=args.synthetic_n, seed=args.seed)
-            source = f"synthetic SCM (n={args.synthetic_n}, seed={args.seed})"
+    try:
+        if args.confound:
+            runs = _synthetic_runs(n=args.synthetic_n, seed=args.seed, confound=True)
+            source = f"synthetic SCM (confounded, n={args.synthetic_n}, seed={args.seed})"
+        else:
+            runs = _load_trace_dir(args.runs_dir)
+            source = str(args.runs_dir)
+            if not runs:
+                runs = _synthetic_runs(n=args.synthetic_n, seed=args.seed)
+                source = f"synthetic SCM (n={args.synthetic_n}, seed={args.seed})"
+    except ImportError as exc:
+        print(f"counterfact demo: {exc}", file=sys.stderr)
+        return 2
 
     decision_type = args.decision_type
     intervention_kind = _intervention_kind(decision_type)
@@ -338,8 +320,8 @@ def _demo(args: argparse.Namespace) -> int:
     print()
 
     model = None
-    if len(_outcome_classes(runs)) == 1:
-        estimate = _degenerate_estimate(
+    if len(outcome_classes(runs)) == 1:
+        estimate = degenerate_estimate(
             runs,
             decision_type=decision_type,
             intervention_kind=intervention_kind,
@@ -359,10 +341,7 @@ def _demo(args: argparse.Namespace) -> int:
     print(f"identifiability: {estimate.identifiability.value}")
     if estimate.outcome_delta is not None:
         delta = estimate.outcome_delta
-        print(
-            "outcome_delta: "
-            f"{delta.point:.3f} [{delta.ci_low:.3f}, {delta.ci_high:.3f}]"
-        )
+        print(f"outcome_delta: {delta.point:.3f} [{delta.ci_low:.3f}, {delta.ci_high:.3f}]")
     if estimate.reason:
         print(f"reason: {estimate.reason}")
     if estimate.warnings:
@@ -393,21 +372,18 @@ def _demo(args: argparse.Namespace) -> int:
             )
             if sibling_estimate.outcome_delta is not None:
                 naive_gap = rates[target] - rates[sibling]
-                causal_gap = (
-                    estimate.outcome_delta.point
-                    - sibling_estimate.outcome_delta.point
-                )
+                causal_gap = estimate.outcome_delta.point - sibling_estimate.outcome_delta.point
                 if abs(naive_gap - causal_gap) >= _DEMO_CONTRAST_THRESHOLD:
-                    print(
-                        _DEMO_CONTRAST_TEMPLATE.format(
-                            naive=naive_gap, causal=causal_gap
-                        )
-                    )
+                    print(_DEMO_CONTRAST_TEMPLATE.format(naive=naive_gap, causal=causal_gap))
     return 0
 
 
 def _bench_synthetic(args: argparse.Namespace) -> int:
-    from bench.synthetic.generate import generate_corpus
+    try:
+        from bench.synthetic.generate import generate_corpus
+    except ImportError:
+        print(_BENCH_UNAVAILABLE_MESSAGE, file=sys.stderr)
+        return 2
 
     try:
         out = generate_corpus(n=args.n, seed=args.seed, output_dir=args.output_dir)
@@ -418,12 +394,10 @@ def _bench_synthetic(args: argparse.Namespace) -> int:
     return 0
 
 
-def _format_report(report: Any, runs_dir: Path) -> str:
+def _format_report(report: CorpusReadinessReport, runs_dir: Path) -> str:
     """Plain-text rendering of a CorpusReadinessReport. Stable enough to grep."""
-    from counterfact.corpus_analyzer import CorpusReadinessReport
     from counterfact.intervene.suggest import suggest_harness_command
 
-    assert isinstance(report, CorpusReadinessReport)
     lines: list[str] = [
         f"counterfact analyze corpus support-readiness: {runs_dir}",
         f"n_traces: {report.n_traces}",
@@ -551,8 +525,10 @@ def _explain(args: argparse.Namespace) -> int:
     if not _require_focal_in_corpus(focal, corpus, runs_dir, command="explain"):
         return 2
 
-    output: Path = args.output if args.output is not None else (
-        run_path.parent / f"counterfact-explain-{focal.run_id}.html"
+    output: Path = (
+        args.output
+        if args.output is not None
+        else (run_path.parent / f"counterfact-explain-{focal.run_id}.html")
     )
 
     report = build_report(
@@ -606,8 +582,8 @@ def _intervene_cli(args: argparse.Namespace) -> int:
         return 2
 
     try:
-        if len(_outcome_classes(corpus)) == 1:
-            estimate = _degenerate_estimate(
+        if len(outcome_classes(corpus)) == 1:
+            estimate = degenerate_estimate(
                 corpus,
                 decision_type=decision.decision_type,
                 intervention_kind=intervention_kind,
@@ -652,10 +628,7 @@ def _intervene_cli(args: argparse.Namespace) -> int:
     return 0
 
 
-def _format_diagnosis(report: Any) -> str:
-    from counterfact.diagnose import DiagnosisReport
-
-    assert isinstance(report, DiagnosisReport)
+def _format_diagnosis(report: DiagnosisReport) -> str:
     lines = [
         report.summary,
         f"run_id: {report.run_id}",
@@ -676,14 +649,11 @@ def _format_diagnosis(report: Any) -> str:
         if entry.outcome_delta is not None:
             delta = entry.outcome_delta
             lines.append(
-                "     outcome_delta: "
-                f"{delta.point:.3f} [{delta.ci_low:.3f}, {delta.ci_high:.3f}]"
+                f"     outcome_delta: {delta.point:.3f} [{delta.ci_low:.3f}, {delta.ci_high:.3f}]"
             )
         if entry.reason:
             lines.append(f"     reason: {entry.reason}")
-        lines.append(
-            f"     next_step: {entry.next_step.action} - {entry.next_step.human_text}"
-        )
+        lines.append(f"     next_step: {entry.next_step.action} - {entry.next_step.human_text}")
     return "\n".join(lines)
 
 
@@ -739,10 +709,7 @@ def _diagnose_cli(args: argparse.Namespace) -> int:
     return 0
 
 
-def _format_comparison(comparison: Any) -> str:
-    from counterfact.compare import TraceComparison
-
-    assert isinstance(comparison, TraceComparison)
+def _format_comparison(comparison: TraceComparison) -> str:
     lines = [
         "counterfact compare: descriptive trace diff",
         (
@@ -768,11 +735,12 @@ def _format_comparison(comparison: Any) -> str:
         lines.append("decision_diffs: (none)")
     if comparison.step_diffs:
         lines.append("step_diffs:")
-        for diff in comparison.step_diffs:
+        for step_diff in comparison.step_diffs:
             lines.append(
-                f"  step={diff.step} decisions "
-                f"{diff.left_decision_count}->{diff.right_decision_count}; "
-                f"observations {diff.left_observation_count}->{diff.right_observation_count}"
+                f"  step={step_diff.step} decisions "
+                f"{step_diff.left_decision_count}->{step_diff.right_decision_count}; "
+                f"observations "
+                f"{step_diff.left_observation_count}->{step_diff.right_observation_count}"
             )
     if comparison.diagnosis is not None:
         lines.append("diagnosis_overlay:")
@@ -849,9 +817,7 @@ def _ingest_claude_agent_sdk_cli(args: argparse.Namespace) -> int:
     if args.json:
         print(receipt.model_dump_json(indent=2))
     else:
-        print(
-            f"counterfact ingest claude-agent-sdk: wrote {receipt.generated_count} trace(s)"
-        )
+        print(f"counterfact ingest claude-agent-sdk: wrote {receipt.generated_count} trace(s)")
         print(str((args.output_dir / "ingest-receipt.json").resolve()))
         for warning in receipt.warnings:
             print(f"warning: {warning}")
@@ -884,9 +850,7 @@ def _ingest_openai_agents_cli(args: argparse.Namespace) -> int:
     if args.json:
         print(receipt.model_dump_json(indent=2))
     else:
-        print(
-            f"counterfact ingest openai-agents: wrote {receipt.generated_count} trace(s)"
-        )
+        print(f"counterfact ingest openai-agents: wrote {receipt.generated_count} trace(s)")
         print(str((args.output_dir / "ingest-receipt.json").resolve()))
         for warning in receipt.warnings:
             print(f"warning: {warning}")
@@ -894,16 +858,16 @@ def _ingest_openai_agents_cli(args: argparse.Namespace) -> int:
 
 
 def _export_runs_cli(args: argparse.Namespace) -> int:
-    from counterfact.eval_audit_export import export_eval_audit_parquet
+    from counterfact.runrecord_export import export_runrecord_parquet
 
-    if args.to != "eval-audit-parquet":
+    if args.to != "runrecord-parquet":
         print(f"counterfact export-runs: unsupported target {args.to!r}", file=sys.stderr)
         return 2
     corpus = _load_corpus_dir(args.runs_dir, command="export-runs")
     if corpus is None:
         return 2
-    output = args.output or (args.runs_dir / "eval-audit-runs.parquet")
-    receipt = export_eval_audit_parquet(corpus, source_corpus=args.runs_dir, output_path=output)
+    output = args.output or (args.runs_dir / "runrecord.parquet")
+    receipt = export_runrecord_parquet(corpus, source_corpus=args.runs_dir, output_path=output)
     if args.json:
         print(receipt.model_dump_json(indent=2))
     else:
@@ -919,8 +883,12 @@ def _export_runs_cli(args: argparse.Namespace) -> int:
 
 
 def _bench_real(args: argparse.Namespace) -> int:
-    from bench.real.coding_agent.agent import AgentRunConfig
-    from bench.real.coding_agent.runner import run_real_corpus
+    try:
+        from bench.real.coding_agent.agent import AgentRunConfig
+        from bench.real.coding_agent.runner import run_real_corpus
+    except ImportError:
+        print(_BENCH_UNAVAILABLE_MESSAGE, file=sys.stderr)
+        return 2
 
     config = AgentRunConfig(
         seed=args.seed,
@@ -933,9 +901,7 @@ def _bench_real(args: argparse.Namespace) -> int:
         retry_epsilon=args.retry_epsilon,
     )
     fixture_ids = (
-        tuple(s.strip() for s in args.fixtures.split(",") if s.strip())
-        if args.fixtures
-        else None
+        tuple(s.strip() for s in args.fixtures.split(",") if s.strip()) if args.fixtures else None
     )
     return run_real_corpus(
         n=args.n,
@@ -985,8 +951,7 @@ def build_parser() -> argparse.ArgumentParser:
     explain = sub.add_parser(
         "explain",
         help=(
-            "Render a self-contained HTML report explaining one trace, "
-            "grounded in CausalEstimate"
+            "Render a self-contained HTML report explaining one trace, grounded in CausalEstimate"
         ),
     )
     explain.add_argument(
@@ -1013,10 +978,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=None,
-        help=(
-            "Output HTML path (default: "
-            "<run-json-parent>/counterfact-explain-<run_id>.html)"
-        ),
+        help=("Output HTML path (default: <run-json-parent>/counterfact-explain-<run_id>.html)"),
     )
     explain.add_argument("--bootstrap", type=_positive_int, default=200)
     explain.add_argument("--seed", type=int, default=42)
@@ -1158,7 +1120,7 @@ def build_parser() -> argparse.ArgumentParser:
         "source_jsonl",
         type=Path,
         help=(
-            "JSONL where each line is either {\"messages\": [...]} or a JSON list "
+            'JSONL where each line is either {"messages": [...]} or a JSON list '
             "of message dicts captured from claude_agent_sdk.query()"
         ),
     )
@@ -1197,7 +1159,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Export native traces to another research artifact format",
     )
     export_runs.add_argument("runs_dir", type=Path, help="Directory of native trace JSON")
-    export_runs.add_argument("--to", required=True, choices=["eval-audit-parquet"])
+    export_runs.add_argument("--to", required=True, choices=["runrecord-parquet"])
     export_runs.add_argument("--output", type=Path, default=None)
     export_runs.add_argument("--json", action="store_true", help="Emit receipt JSON")
     export_runs.set_defaults(func=_export_runs_cli)
@@ -1218,9 +1180,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     syn.set_defaults(func=_bench_synthetic)
 
-    real = bench_sub.add_parser(
-        "real", help="Generate real-agent traces (HUMAN GATE on first run)"
-    )
+    real = bench_sub.add_parser("real", help="Generate real-agent traces (HUMAN GATE on first run)")
     real.add_argument("--n", type=int, required=True)
     real.add_argument("--budget-cap", type=float, default=50.0)
     real.add_argument("--output-dir", type=Path, default=Path("bench/real/pilot"))

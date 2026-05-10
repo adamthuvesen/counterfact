@@ -20,6 +20,12 @@ uv pip install -e ".[dev]"
 
 Requires Python 3.11+.
 
+The published wheel ships only the core causal-attribution library. The
+real-agent harness under `bench/` is excluded from the wheel; if you need
+`counterfact bench real`, install the `bench` extra (`pip install
+"counterfact[bench]"`, which pulls `litellm`) or use an editable dev
+install from a checkout.
+
 ## Quickstart
 
 Drop in your agent traces, run diagnose. If you already use the Claude
@@ -217,24 +223,20 @@ The command writes native `Run` JSON files plus `ingest-receipt.json` with
 warnings about dropped fields and missing randomization metadata. It does not
 loosen the native trace schema.
 
-### Export To eval-audit
+### Export To RunRecord Parquet
 
 ```bash
 uv run counterfact export-runs bench/real/smoke_mixed_outcome \
-  --to eval-audit-parquet \
+  --to runrecord-parquet \
   --output /tmp/counterfact-runs.parquet
 ```
 
-This writes an `eval-audit` RunRecord-shaped parquet and a receipt. Use it when
-you want to take a trace corpus into a separate population-level benchmark
-audit:
-
-```bash
-eval-audit validate /tmp/counterfact-runs.parquet study.yaml
-```
-
-`counterfact` does not render model-switch verdicts; `eval-audit` owns that
-question.
+This writes a RunRecord-shaped parquet (one row per run; columns for agent
+identity, outcome, cost, tokens, provenance) plus a receipt documenting how
+each field was derived. The output is consumable by any downstream tool that
+reads RunRecord-style parquet — population-level benchmark audits, dashboards,
+or your own analysis. `counterfact` itself does not render verdicts at the
+population level; the export is the boundary.
 
 ### Generate Synthetic Traces
 
