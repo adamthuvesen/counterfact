@@ -12,6 +12,8 @@ Every answer is labelled:
 - `bounded` - a point estimate is not supported, but sensitivity bounds are available.
 - `unidentified` - the corpus cannot support the counterfactual without more data, stronger assumptions, or replay.
 
+For the design philosophy and a reading guide through the source, see [`docs/architecture.md`](docs/architecture.md).
+
 ## Install
 
 ```bash
