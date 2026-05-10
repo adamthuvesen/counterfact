@@ -9,8 +9,9 @@ whose type has at least one declared intervention kind in the taxonomy. That
 restricts attention to the controllable surface — exactly the variables for
 which counterfactual queries are meaningful.
 
-Per design.md D3: bootstrap coefficient uncertainty is reported separately
-from identifiability uncertainty about the causal estimand.
+Bootstrap coefficient uncertainty is reported separately from identifiability
+uncertainty about the causal estimand: the two answer different questions and
+must not be conflated in the surfaced output.
 """
 
 from __future__ import annotations
@@ -20,8 +21,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 import numpy as np
-from sklearn.exceptions import ConvergenceWarning
-from sklearn.linear_model import LogisticRegression
+from sklearn.exceptions import ConvergenceWarning  # type: ignore[import-untyped]
+from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyped]
 
 from counterfact.errors import InsufficientOutcomeSupportError, UnsupportedOutcomeError
 from counterfact.outcome.binary import binary_outcome_value
@@ -53,7 +54,8 @@ class OutcomeModel:
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Sigmoid of (X @ coef + intercept). Shape: (n,)."""
         z = X @ self.coefficients + self.intercept
-        return 1.0 / (1.0 + np.exp(-z))
+        result: np.ndarray = 1.0 / (1.0 + np.exp(-z))
+        return result
 
 
 def _assert_binary(runs: list[Run]) -> None:
@@ -65,43 +67,37 @@ def _assert_binary(runs: list[Run]) -> None:
             )
 
 
-def _intervenable_decisions(run: Run) -> list[tuple[str, str]]:
-    """Yield (decision_type, chosen_action) for decisions whose type has interventions."""
-    from counterfact.taxonomy import valid_interventions
+def _intervenable_feature_keys(run: Run) -> list[str]:
+    """Return the one-hot `decision_type::action` keys present in `run`.
 
-    out: list[tuple[str, str]] = []
+    Delegates to `taxonomy.extract_features` so feature-key naming has a
+    single source of truth shared with the rest of the library.
+    """
+    from counterfact.taxonomy import extract_features
+
+    keys: list[str] = []
     for step in run.steps:
         for d in step.decisions:
-            if not valid_interventions(d.decision_type):
-                continue
-            if d.chosen_action is None:
-                continue
-            out.append((d.decision_type, d.chosen_action))
-    return out
-
-
-def _build_feature_index(runs: list[Run]) -> tuple[list[str], dict[str, int]]:
-    """Discover the feature names by scanning the training corpus."""
-    seen: set[str] = set()
-    for run in runs:
-        for dt, action in _intervenable_decisions(run):
-            seen.add(f"{dt}::{action}")
-    names = sorted(seen)
-    return names, {n: i for i, n in enumerate(names)}
-
-
-def _row_for_run(run: Run, index: dict[str, int]) -> np.ndarray:
-    row = np.zeros(len(index), dtype=float)
-    for dt, action in _intervenable_decisions(run):
-        key = f"{dt}::{action}"
-        if key in index:
-            row[index[key]] = 1.0
-    return row
+            feats = extract_features(d, run)
+            key = feats.get("feature_key")
+            if key is not None:
+                keys.append(key)
+    return keys
 
 
 def _featurize(runs: list[Run]) -> tuple[np.ndarray, np.ndarray, list[str], dict[str, int]]:
-    names, index = _build_feature_index(runs)
-    X = np.vstack([_row_for_run(r, index) for r in runs])
+    """Walk each run once, building feature names and per-run rows together."""
+    per_run_keys: list[list[str]] = [_intervenable_feature_keys(r) for r in runs]
+    seen: set[str] = set()
+    for keys in per_run_keys:
+        seen.update(keys)
+    names = sorted(seen)
+    index = {n: i for i, n in enumerate(names)}
+
+    X = np.zeros((len(runs), len(names)), dtype=float)
+    for i, keys in enumerate(per_run_keys):
+        for key in keys:
+            X[i, index[key]] = 1.0
     y = np.array([1 if binary_outcome_value(r) else 0 for r in runs], dtype=int)
     return X, y, names, index
 
@@ -117,8 +113,6 @@ def _fit_lr(X: np.ndarray, y: np.ndarray) -> LogisticRegression:
 def fit_outcome_model(
     traces: Iterable[Run],
     *,
-    schema: object | None = None,
-    outcome: str = "success",
     n_bootstrap: int = 200,
     seed: int | None = 0,
 ) -> OutcomeModel:

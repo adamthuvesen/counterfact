@@ -21,7 +21,8 @@ from counterfact.schema import Run
 def _read_mapping(path: Path) -> dict[str, Any]:
     text = path.read_text()
     try:
-        return json.loads(text)
+        result: dict[str, Any] = json.loads(text)
+        return result
     except json.JSONDecodeError:
         return _read_simple_yaml_mapping(text)
 
@@ -117,9 +118,7 @@ def _mapped_payload(
     if not isinstance(fields, dict) or not isinstance(defaults, dict):
         raise IngestError("mapping must contain object-valued 'fields' and 'defaults'")
     missing = sorted(
-        target
-        for target in _REQUIRED_TARGETS
-        if target not in fields and target not in defaults
+        target for target in _REQUIRED_TARGETS if target not in fields and target not in defaults
     )
     if missing:
         raise IngestError("missing required target mapping(s): " + ", ".join(missing))

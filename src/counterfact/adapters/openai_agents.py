@@ -26,7 +26,7 @@ from counterfact.adapters._common import (
     strict_bool,
     write_corpus,
 )
-from counterfact.schema import Decision, Observation, Outcome, Run, Step
+from counterfact.schema import Decision, Metadata, Observation, Outcome, Run, Step
 from counterfact.schema.models import SCHEMA_VERSION
 
 SOURCE_FORMAT = "openai-agents"
@@ -38,9 +38,7 @@ _OBSERVATION_SPAN_TYPES = frozenset(
     {"guardrail", "custom", "mcp_list_tools", "transcription", "speech"}
 )
 _CONTAINER_SPAN_TYPES = frozenset({"agent", "response"})
-_KNOWN_SPAN_TYPES = (
-    _DECISION_SPAN_TYPES | _OBSERVATION_SPAN_TYPES | _CONTAINER_SPAN_TYPES
-)
+_KNOWN_SPAN_TYPES = _DECISION_SPAN_TYPES | _OBSERVATION_SPAN_TYPES | _CONTAINER_SPAN_TYPES
 
 
 def _span_type(span: dict[str, Any]) -> str:
@@ -77,13 +75,10 @@ def _topological_order(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
         by_parent.setdefault(span.get("parent_id"), []).append(span)
     if duplicate_ids:
         raise IngestError(
-            "openai-agents trace has duplicate span id(s): "
-            + ", ".join(sorted(duplicate_ids))
+            "openai-agents trace has duplicate span id(s): " + ", ".join(sorted(duplicate_ids))
         )
     for siblings in by_parent.values():
-        siblings.sort(
-            key=lambda s: (s.get("started_at") or "", s.get("id") or "")
-        )
+        siblings.sort(key=lambda s: (s.get("started_at") or "", s.get("id") or ""))
 
     roots = by_parent.get(None, [])
     if len(roots) != 1:
@@ -213,9 +208,7 @@ def _root_span(spans: list[dict[str, Any]]) -> dict[str, Any]:
     return roots[0]
 
 
-def _outcome_for_trace(
-    spans: list[dict[str, Any]], *, override: bool | str | None
-) -> Outcome:
+def _outcome_for_trace(spans: list[dict[str, Any]], *, override: bool | str | None) -> Outcome:
     """Resolve outcome per design D4.
 
     Order: explicit override → marker span → root error → raise.
@@ -268,9 +261,7 @@ def run_from_trace(trace: dict[str, Any], *, outcome: bool | str | None = None) 
     """
 
     if not isinstance(trace, dict):
-        raise IngestError(
-            f"openai-agents trace must be a JSON object; got {type(trace).__name__}"
-        )
+        raise IngestError(f"openai-agents trace must be a JSON object; got {type(trace).__name__}")
     spans: list[dict[str, Any]] = []
     trace_id: str | None = None
     if "spans" in trace:
@@ -346,7 +337,7 @@ def run_from_trace(trace: dict[str, Any], *, outcome: bool | str | None = None) 
         run_id=str(trace_id),
         steps=steps,
         outcome=resolved_outcome,
-        metadata={"agent_name": "openai-agents-sdk", "extra": metadata_extra},
+        metadata=Metadata(agent_name="openai-agents-sdk", extra=metadata_extra),
     )
 
 
