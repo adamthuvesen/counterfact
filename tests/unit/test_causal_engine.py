@@ -66,6 +66,23 @@ def test_fit_outcome_model__bootstrap_cis_surround_point_estimate(fitted: object
         assert lo <= point <= hi, f"coefficient {name} point={point} outside [{lo}, {hi}]"
 
 
+def test_fit_outcome_model__warns_when_bootstrap_resamples_are_single_class() -> None:
+    runs = [Run.model_validate(t) for t in generate_traces(n=2, seed=10)]
+    runs = [
+        runs[0].model_copy(
+            update={"outcome": Outcome(kind="binary", value=True, verifier="synthetic")}
+        ),
+        runs[1].model_copy(
+            update={"outcome": Outcome(kind="binary", value=False, verifier="synthetic")}
+        ),
+    ]
+
+    with pytest.warns(RuntimeWarning, match="bootstrap resamples"):
+        model = fit_outcome_model(runs, n_bootstrap=20, seed=0)
+
+    assert model.bootstrap_degenerate_resamples > 0
+
+
 def test_fit_outcome_model__all_pass_corpus_raises_domain_error() -> None:
     runs = [
         Run.model_validate(t).model_copy(

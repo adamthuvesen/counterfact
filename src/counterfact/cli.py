@@ -17,6 +17,8 @@ from counterfact.intervene.degenerate import degenerate_estimate, outcome_classe
 from counterfact.intervene.estimate import CausalEstimate
 from counterfact.schema import Decision, Run, Step
 
+_DEFAULT_DEMO_RUNS_DIR = Path("bench/real/smoke_mixed_outcome")
+
 
 def _load_trace_dir(path: Path) -> list[Run]:
     if not path.exists():
@@ -97,6 +99,19 @@ def _synthetic_runs(n: int, seed: int, confound: bool = False) -> list[Run]:
     return [
         Run.model_validate(trace) for trace in generate_traces(n=n, seed=seed, confound=confound)
     ]
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _demo_runs_dir(path: Path) -> tuple[Path, str]:
+    if path.exists() or path != _DEFAULT_DEMO_RUNS_DIR:
+        return path, str(path)
+    repo_path = _repo_root() / _DEFAULT_DEMO_RUNS_DIR
+    if repo_path.exists():
+        return repo_path, _DEFAULT_DEMO_RUNS_DIR.as_posix()
+    return path, str(path)
 
 
 _DEMO_CONTRAST_THRESHOLD = 0.05
@@ -291,9 +306,17 @@ def _demo(args: argparse.Namespace) -> int:
             runs = _synthetic_runs(n=args.synthetic_n, seed=args.seed, confound=True)
             source = f"synthetic SCM (confounded, n={args.synthetic_n}, seed={args.seed})"
         else:
-            runs = _load_trace_dir(args.runs_dir)
-            source = str(args.runs_dir)
+            runs_dir, source = _demo_runs_dir(args.runs_dir)
+            runs = _load_trace_dir(runs_dir)
             if not runs:
+                if not args.synthetic_fallback:
+                    print(
+                        "counterfact demo: no real traces found at "
+                        f"{runs_dir}; pass --confound for the synthetic showcase or "
+                        "--synthetic-fallback to opt into synthetic data.",
+                        file=sys.stderr,
+                    )
+                    return 2
                 runs = _synthetic_runs(n=args.synthetic_n, seed=args.seed)
                 source = f"synthetic SCM (n={args.synthetic_n}, seed={args.seed})"
     except ImportError as exc:
@@ -503,7 +526,11 @@ def _analyze_corpus(args: argparse.Namespace) -> int:
         overrides["min_n_per_arm"] = args.min_n_per_arm
     if args.min_identified is not None:
         overrides["min_identified_decision_types"] = args.min_identified
-    thresholds = RubricThresholds(**overrides) if overrides else RubricThresholds()
+    try:
+        thresholds = RubricThresholds(**overrides) if overrides else RubricThresholds()
+    except ValidationError as exc:
+        print(f"counterfact analyze corpus: invalid thresholds: {exc}", file=sys.stderr)
+        return 2
 
     report = analyze(runs, thresholds=thresholds)
     print(_format_report(report, runs_dir))
@@ -924,7 +951,7 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument(
         "--runs-dir",
         type=Path,
-        default=Path("bench/real/smoke_mixed_outcome"),
+        default=_DEFAULT_DEMO_RUNS_DIR,
         help="Directory of committed real traces (default: bench/real/smoke_mixed_outcome)",
     )
     demo.add_argument(
@@ -937,6 +964,11 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--synthetic-n", type=int, default=500)
     demo.add_argument("--seed", type=int, default=42)
     demo.add_argument("--bootstrap", type=_positive_int, default=200)
+    demo.add_argument(
+        "--synthetic-fallback",
+        action="store_true",
+        help="Use a synthetic SCM corpus if --runs-dir has no trace JSON files",
+    )
     demo.add_argument(
         "--confound",
         action="store_true",

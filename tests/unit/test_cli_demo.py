@@ -68,6 +68,7 @@ def test_demo__falls_back_to_synthetic_without_real_harness_import(
             "20",
             "--target",
             "sonnet",
+            "--synthetic-fallback",
         ]
     )
     out = capsys.readouterr().out
@@ -82,6 +83,17 @@ def test_demo__falls_back_to_synthetic_without_real_harness_import(
     # suggestion is printed. Either is valid.
     if "next_step: none" in out:
         assert "suggested_command:" not in out
+
+
+def test_demo__missing_real_corpus_errors_without_explicit_synthetic_fallback(
+    tmp_path: Path, capsys
+) -> None:
+    rc = main(["demo", "--runs-dir", str(tmp_path / "missing")])
+    captured = capsys.readouterr()
+
+    assert rc == 2
+    assert "no real traces found" in captured.err
+    assert "--synthetic-fallback" in captured.err
 
 
 def test_demo__confound_runs_confounded_synthetic_showcase(capsys) -> None:

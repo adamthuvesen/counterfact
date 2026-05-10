@@ -43,6 +43,7 @@ class OutcomeModel:
     train_n: int
     feature_index: dict[str, int] = field(default_factory=dict)
     outcome_kind: str = "binary"
+    bootstrap_degenerate_resamples: int = 0
 
     @property
     def bootstrap_ci(self) -> dict[str, tuple[float, float]]:
@@ -149,17 +150,29 @@ def fit_outcome_model(
     n = X.shape[0]
     boot_coefs = np.zeros((n_bootstrap, X.shape[1]), dtype=float)
     boot_intercepts = np.zeros(n_bootstrap, dtype=float)
+    degenerate_resamples = 0
     for b in range(n_bootstrap):
         idx = rng.integers(0, n, n)
         # require at least one of each class for the boot model to fit
         if len(set(y[idx])) < 2:
             # fallback: use the base coefs/intercept for this bootstrap draw
+            degenerate_resamples += 1
             boot_coefs[b] = base.coef_[0]
             boot_intercepts[b] = base.intercept_[0]
             continue
         bm = _fit_lr(X[idx], y[idx])
         boot_coefs[b] = bm.coef_[0]
         boot_intercepts[b] = bm.intercept_[0]
+
+    if degenerate_resamples:
+        warnings.warn(
+            "fit_outcome_model reused the base fit for "
+            f"{degenerate_resamples}/{n_bootstrap} bootstrap resamples because "
+            "those resamples contained only one outcome class; confidence "
+            "intervals may be optimistic for this corpus.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     return OutcomeModel(
         feature_names=names,
@@ -172,4 +185,5 @@ def fit_outcome_model(
         train_n=len(runs),
         feature_index=index,
         outcome_kind="binary",
+        bootstrap_degenerate_resamples=degenerate_resamples,
     )

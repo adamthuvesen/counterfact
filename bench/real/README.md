@@ -48,8 +48,10 @@ The promotion path is deliberately human-gated:
 
 There is no `--promote` flag and no auto-rename. The analyzer reports; humans
 decide. This matches the repo's existing posture on the real harness:
-`.counterfact/approved` gates first runs, budget caps halt at 80%, and
-nothing irreversible happens without an explicit human action.
+`.counterfact/approved` must be a JSON approval receipt tied to the exact
+trace count, budget cap, output directory, fixture set, model map, and
+randomization config. Budget caps halt at 80%, and nothing irreversible happens
+without an explicit human action.
 
 ## Showcase-quality pilots
 
@@ -68,6 +70,11 @@ counterfact bench real --n 60 \
   --output-dir bench/real/pilot_stateful_calibration_balanced
 python -m bench.real.analyze_pilot bench/real/pilot_stateful_calibration_balanced
 ```
+
+If the approval receipt is missing or stale, the command prints the JSON shape
+to write to `.counterfact/approved`. Replace the `approved_at` placeholder with
+the current UTC timestamp. Approve and inspect a tiny smoke run before writing a
+separate receipt for a larger pilot.
 
 A showcase-quality pilot should have hidden-semantic failures in both model arms
 and should not be dominated by format failures.
