@@ -114,6 +114,8 @@ uv run counterfact demo --confound --synthetic-n 1000 --seed 42
 
 It prints a descriptive pass-rate table, a causal intervention estimate, and the contrast between the two. The table says what happened in the logged corpus. The intervention estimate asks what the model predicts under a declared decision edit. Those are different claims.
 
+`uv run counterfact demo` without `--confound` reads the committed real demo corpus at `bench/real/smoke_mixed_outcome`. If that corpus is missing, the command exits instead of quietly switching evidence bases; pass `--synthetic-fallback` only when you explicitly want synthetic data.
+
 ## CLI
 
 ### Diagnose A Failed Trace
@@ -283,7 +285,7 @@ print(estimate.next_step)
 
 The real-agent harness can call external LLM APIs and spend money. The local demo, synthetic generator, analyzer, and tests do not require provider credentials.
 
-Do not run real-agent benchmarks as routine validation. See `bench/real/README.md` for corpus promotion conventions, fixture sets, and budgeted pilot commands.
+Do not run real-agent benchmarks as routine validation. `counterfact bench real` refuses to start until `.counterfact/approved` contains a JSON approval receipt matching the command's trace count, budget cap, output directory, fixture set, model map, and randomization config. See `bench/real/README.md` for corpus promotion conventions, fixture sets, and budgeted pilot commands.
 
 ## Development
 

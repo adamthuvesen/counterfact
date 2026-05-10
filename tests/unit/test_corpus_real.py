@@ -32,16 +32,43 @@ from bench.real.coding_agent.llm import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_NUM_RETRIES,
     DEFAULT_REQUEST_TIMEOUT_S,
+    ROLE_TO_MODEL,
     CostUnknownError,
     LiteLLMClient,
     LLMResponse,
     extract_cost,
 )
 from bench.real.coding_agent.runner import (
+    approval_receipt_template,
     check_credentials,
+    resolve_fixtures,
     run_real_corpus,
 )
 from counterfact.schema import Run
+
+
+def _write_approval(
+    marker: Path,
+    *,
+    n: int,
+    budget_cap_usd: float,
+    output_dir: Path,
+    config: AgentRunConfig | None = None,
+    fixture_ids: tuple[str, ...] | None = None,
+    fixture_set: str | None = None,
+) -> None:
+    receipt = approval_receipt_template(
+        n=n,
+        budget_cap_usd=budget_cap_usd,
+        output_dir=output_dir,
+        fixtures=resolve_fixtures(fixture_ids, fixture_set),
+        config=config or AgentRunConfig(),
+        role_to_model=ROLE_TO_MODEL,
+    )
+    receipt["approved_at"] = "2026-05-10T00:00:00Z"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+
 
 # --- ε-greedy randomization spec scenarios ----------------------------------
 
@@ -505,12 +532,11 @@ def test_first_run_prompts_before_any_api_call(tmp_path: Path) -> None:
 
 
 def test_approved_marker_skips_prompt(tmp_path: Path) -> None:
-    """WHEN the approval marker exists and the harness is invoked
+    """WHEN the approval receipt matches the harness invocation
     THEN the harness proceeds to corpus generation without re-prompting."""
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _write_approval(marker, n=3, budget_cap_usd=5.0, output_dir=output)
 
     class _NullLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -528,13 +554,53 @@ def test_approved_marker_skips_prompt(tmp_path: Path) -> None:
     assert len(written) == 3
 
 
+def test_empty_approval_marker_is_rejected_before_any_api_call(tmp_path: Path) -> None:
+    output = tmp_path / "out"
+    marker = tmp_path / ".counterfact" / "approved"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("")
+
+    class _ExplodingLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            raise AssertionError("LLM was invoked despite invalid approval receipt")
+
+    rc = run_real_corpus(
+        n=1,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        llm_client_factory=lambda: _ExplodingLLM(),
+        marker_path=marker,
+    )
+
+    assert rc == 2
+
+
+def test_approval_receipt_must_match_budget_before_any_api_call(tmp_path: Path) -> None:
+    output = tmp_path / "out"
+    marker = tmp_path / ".counterfact" / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=5.0, output_dir=output)
+
+    class _ExplodingLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            raise AssertionError("LLM was invoked despite mismatched approval receipt")
+
+    rc = run_real_corpus(
+        n=1,
+        budget_cap_usd=10.0,
+        output_dir=output,
+        llm_client_factory=lambda: _ExplodingLLM(),
+        marker_path=marker,
+    )
+
+    assert rc == 2
+
+
 def test_resume_after_partial_run(tmp_path: Path) -> None:
     """WHEN a run is halted and re-invoked
     THEN the harness skips already-completed traces and writes only new ones."""
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _write_approval(marker, n=4, budget_cap_usd=5.0, output_dir=output)
 
     # First call: 0 cost, write 2 traces.
     class _NullLLM:
@@ -569,8 +635,7 @@ def test_resume_after_partial_run(tmp_path: Path) -> None:
 def test_run_real_corpus__cost_unknown_exits_before_writing_trace(tmp_path: Path) -> None:
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _write_approval(marker, n=1, budget_cap_usd=5.0, output_dir=output)
 
     class _UnknownCostLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -590,8 +655,7 @@ def test_run_real_corpus__cost_unknown_exits_before_writing_trace(tmp_path: Path
 def test_resume_counts_existing_spend_before_new_calls(tmp_path: Path) -> None:
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _write_approval(marker, n=1, budget_cap_usd=10.0, output_dir=output)
 
     class _CostLLM:
         def __init__(self, cost: float) -> None:
@@ -610,6 +674,7 @@ def test_resume_counts_existing_spend_before_new_calls(tmp_path: Path) -> None:
     assert rc == 0
     assert len(list(output.glob("real-*.json"))) == 1
 
+    _write_approval(marker, n=2, budget_cap_usd=1.0, output_dir=output)
     rc2 = run_real_corpus(
         n=2,
         budget_cap_usd=1.0,
@@ -626,8 +691,7 @@ def test_resume_halts_before_call_when_existing_spend_exceeds_threshold(
 ) -> None:
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _write_approval(marker, n=1, budget_cap_usd=10.0, output_dir=output)
 
     class _CostLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -646,6 +710,7 @@ def test_resume_halts_before_call_when_existing_spend_exceeds_threshold(
         def call(self, *, role: str, prompt: str) -> LLMResponse:
             raise AssertionError("resume should halt before a new LLM call")
 
+    _write_approval(marker, n=2, budget_cap_usd=1.0, output_dir=output)
     rc2 = run_real_corpus(
         n=2,
         budget_cap_usd=1.0,
@@ -656,11 +721,33 @@ def test_resume_halts_before_call_when_existing_spend_exceeds_threshold(
     assert rc2 == 3
 
 
+def test_resume_rejects_malformed_budget_ledger_before_call(tmp_path: Path) -> None:
+    output = tmp_path / "out"
+    marker = tmp_path / ".counterfact" / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=5.0, output_dir=output)
+    ledger = output / ".checkpoints" / "budget_ledger.jsonl"
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text("{bad json}\n")
+
+    class _ExplodingLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            raise AssertionError("resume should reject bad ledger before an LLM call")
+
+    rc = run_real_corpus(
+        n=1,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        llm_client_factory=lambda: _ExplodingLLM(),
+        marker_path=marker,
+    )
+
+    assert rc == 7
+
+
 def test_resume_rejects_changed_fixture_selection(tmp_path: Path) -> None:
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _write_approval(marker, n=1, budget_cap_usd=5.0, output_dir=output)
 
     class _NullLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -675,6 +762,13 @@ def test_resume_rejects_changed_fixture_selection(tmp_path: Path) -> None:
             marker_path=marker,
         )
         == 0
+    )
+    _write_approval(
+        marker,
+        n=2,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        fixture_ids=("csv_dedupe",),
     )
     rc = run_real_corpus(
         n=2,
@@ -690,8 +784,14 @@ def test_resume_rejects_changed_fixture_selection(tmp_path: Path) -> None:
 def test_resume_rejects_changed_randomization_config(tmp_path: Path) -> None:
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    first_config = AgentRunConfig(epsilon=0.2, seed=0)
+    _write_approval(
+        marker,
+        n=1,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        config=first_config,
+    )
 
     class _NullLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -704,9 +804,17 @@ def test_resume_rejects_changed_randomization_config(tmp_path: Path) -> None:
             output_dir=output,
             llm_client_factory=lambda: _NullLLM(),
             marker_path=marker,
-            config=AgentRunConfig(epsilon=0.2, seed=0),
+            config=first_config,
         )
         == 0
+    )
+    second_config = AgentRunConfig(epsilon=0.4, seed=0)
+    _write_approval(
+        marker,
+        n=2,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        config=second_config,
     )
     rc = run_real_corpus(
         n=2,
@@ -714,7 +822,7 @@ def test_resume_rejects_changed_randomization_config(tmp_path: Path) -> None:
         output_dir=output,
         llm_client_factory=lambda: _NullLLM(),
         marker_path=marker,
-        config=AgentRunConfig(epsilon=0.4, seed=0),
+        config=second_config,
     )
     assert rc == 6
 
@@ -726,8 +834,7 @@ def test_resume_rejects_existing_traces_without_identity(tmp_path: Path) -> None
     output.mkdir()
     shutil.copy(source, output / source.name)
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _write_approval(marker, n=2, budget_cap_usd=5.0, output_dir=output)
 
     class _ExplodingLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -924,9 +1031,8 @@ def test_run_real_corpus__exits_4_when_credentials_missing(
     """With marker present but no API key (and no custom client factory), the
     runner must exit 4 BEFORE any LLM call."""
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
     output = tmp_path / "out"
+    _write_approval(marker, n=1, budget_cap_usd=1.0, output_dir=output)
 
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)

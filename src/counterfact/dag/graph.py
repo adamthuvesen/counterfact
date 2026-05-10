@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import Any
 
 from counterfact.errors import DAGCycleError
 from counterfact.schema import Decision, Run
@@ -90,7 +89,7 @@ class DAG:
         return order
 
 
-def build_dag(trace: Run, schema: Any | None = None) -> DAG:
+def build_dag(trace: Run) -> DAG:
     """Build a DAG over the decisions in `trace`.
 
     Edges connect each decision to the most recent eligible parent of each

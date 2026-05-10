@@ -30,6 +30,11 @@ def test_thresholds_reject_extra_fields() -> None:
         RubricThresholds(min_pass_rate=0.3, surprise=True)  # type: ignore[call-arg]
 
 
+def test_thresholds_reject_inverted_pass_rate_bounds() -> None:
+    with pytest.raises(ValidationError, match="min_pass_rate must be <= max_pass_rate"):
+        RubricThresholds(min_pass_rate=0.8, max_pass_rate=0.3)
+
+
 def test_empty_corpus_returns_promote_false_with_reason() -> None:
     report = analyze([])
     assert isinstance(report, CorpusReadinessReport)

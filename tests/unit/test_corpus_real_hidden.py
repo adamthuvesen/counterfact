@@ -1165,13 +1165,27 @@ def test_run_real_corpus_with_fixtures_csv_dedupe(tmp_path: Path) -> None:
          fixture_id (and verifier='pytest_hidden')."""
     import json
 
-    from bench.real.coding_agent.llm import LLMResponse
-    from bench.real.coding_agent.runner import run_real_corpus
+    from bench.real.coding_agent.agent import AgentRunConfig
+    from bench.real.coding_agent.llm import ROLE_TO_MODEL, LLMResponse
+    from bench.real.coding_agent.runner import (
+        approval_receipt_template,
+        resolve_fixtures,
+        run_real_corpus,
+    )
 
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
+    receipt = approval_receipt_template(
+        n=2,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        fixtures=resolve_fixtures(fixture_ids=("csv_dedupe",)),
+        config=AgentRunConfig(),
+        role_to_model=ROLE_TO_MODEL,
+    )
+    receipt["approved_at"] = "2026-05-10T00:00:00Z"
     marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    marker.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
 
     class _NullLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:

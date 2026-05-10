@@ -31,8 +31,8 @@ This file is the deeper routing map for agents. `AGENTS.md` stays short; this fi
 
 ## Real-Agent Benchmark Rules
 
-- Paid runs require explicit user approval with exact command, fixture set, output directory, and budget cap.
-- Do not create `.counterfact/approved`, bypass the first-run gate, relax budget halting, or commit secrets.
+- Paid runs require a `.counterfact/approved` JSON receipt matching the exact trace count, fixture set, output directory, budget cap, model map, and randomization config.
+- Do not create `.counterfact/approved`, bypass the approval receipt, relax budget halting, or commit secrets.
 - Ad hoc pilots belong in dated `bench/real/pilot_*` directories and are local artifacts unless the user explicitly asks to curate and commit a corpus.
 - Promotion is human-gated. The analyzer reports; it does not rename directories. Use `bench/real/README.md` and `bench/real/coding_agent/fixtures/README.md` for the full promotion convention.
 - Showcase quality is not just sample size. The key failure quality signal is runnable hidden-semantic failure, not extraction failure or unparseable patches.
