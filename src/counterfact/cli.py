@@ -15,7 +15,7 @@ from counterfact.intervene.degenerate import (
 )
 from counterfact.intervene.degenerate import outcome_classes as _shared_outcome_classes
 from counterfact.intervene.estimate import CausalEstimate
-from counterfact.schema import Decision, Run, Step
+from counterfact.schema import Decision, Run, Step, first_arm
 
 
 def _load_trace_dir(path: Path) -> list[Run]:
@@ -107,10 +107,6 @@ _DEMO_CONTRAST_TEMPLATE = (
 )
 
 
-def _outcome_classes(runs: list[Run]) -> set[bool]:
-    return _shared_outcome_classes(runs)
-
-
 def _first_step_for_decision_type(runs: list[Run], decision_type: str) -> tuple[Run, int]:
     for run in runs:
         for step in run.steps:
@@ -121,32 +117,12 @@ def _first_step_for_decision_type(runs: list[Run], decision_type: str) -> tuple[
     raise ValueError(f"no single-decision step found for {decision_type!r}")
 
 
-def _first_arm(runs: list[Run], decision_type: str) -> str:
-    for run in runs:
-        for step in run.steps:
-            for decision in step.decisions:
-                if decision.decision_type == decision_type and decision.chosen_action:
-                    return decision.chosen_action
-    raise ValueError(f"no chosen_action found for {decision_type!r}")
-
-
 def _intervention_kind(decision_type: str) -> str:
     return {
         "model_call": "model_choice",
         "tool_call": "tool_choice",
         "retry": "retry_policy",
     }[decision_type]
-
-
-def _degenerate_estimate(
-    runs: list[Run], *, decision_type: str, intervention_kind: str, target: Any
-) -> CausalEstimate:
-    return _shared_degenerate_estimate(
-        runs,
-        decision_type=decision_type,
-        intervention_kind=intervention_kind,
-        target=target,
-    )
 
 
 def _decision_by_id(run: Run, decision_id: str) -> tuple[Step, Decision] | None:
@@ -327,7 +303,9 @@ def _demo(args: argparse.Namespace) -> int:
         # most inflated by the confounded marginal table).
         target = "sonnet"
     else:
-        target = _first_arm(runs, decision_type)
+        target = first_arm(runs, decision_type)
+        if target is None:
+            raise ValueError(f"no chosen_action found for {decision_type!r}")
 
     pass_count = sum(1 for run in runs if binary_outcome_value(run))
     print("counterfact demo: naive vs honest")
@@ -338,8 +316,8 @@ def _demo(args: argparse.Namespace) -> int:
     print()
 
     model = None
-    if len(_outcome_classes(runs)) == 1:
-        estimate = _degenerate_estimate(
+    if len(_shared_outcome_classes(runs)) == 1:
+        estimate = _shared_degenerate_estimate(
             runs,
             decision_type=decision_type,
             intervention_kind=intervention_kind,
@@ -606,8 +584,8 @@ def _intervene_cli(args: argparse.Namespace) -> int:
         return 2
 
     try:
-        if len(_outcome_classes(corpus)) == 1:
-            estimate = _degenerate_estimate(
+        if len(_shared_outcome_classes(corpus)) == 1:
+            estimate = _shared_degenerate_estimate(
                 corpus,
                 decision_type=decision.decision_type,
                 intervention_kind=intervention_kind,

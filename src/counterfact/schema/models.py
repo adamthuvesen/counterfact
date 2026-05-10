@@ -7,6 +7,7 @@ support full JSON round-trip preservation.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -155,3 +156,26 @@ class Run(_Strict):
                 + ", ".join(sorted(duplicates))
             )
         return self
+
+
+def outcome_label(run: Run) -> str:
+    """Short human-readable label for `run.outcome`. ``"pass"``/``"fail"`` for
+    binary outcomes, ``"<kind>=<value!r>"`` otherwise.
+    """
+    if run.outcome.kind == "binary":
+        return "pass" if bool(run.outcome.value) else "fail"
+    return f"{run.outcome.kind}={run.outcome.value!r}"
+
+
+def first_arm(runs: Iterable[Run], decision_type: str) -> str | None:
+    """First observed `chosen_action` for `decision_type` in iteration order.
+
+    Returns ``None`` if no run has a decision of that type with a recorded
+    `chosen_action`.
+    """
+    for run in runs:
+        for step in run.steps:
+            for decision in step.decisions:
+                if decision.decision_type == decision_type and decision.chosen_action:
+                    return decision.chosen_action
+    return None

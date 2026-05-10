@@ -44,7 +44,12 @@ class PassRateTable(_Strict):
     rows: list[PassRateRow] = Field(default_factory=list)
 
 
-def _wilson_ci(k: int, n: int, z: float = 1.959963984540054) -> tuple[float, float]:
+# 95% CI z-score, exposed so `power.py` and `intervene.api` can share the
+# same constant for binomial-Wald / Wilson computations.
+_Z_95 = 1.959963984540054
+
+
+def wilson_ci(k: int, n: int, z: float = _Z_95) -> tuple[float, float]:
     """Wilson score interval for a binomial proportion (95% by default)."""
     if n == 0:
         return (0.0, 0.0)
@@ -94,7 +99,7 @@ def pass_rate_by_arm(
     for arm in sorted(bucket_n):
         n = bucket_n[arm]
         k = bucket_pass.get(arm, 0)
-        ci_low, ci_high = _wilson_ci(k, n)
+        ci_low, ci_high = wilson_ci(k, n)
         rows.append(
             PassRateRow(
                 arm=arm,

@@ -27,6 +27,7 @@ from counterfact.intervene.estimate import (
 from counterfact.outcome import fit_outcome_model
 from counterfact.outcome.binary import binary_outcome_value
 from counterfact.schema import DecisionTypeLiteral, Run
+from counterfact.schema import first_arm as _first_arm
 
 _INTERVENTION_KIND_BY_DECISION_TYPE: dict[str, str] = {
     "model_call": "model_choice",
@@ -57,15 +58,6 @@ class ExplainReport(BaseModel):
     notes: list[str] = Field(default_factory=list)
     diagnosis_summary: str | None = None
     counterfactual_lookup: list[CausalEstimate] = Field(default_factory=list)
-
-
-def _first_arm(runs: list[Run], decision_type: str) -> str | None:
-    for run in runs:
-        for step in run.steps:
-            for decision in step.decisions:
-                if decision.decision_type == decision_type and decision.chosen_action:
-                    return decision.chosen_action
-    return None
 
 
 def _no_feature_estimate(

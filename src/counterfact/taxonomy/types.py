@@ -108,6 +108,27 @@ def parent_types(decision_type: str) -> tuple[str, ...]:
     return _PARENT_TYPES.get(decision_type, ())
 
 
+def intervention_kind_for(decision_type: str) -> str | None:
+    """Pick the canonical intervention kind for `decision_type`.
+
+    Returns the first kind whose stance is `requires-randomized-support` (the
+    only stance we can actually estimate). Falls back to the first declared
+    kind if no kind is randomizable. Returns ``None`` if the type declares no
+    interventions or is unknown.
+    """
+    try:
+        kinds = sorted(valid_interventions(decision_type))
+    except UnknownDecisionTypeError:
+        return None
+    for kind in kinds:
+        try:
+            if identifiability_stance(decision_type, kind) == "requires-randomized-support":
+                return kind
+        except UnknownDecisionTypeError:
+            continue
+    return kinds[0] if kinds else None
+
+
 def extract_features(decision: Decision, run: Run) -> dict[str, Any]:
     """Map a Decision (in the context of its Run) to a feature dict for the outcome model.
 
@@ -155,6 +176,7 @@ __all__ = [
     "IdentifiabilityStance",
     "extract_features",
     "identifiability_stance",
+    "intervention_kind_for",
     "is_valid_intervention",
     "parent_types",
     "valid_interventions",

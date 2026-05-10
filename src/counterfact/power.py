@@ -16,11 +16,8 @@ from collections.abc import Iterable
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from counterfact.baselines import pass_rate_by_arm
+from counterfact.baselines import _Z_95, pass_rate_by_arm
 from counterfact.schema import Run
-
-# 95% CI z-score, kept as a module constant so tests can refer to it by name.
-_Z_95 = 1.959963984540054
 
 
 class _Strict(BaseModel):

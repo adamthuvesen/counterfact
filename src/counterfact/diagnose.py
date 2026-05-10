@@ -21,7 +21,13 @@ from counterfact.intervene.estimate import (
     NextStep,
 )
 from counterfact.schema import Decision, Run
-from counterfact.taxonomy import identifiability_stance, valid_interventions
+from counterfact.schema import outcome_label as _outcome_label
+from counterfact.taxonomy import (
+    intervention_kind_for as _intervention_kind_for,
+)
+from counterfact.taxonomy import (
+    valid_interventions,
+)
 
 
 class _Strict(BaseModel):
@@ -53,26 +59,12 @@ class DiagnosisReport(_Strict):
     corpus_dir: str | None = None
 
 
-def _outcome_label(run: Run) -> str:
-    if run.outcome.kind == "binary":
-        return "pass" if bool(run.outcome.value) else "fail"
-    return f"{run.outcome.kind}={run.outcome.value!r}"
-
-
 def _decision_index(run: Run) -> dict[str, tuple[int, Decision]]:
     out: dict[str, tuple[int, Decision]] = {}
     for step in run.steps:
         for decision in step.decisions:
             out[decision.decision_id] = (step.step_index, decision)
     return out
-
-
-def _intervention_kind_for(decision_type: str) -> str | None:
-    kinds = sorted(valid_interventions(decision_type))
-    for kind in kinds:
-        if identifiability_stance(decision_type, kind) == "requires-randomized-support":
-            return kind
-    return kinds[0] if kinds else None
 
 
 def _unsupported_estimate(

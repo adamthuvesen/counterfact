@@ -22,10 +22,14 @@ from dataclasses import dataclass
 from pydantic import BaseModel, ConfigDict
 
 from counterfact.dag import DAG
-from counterfact.errors import UnknownDecisionTypeError
 from counterfact.intervene.api import intervene as _intervene
 from counterfact.intervene.estimate import CausalEstimate, IdentifiabilityStatus
-from counterfact.taxonomy import valid_interventions
+from counterfact.taxonomy import (
+    intervention_kind_for as _intervention_kind_for,
+)
+from counterfact.taxonomy import (
+    valid_interventions,
+)
 
 
 class AttributionEntry(BaseModel):
@@ -45,26 +49,6 @@ class FailureAttribution:
 
     def top_k(self, k: int) -> list[AttributionEntry]:
         return self.entries[:k]
-
-
-def _intervention_kind_for(decision_type: str) -> str | None:
-    """Pick the canonical intervention kind for this decision type, if any.
-
-    The taxonomy may declare multiple intervention kinds per type; for v0
-    attribution we use the first one whose stance is randomized-support
-    (those are the ones we can actually estimate). Falls back to the first
-    declared kind.
-    """
-    from counterfact.taxonomy import identifiability_stance
-
-    kinds = sorted(valid_interventions(decision_type))
-    for k in kinds:
-        try:
-            if identifiability_stance(decision_type, k) == "requires-randomized-support":
-                return k
-        except UnknownDecisionTypeError:
-            continue
-    return kinds[0] if kinds else None
 
 
 def _combined_identifiability(

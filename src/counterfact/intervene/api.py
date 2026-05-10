@@ -22,6 +22,7 @@ from typing import Any
 
 import numpy as np
 
+from counterfact.baselines import _Z_95, wilson_ci
 from counterfact.dag import DAG
 from counterfact.errors import InvalidInterventionError, UnsupportedOutcomeError
 from counterfact.intervene.estimate import (
@@ -38,22 +39,6 @@ from counterfact.intervene.suggest import known_arms, suggest_harness_command
 # action is needed and `next_step.action="none"`. Above this, intervene
 # emits `increase_n` with a binomial-Wald n estimate.
 _IDENTIFIED_TIGHT_CI_WIDTH = 0.10
-
-# 95% z-score, kept in sync with `counterfact.power._Z_95` so the inline
-# two-arm power computation matches `power_analysis` semantically.
-_Z_95 = 1.959963984540054
-
-
-def _wilson_ci(k: int, n: int) -> tuple[float, float]:
-    """Wilson score 95% CI for a binomial proportion. Mirrors baselines._wilson_ci."""
-    if n == 0:
-        return (0.0, 0.0)
-    p_hat = k / n
-    z = _Z_95
-    denom = 1.0 + z * z / n
-    center = (p_hat + z * z / (2 * n)) / denom
-    half = (z * math.sqrt(p_hat * (1 - p_hat) / n + z * z / (4 * n * n))) / denom
-    return (max(0.0, center - half), min(1.0, center + half))
 
 
 def _arm_table_for(model: Any, decision_type: str) -> list[dict[str, Any]]:
@@ -82,7 +67,7 @@ def _arm_table_for(model: Any, decision_type: str) -> list[dict[str, Any]]:
             continue
         pass_count = int(((col > 0).astype(int) * train_y).sum())
         pass_rate = pass_count / n if n else 0.0
-        ci_low, ci_high = _wilson_ci(pass_count, n)
+        ci_low, ci_high = wilson_ci(pass_count, n)
         rows.append(
             {
                 "arm": arm,

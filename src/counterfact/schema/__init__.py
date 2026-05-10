@@ -9,6 +9,8 @@ from counterfact.schema.models import (
     Outcome,
     Run,
     Step,
+    first_arm,
+    outcome_label,
 )
 
 __all__ = [
@@ -20,4 +22,6 @@ __all__ = [
     "Outcome",
     "Run",
     "Step",
+    "first_arm",
+    "outcome_label",
 ]

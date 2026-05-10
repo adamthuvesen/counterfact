@@ -20,6 +20,7 @@ from counterfact.explain._html import Raw, raw, tag
 from counterfact.explain.report import ExplainReport
 from counterfact.intervene.estimate import CausalEstimate, IdentifiabilityStatus
 from counterfact.schema import Decision, Run
+from counterfact.schema import outcome_label as _outcome_label
 
 _GLOSS = {
     IdentifiabilityStatus.IDENTIFIED: (
@@ -264,12 +265,6 @@ footer {
 # --------------------------------------------------------------------------
 # Header / story
 # --------------------------------------------------------------------------
-
-
-def _outcome_label(run: Run) -> str:
-    if run.outcome.kind == "binary":
-        return "pass" if bool(run.outcome.value) else "fail"
-    return f"{run.outcome.kind}={run.outcome.value!r}"
 
 
 def _render_header(report: ExplainReport, *, generated_at: datetime) -> str:
