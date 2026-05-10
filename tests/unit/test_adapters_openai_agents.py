@@ -32,9 +32,7 @@ def test_minimal_trace_writes_run_with_required_outcome(tmp_path: Path) -> None:
 
 def test_function_span_becomes_tool_call_decision() -> None:
     run = run_from_trace(_load("minimal.json"), outcome=True)
-    tool_calls = [
-        d for step in run.steps for d in step.decisions if d.decision_type == "tool_call"
-    ]
+    tool_calls = [d for step in run.steps for d in step.decisions if d.decision_type == "tool_call"]
     assert len(tool_calls) == 1
     assert tool_calls[0].chosen_action == "web_search"
     assert tool_calls[0].metadata["input"] == {"query": "counterfact docs"}
@@ -52,18 +50,14 @@ def test_generation_span_becomes_model_call_decision() -> None:
 
 def test_steps_are_ordered_by_started_at() -> None:
     run = run_from_trace(_load("minimal.json"), outcome=True)
-    decision_actions = [
-        step.decisions[0].chosen_action for step in run.steps if step.decisions
-    ]
+    decision_actions = [step.decisions[0].chosen_action for step in run.steps if step.decisions]
     # function span (web_search) starts before generation span (gpt-5-mini)
     assert decision_actions == ["web_search", "gpt-5-mini"]
 
 
 def test_handoff_span_becomes_plan_step_decision() -> None:
     run = run_from_trace(_load("with_handoff.json"))
-    handoffs = [
-        d for step in run.steps for d in step.decisions if d.decision_type == "plan_step"
-    ]
+    handoffs = [d for step in run.steps for d in step.decisions if d.decision_type == "plan_step"]
     assert len(handoffs) == 1
     assert handoffs[0].chosen_action == "handoff:coder"
     assert handoffs[0].metadata["from_agent"] == "router"
@@ -78,9 +72,7 @@ def test_outcome_marker_span_drives_outcome_without_flag() -> None:
 def test_outcome_marker_rejects_string_boolean() -> None:
     trace = _load("with_handoff.json")
     marker = next(
-        span
-        for span in trace["spans"]
-        if span["span_data"].get("name") == "counterfact.outcome"
+        span for span in trace["spans"] if span["span_data"].get("name") == "counterfact.outcome"
     )
     marker["span_data"]["data"]["value"] = "false"
 

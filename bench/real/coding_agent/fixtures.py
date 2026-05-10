@@ -25,7 +25,10 @@ class FixtureSpec:
 
     fixture_id: str
     source_relpath: str  # path of the source file under <fixture>/src/
-    test_relpath: str  # path of the test file under <fixture>/tests/ (v0)
+    # `test_relpath` is set for v0 fixtures (single `tests/` layout) and is
+    # `None` for hidden-test fixtures, which split into `tests_public/` and
+    # `tests_hidden/`. `None` (not "") is the canonical "no v0 test" signal.
+    test_relpath: str | None = None
     public_tests_relpath: str | None = None  # under <fixture>/tests_public/
     hidden_tests_relpath: str | None = None  # under <fixture>/tests_hidden/
 
@@ -38,7 +41,9 @@ class FixtureSpec:
         return self.root / "src" / self.source_relpath
 
     @property
-    def test_path(self) -> Path:
+    def test_path(self) -> Path | None:
+        if self.test_relpath is None:
+            return None
         return self.root / "tests" / self.test_relpath
 
     @property
@@ -55,9 +60,11 @@ class FixtureSpec:
 
 
 def is_hidden_fixture(fixture: FixtureSpec) -> bool:
-    """A fixture is hidden iff it declares both public and hidden test paths."""
+    """A fixture is hidden iff it has no v0 `tests/` path and declares both
+    public and hidden test paths."""
     return (
-        fixture.public_tests_relpath is not None
+        fixture.test_relpath is None
+        and fixture.public_tests_relpath is not None
         and fixture.hidden_tests_relpath is not None
     )
 
@@ -86,70 +93,64 @@ HIDDEN_FIXTURES: tuple[FixtureSpec, ...] = (
     FixtureSpec(
         "csv_dedupe",
         source_relpath="dedupe.py",
-        test_relpath="",  # unused for hidden fixtures
         public_tests_relpath="test_dedupe.py",
         hidden_tests_relpath="test_dedupe_hidden.py",
     ),
     FixtureSpec(
         "date_window",
         source_relpath="date_window.py",
-        test_relpath="",  # unused for hidden fixtures
         public_tests_relpath="test_date_window.py",
         hidden_tests_relpath="test_date_window_hidden.py",
     ),
     FixtureSpec(
         "rate_limit",
         source_relpath="rate_limit.py",
-        test_relpath="",  # unused for hidden fixtures
         public_tests_relpath="test_rate_limit.py",
         hidden_tests_relpath="test_rate_limit_hidden.py",
     ),
     FixtureSpec(
         "version_range",
         source_relpath="version_range.py",
-        test_relpath="",  # unused for hidden fixtures
         public_tests_relpath="test_version_range.py",
         hidden_tests_relpath="test_version_range_hidden.py",
     ),
     FixtureSpec(
         "unicode_normalize",
         source_relpath="unicode_normalize.py",
-        test_relpath="",  # unused for hidden fixtures
         public_tests_relpath="test_unicode_normalize.py",
         hidden_tests_relpath="test_unicode_normalize_hidden.py",
     ),
     FixtureSpec(
         "streaming_watermark_dedupe",
         source_relpath="watermark_dedupe.py",
-        test_relpath="",  # unused for hidden fixtures
         public_tests_relpath="test_watermark_dedupe.py",
         hidden_tests_relpath="test_watermark_dedupe_hidden.py",
     ),
 )
 
-HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = tuple(
-    fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe"
-)
-
-HARD_HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = tuple(
-    fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "date_window"
-)
-
+# `BROAD_CALIBRATION_FIXTURES` represents a durable concept: the multi-fixture
+# calibration set used by suggest/intervene to broaden arm support. Single-
+# fixture sets (`csv_dedupe`, `date_window`, `unicode_normalize`,
+# `streaming_watermark_dedupe`) are looked up inline via `fixtures_by_id` —
+# they don't earn a named alias because the alias is just renaming an id.
 BROAD_CALIBRATION_FIXTURES: tuple[FixtureSpec, ...] = tuple(
     fx
     for fx in HIDDEN_FIXTURES
     if fx.fixture_id in {"date_window", "rate_limit", "version_range"}
 )
 
-VERY_HARD_HIDDEN_V1_FIXTURES: tuple[FixtureSpec, ...] = tuple(
-    fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "unicode_normalize"
-)
 
-STATEFUL_CALIBRATION_FIXTURES: tuple[FixtureSpec, ...] = tuple(
-    fx
-    for fx in HIDDEN_FIXTURES
-    if fx.fixture_id == "streaming_watermark_dedupe"
-)
+def fixtures_by_id(*ids: str) -> tuple[FixtureSpec, ...]:
+    """Return fixtures matching `ids`, in the order requested.
+
+    Looks across `FIXTURES`, `EASY_FIXTURES`, and `HIDDEN_FIXTURES`. Raises
+    `KeyError` if any id is unknown.
+    """
+    registry = {fx.fixture_id: fx for fx in (*FIXTURES, *EASY_FIXTURES, *HIDDEN_FIXTURES)}
+    missing = [fid for fid in ids if fid not in registry]
+    if missing:
+        raise KeyError(f"unknown fixture id(s): {missing}")
+    return tuple(registry[fid] for fid in ids)
 
 
 _PROVIDER_ENV_NEEDLES = ("API_KEY", "AUTH_TOKEN", "ACCESS_TOKEN", "SECRET")

@@ -16,12 +16,8 @@ from bench.real.coding_agent.fixtures import (
     BROAD_CALIBRATION_FIXTURES,
     EASY_FIXTURES,
     FIXTURES,
-    HARD_HIDDEN_V1_FIXTURES,
-    HIDDEN_FIXTURES,
-    HIDDEN_V1_FIXTURES,
-    STATEFUL_CALIBRATION_FIXTURES,
-    VERY_HARD_HIDDEN_V1_FIXTURES,
     FixtureSpec,
+    fixtures_by_id,
 )
 from bench.real.coding_agent.llm import (
     ROLE_TO_MODEL,
@@ -44,8 +40,9 @@ _PROVIDER_CREDENTIALS: dict[str, tuple[str, ...]] = {
 def first_run_gate_check(*, marker_path: Path | None = None) -> bool:
     """Return True iff the harness is approved to make external API calls.
 
-    Per design.md autonomy contract / §12.2: the first real-agent run requires
-    explicit human approval. The autonomous loop MUST NOT create the marker.
+    The first real-agent run requires explicit human approval — the operator
+    must create `.counterfact/approved` after eyeballing a smoke corpus.
+    Autonomous loops MUST NOT create the marker.
     """
     return (marker_path or APPROVAL_MARKER).exists()
 
@@ -99,7 +96,7 @@ def print_approval_prompt(stream=sys.stderr) -> None:
     """Render the first-run prompt the user sees before any API call."""
     print(
         "------------------------------------------------------------\n"
-        "counterfact bench real — first-run HUMAN GATE (§12.3)\n"
+        "counterfact bench real — first-run HUMAN GATE\n"
         "------------------------------------------------------------\n"
         "This will make external LLM API calls and incur USD spend.\n"
         "Before proceeding, the user must:\n"
@@ -223,11 +220,11 @@ def _fixture_for_index(index: int, fixtures: tuple[FixtureSpec, ...]) -> Fixture
 _FIXTURE_SETS: dict[str, tuple[FixtureSpec, ...]] = {
     "v0": FIXTURES,
     "easy": EASY_FIXTURES,
-    "hidden_v1": HIDDEN_V1_FIXTURES,
-    "hard_hidden_v1": HARD_HIDDEN_V1_FIXTURES,
+    "hidden_v1": fixtures_by_id("csv_dedupe"),
+    "hard_hidden_v1": fixtures_by_id("date_window"),
     "broad_calibration": BROAD_CALIBRATION_FIXTURES,
-    "very_hard_hidden_v1": VERY_HARD_HIDDEN_V1_FIXTURES,
-    "stateful_calibration": STATEFUL_CALIBRATION_FIXTURES,
+    "very_hard_hidden_v1": fixtures_by_id("unicode_normalize"),
+    "stateful_calibration": fixtures_by_id("streaming_watermark_dedupe"),
 }
 
 
@@ -241,14 +238,10 @@ def resolve_fixtures(
     `FIXTURES` (preserving existing behavior).
     """
     if fixture_ids:
-        registry = {
-            fx.fixture_id: fx
-            for fx in (*FIXTURES, *EASY_FIXTURES, *HIDDEN_FIXTURES)
-        }
-        unknown = [fid for fid in fixture_ids if fid not in registry]
-        if unknown:
-            raise ValueError(f"unknown fixture id(s): {unknown}")
-        return tuple(registry[fid] for fid in fixture_ids)
+        try:
+            return fixtures_by_id(*fixture_ids)
+        except KeyError as exc:
+            raise ValueError(str(exc)) from exc
     if fixture_set:
         if fixture_set not in _FIXTURE_SETS:
             raise ValueError(
