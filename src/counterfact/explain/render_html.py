@@ -12,272 +12,31 @@ from __future__ import annotations
 import shlex
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import cast
 
 from counterfact import __version__ as _COUNTERFACT_VERSION
+from counterfact._fmt import outcome_label as _outcome_label
 from counterfact.attribute import AttributionEntry, FailureAttribution
 from counterfact.dag import DAG
+from counterfact.explain._css import CSS, GLOSS
 from counterfact.explain._html import Raw, raw, tag
 from counterfact.explain.report import ExplainReport
-from counterfact.intervene.estimate import CausalEstimate, IdentifiabilityStatus
+from counterfact.intervene.estimate import (
+    CausalEstimate,
+    IdentifiabilityStatus,
+    SupportPayload,
+)
 from counterfact.schema import Decision, Run
-
-_GLOSS = {
-    IdentifiabilityStatus.IDENTIFIED: (
-        "the corpus supports this counterfactual under the stated assumptions."
-    ),
-    IdentifiabilityStatus.BOUNDED: (
-        "the corpus partially supports this counterfactual; "
-        "the bound widens by the e-value."
-    ),
-    IdentifiabilityStatus.UNIDENTIFIED: (
-        "the corpus cannot answer this question; see next step."
-    ),
-}
-
-_CSS = """\
-:root {
-  --bg: #fafafa;
-  --fg: #1a1a1a;
-  --muted: #556070;
-  --rule: #d8dde5;
-  --card: #ffffff;
-  --code-bg: #f1f3f6;
-  --identified-bg: #e6f5ec;
-  --identified-fg: #14532d;
-  --identified-line: #14532d;
-  --bounded-bg: #fef3d7;
-  --bounded-fg: #7a4d00;
-  --bounded-line: #b45309;
-  --unidentified-bg: #fde2e2;
-  --unidentified-fg: #7a1313;
-  --unidentified-line: #b91c1c;
-  --focal-stroke: #b91c1c;
-}
-* { box-sizing: border-box; }
-html, body {
-  background: var(--bg);
-  color: var(--fg);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-  margin: 0;
-}
-.page { max-width: 960px; margin: 0 auto; padding: 24px; }
-header.report-header h1 { font-size: 20px; margin: 0 0 4px 0; }
-header.report-header .meta { color: var(--muted); font-size: 13px; }
-header.report-header .meta dt {
-  float: left;
-  clear: left;
-  width: 120px;
-  font-weight: 600;
-}
-header.report-header .meta dd { margin-left: 130px; margin-bottom: 2px; }
-section { margin-top: 28px; }
-section h2 { font-size: 16px; margin: 0 0 8px 0; }
-section .section-subtitle {
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 0;
-  margin-bottom: 12px;
-}
-table {
-  border-collapse: collapse;
-  width: 100%;
-  background: var(--card);
-  border: 1px solid var(--rule);
-}
-th, td {
-  padding: 6px 10px;
-  text-align: left;
-  border-bottom: 1px solid var(--rule);
-  font-size: 13px;
-}
-th { background: #f3f5f8; font-weight: 600; }
-tr:last-child td { border-bottom: none; }
-.story {
-  font-size: 15px;
-  padding: 12px 14px;
-  background: var(--card);
-  border: 1px solid var(--rule);
-  border-left: 4px solid var(--rule);
-}
-.timeline-list,
-.decision-card-list {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-}
-.timeline-step,
-.decision-card {
-  background: var(--card);
-  border: 1px solid var(--rule);
-  padding: 12px;
-}
-details.decision-card summary {
-  cursor: pointer;
-  list-style-position: inside;
-}
-.diagnosis-summary {
-  font-size: 15px;
-  padding: 12px 14px;
-  background: var(--card);
-  border: 1px solid var(--rule);
-  border-left: 4px solid #1e40af;
-}
-.lookup-list {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 6px;
-}
-.lookup-row {
-  background: var(--card);
-  border: 1px solid var(--rule);
-  padding: 8px 10px;
-  font-size: 12px;
-}
-.timeline-step .step-head,
-.decision-card .decision-head {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  flex-wrap: wrap;
-  font-weight: 600;
-}
-.timeline-step .obs-count,
-.decision-card .subtle {
-  color: var(--muted);
-  font-size: 12px;
-}
-.decision-list {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 4px;
-  margin-top: 8px;
-}
-.decision-row {
-  font-size: 13px;
-}
-.dag-wrapper {
-  background: var(--card);
-  border: 1px solid var(--rule);
-  padding: 8px;
-  overflow: auto;
-}
-.dag-wrapper svg .node rect {
-  fill: #f3f5f8;
-  stroke: #b3bcc9;
-  stroke-width: 1;
-}
-.dag-wrapper svg .node.focal rect {
-  stroke: var(--focal-stroke);
-  stroke-width: 2.5;
-}
-.dag-wrapper svg .node text {
-  font-size: 11px;
-  fill: var(--fg);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-.dag-wrapper svg .edge { stroke: #889; stroke-width: 1; fill: none; }
-.dag-wrapper svg .arrow { fill: #889; }
-.cards { display: grid; grid-template-columns: 1fr; gap: 12px; }
-.card {
-  background: var(--card);
-  border: 1px solid var(--rule);
-  padding: 14px;
-  border-left-width: 4px;
-}
-.card.ident-identified { border-left-color: var(--identified-line); }
-.card.ident-bounded { border-left-color: var(--bounded-line); }
-.card.ident-unidentified { border-left-color: var(--unidentified-line); }
-.card-head {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  flex-wrap: wrap;
-}
-.card-head .title { font-weight: 600; font-size: 14px; }
-.card-head .sub { color: var(--muted); font-size: 12px; }
-.badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-.badge.ident-identified {
-  background: var(--identified-bg);
-  color: var(--identified-fg);
-}
-.badge.ident-bounded {
-  background: var(--bounded-bg);
-  color: var(--bounded-fg);
-}
-.badge.ident-unidentified {
-  background: var(--unidentified-bg);
-  color: var(--unidentified-fg);
-}
-.gloss { color: var(--muted); font-size: 12px; margin-top: 4px; }
-.field { margin-top: 10px; }
-.field .label {
-  font-weight: 600;
-  font-size: 12px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.field .value { font-size: 13px; }
-.field .source { color: var(--muted); font-size: 11px; }
-.callout {
-  margin-top: 10px;
-  padding: 10px 12px;
-  background: #f3f5f8;
-  border-left: 3px solid #889;
-}
-.callout.next-step { background: #eef2f7; border-left-color: #1e40af; }
-.callout.support { background: #f6f7f9; border-left-color: #64748b; }
-code, pre {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-}
-code.inline { background: var(--code-bg); padding: 1px 4px; border-radius: 3px; }
-pre.cmd {
-  background: var(--code-bg);
-  padding: 8px 10px;
-  overflow: auto;
-  margin: 6px 0 0 0;
-}
-ul.flat { margin: 4px 0 0 18px; padding: 0; }
-ul.flat li { margin: 2px 0; font-size: 12px; }
-footer {
-  margin-top: 32px;
-  padding-top: 12px;
-  border-top: 1px solid var(--rule);
-  color: var(--muted);
-  font-size: 12px;
-}
-.placeholder { color: var(--muted); font-style: italic; }
-"""
-
 
 # --------------------------------------------------------------------------
 # Header / story
 # --------------------------------------------------------------------------
 
 
-def _outcome_label(run: Run) -> str:
-    if run.outcome.kind == "binary":
-        return "pass" if bool(run.outcome.value) else "fail"
-    return f"{run.outcome.kind}={run.outcome.value!r}"
-
-
 def _render_header(report: ExplainReport, *, generated_at: datetime) -> str:
     run = report.run
     title = (
-        "counterfact diagnose"
-        if report.diagnosis_summary is not None
-        else "counterfact explain"
+        "counterfact diagnose" if report.diagnosis_summary is not None else "counterfact explain"
     )
     items = [
         ("Run id", run.run_id),
@@ -287,11 +46,7 @@ def _render_header(report: ExplainReport, *, generated_at: datetime) -> str:
         ("Corpus size", str(report.corpus_size)),
         (
             "Corpus pass rate",
-            (
-                f"{report.corpus_pass_rate:.3f}"
-                if report.corpus_pass_rate is not None
-                else "n/a"
-            ),
+            (f"{report.corpus_pass_rate:.3f}" if report.corpus_pass_rate is not None else "n/a"),
         ),
         ("Generated", generated_at.isoformat(timespec="seconds")),
     ]
@@ -300,10 +55,7 @@ def _render_header(report: ExplainReport, *, generated_at: datetime) -> str:
     dl = tag(
         "dl",
         {"class": "meta"},
-        *[
-            raw(tag("dt", None, label) + tag("dd", None, value))
-            for label, value in items
-        ],
+        *[raw(tag("dt", None, label) + tag("dd", None, value)) for label, value in items],
     )
     return tag(
         "header",
@@ -384,9 +136,7 @@ def _render_timeline(report: ExplainReport) -> str:
                 )
             )
         if not decisions:
-            decisions.append(
-                tag("div", {"class": "decision-row placeholder"}, "(no decisions)")
-            )
+            decisions.append(tag("div", {"class": "decision-row placeholder"}, "(no decisions)"))
         step_body = tag("div", {"class": "decision-list"}, raw("".join(decisions)))
         steps.append(
             tag(
@@ -434,8 +184,22 @@ def _step_index_for_decision(report: ExplainReport, decision_id: str) -> int | N
     return None
 
 
-def _arm_names(rows: object) -> list[str]:
-    if not isinstance(rows, list):
+def _coerce_arm_rows(value: object) -> list[str | dict[str, object]]:
+    """Narrow a raw payload value to the arm-row shape `_arm_names` expects.
+
+    `NextStep.payload` is JSON-shaped and untyped at the boundary, so the
+    runtime check lives here once. Anything that isn't a list collapses to
+    `[]`; element-level coercion stays in `_arm_names`.
+    """
+    if not isinstance(value, list):
+        return []
+    return cast(list[str | dict[str, object]], value)
+
+
+def _arm_names(rows: list[str | dict[str, object]] | None) -> list[str]:
+    # Rows are heterogeneous JSON: each element may be either a plain arm
+    # name (string) or an arm dict carrying additional per-arm metadata.
+    if rows is None:
         return []
     names: list[str] = []
     for row in rows:
@@ -447,8 +211,8 @@ def _arm_names(rows: object) -> list[str]:
 
 
 def _render_support_block(estimate: CausalEstimate) -> str | None:
-    payload = estimate.next_step.payload
-    observed = _arm_names(payload.get("observed_arms"))
+    payload = cast(SupportPayload, estimate.next_step.payload)
+    observed = _arm_names(_coerce_arm_rows(payload.get("observed_arms")))
     missing = [str(arm) for arm in payload.get("missing_arms", [])]
     missing_strata = [str(item) for item in payload.get("missing_strata", [])]
     localization = payload.get("localization_limit")
@@ -467,8 +231,7 @@ def _render_support_block(estimate: CausalEstimate) -> str | None:
             tag(
                 "li",
                 None,
-                "replay inputs required: "
-                + ", ".join(str(item) for item in replay_inputs),
+                "replay inputs required: " + ", ".join(str(item) for item in replay_inputs),
             )
         )
     if not parts:
@@ -579,9 +342,7 @@ def _render_decision_cards(report: ExplainReport) -> str:
             )
         )
     if not cards:
-        cards.append(
-            tag("p", {"class": "placeholder"}, "(no attribution entries available)")
-        )
+        cards.append(tag("p", {"class": "placeholder"}, "(no attribution entries available)"))
     return tag(
         "section",
         {"class": "decision-cards"},
@@ -613,8 +374,7 @@ def _render_counterfactual_lookup(report: ExplainReport) -> str:
         ):
             delta = estimate.outcome_delta
             parts.append(
-                f"outcome_delta={delta.point:.3f} "
-                f"[{delta.ci_low:.3f}, {delta.ci_high:.3f}]"
+                f"outcome_delta={delta.point:.3f} [{delta.ci_low:.3f}, {delta.ci_high:.3f}]"
             )
         else:
             parts.append(f"next_step={estimate.next_step.action}")
@@ -736,9 +496,7 @@ def _layout_positions(
     return positions
 
 
-def _render_dag(
-    dag: DAG, *, focal_decision_id: str | None
-) -> str:
+def _render_dag(dag: DAG, *, focal_decision_id: str | None) -> str:
     if dag.run is None or not dag.nodes:
         return tag(
             "section",
@@ -856,11 +614,12 @@ def _render_badge(status: IdentifiabilityStatus) -> str:
 
 
 def _render_field(label: str, value: str | Raw, source: str | None = None) -> str:
-    children: list[str] = [tag("div", {"class": "label"}, label)]
-    if isinstance(value, Raw):
-        children.append(tag("div", {"class": "value"}, value))
-    else:
-        children.append(tag("div", {"class": "value"}, value))
+    # `tag` routes children based on type: `Raw` passes through unescaped (used
+    # for pre-built lists from `_render_list`), plain `str` is HTML-escaped.
+    children: list[str] = [
+        tag("div", {"class": "label"}, label),
+        tag("div", {"class": "value"}, value),
+    ]
     if source:
         children.append(tag("div", {"class": "source"}, f"source: {source}"))
     return tag("div", {"class": "field"}, raw("".join(children)))
@@ -873,7 +632,8 @@ def _render_list(items: Iterable[str]) -> Raw:
 
 def _render_next_step(estimate: CausalEstimate) -> str:
     ns = estimate.next_step
-    suggested = ns.payload.get("suggested_command")
+    payload = cast(SupportPayload, ns.payload)
+    suggested = payload.get("suggested_command")
     body_parts: list[str] = [
         tag(
             "div",
@@ -886,9 +646,7 @@ def _render_next_step(estimate: CausalEstimate) -> str:
         tag("p", None, ns.human_text),
     ]
     if isinstance(suggested, str) and suggested:
-        body_parts.append(
-            tag("pre", {"class": "cmd"}, raw(tag("code", None, suggested)))
-        )
+        body_parts.append(tag("pre", {"class": "cmd"}, raw(tag("code", None, suggested))))
     return tag(
         "div",
         {"class": "callout next-step"},
@@ -904,12 +662,10 @@ def _render_estimate_card(
 ) -> str:
     """Render a single CausalEstimate card.
 
-    Honesty contract (see openspec/specs/explain-report/spec.md
-    "unidentified estimates suppress numeric estimates"): when
-    identifiability is UNIDENTIFIED, this function MUST NOT emit any
-    quantitative point estimate, CI, or influence number for the entry.
-    The branch below is the single place that gates `outcome_delta`
-    rendering — keep it that way.
+    Honesty contract: when `identifiability == UNIDENTIFIED`, this function
+    MUST NOT emit any quantitative point estimate, CI, or influence number
+    for the entry. The branch below is the single place that gates
+    `outcome_delta` rendering — keep it that way.
     """
     status = estimate.identifiability
     head_children: list[str] = [tag("span", {"class": "title"}, title)]
@@ -917,27 +673,19 @@ def _render_estimate_card(
         head_children.append(tag("span", {"class": "sub"}, subtitle))
     head_children.append(_render_badge(status))
     head = tag("div", {"class": "card-head"}, raw("".join(head_children)))
-    gloss = tag("div", {"class": "gloss"}, _GLOSS[status])
+    gloss = tag("div", {"class": "gloss"}, GLOSS[status])
 
     fields: list[str] = []
     if estimate.estimand:
-        fields.append(
-            _render_field("estimand", estimate.estimand, source="estimand")
-        )
+        fields.append(_render_field("estimand", estimate.estimand, source="estimand"))
     if estimate.reason:
         fields.append(_render_field("reason", estimate.reason, source="reason"))
 
     # Only render outcome_delta when status is not UNIDENTIFIED AND
     # outcome_delta is present. Both gates must hold.
-    if (
-        status != IdentifiabilityStatus.UNIDENTIFIED
-        and estimate.outcome_delta is not None
-    ):
+    if status != IdentifiabilityStatus.UNIDENTIFIED and estimate.outcome_delta is not None:
         d = estimate.outcome_delta
-        value = (
-            f"{d.point:.3f} [{d.ci_low:.3f}, {d.ci_high:.3f}] "
-            f"(n_bootstrap={d.n_bootstrap})"
-        )
+        value = f"{d.point:.3f} [{d.ci_low:.3f}, {d.ci_high:.3f}] (n_bootstrap={d.n_bootstrap})"
         fields.append(
             _render_field(
                 "outcome_delta",
@@ -951,9 +699,7 @@ def _render_estimate_card(
         bound_value = f"e_value={b.e_value:.3f} (technique={b.technique})"
         if b.note:
             bound_value += f" — {b.note}"
-        fields.append(
-            _render_field("bounds", bound_value, source="bounds.e_value")
-        )
+        fields.append(_render_field("bounds", bound_value, source="bounds.e_value"))
 
     if estimate.adjustment_set:
         fields.append(
@@ -972,11 +718,7 @@ def _render_estimate_card(
             )
         )
     if estimate.warnings:
-        fields.append(
-            _render_field(
-                "warnings", _render_list(estimate.warnings), source="warnings"
-            )
-        )
+        fields.append(_render_field("warnings", _render_list(estimate.warnings), source="warnings"))
 
     next_step = _render_next_step(estimate)
 
@@ -1013,9 +755,7 @@ def _render_attribution_table(attribution: FailureAttribution) -> str:
                 "n/a (unidentified)",
             )
         else:
-            influence_cell = tag(
-                "td", None, f"{entry.influence:.3f}"
-            )
+            influence_cell = tag("td", None, f"{entry.influence:.3f}")
         rows.append(
             tag(
                 "tr",
@@ -1075,8 +815,7 @@ def _render_verdict(report: ExplainReport) -> str:
                 tag(
                     "p",
                     {"class": "section-subtitle"},
-                    "Single-class corpus — `fit_outcome_model` is "
-                    "intentionally skipped.",
+                    "Single-class corpus — `fit_outcome_model` is intentionally skipped.",
                 )
             ),
             raw(tag("div", {"class": "cards"}, raw(card))),
@@ -1086,8 +825,7 @@ def _render_verdict(report: ExplainReport) -> str:
         _render_estimate_card(
             entry.estimate,
             title=(
-                f"{entry.decision_type} :: {entry.chosen_action}  "
-                f"(decision_id={entry.decision_id})"
+                f"{entry.decision_type} :: {entry.chosen_action}  (decision_id={entry.decision_id})"
             ),
             subtitle=f"rank {rank}",
         )
@@ -1158,9 +896,7 @@ def render_html(report: ExplainReport, *, now: datetime | None = None) -> str:
     focal_id = top.decision_id if top is not None else None
 
     title = (
-        "counterfact diagnose"
-        if report.diagnosis_summary is not None
-        else "counterfact explain"
+        "counterfact diagnose" if report.diagnosis_summary is not None else "counterfact explain"
     )
     head = tag(
         "head",
@@ -1173,7 +909,7 @@ def render_html(report: ExplainReport, *, now: datetime | None = None) -> str:
             )
         ),
         raw(tag("title", None, f"{title} — {report.run.run_id}")),
-        raw(tag("style", None, raw(_CSS))),
+        raw(tag("style", None, raw(CSS))),
     )
     body = tag(
         "body",

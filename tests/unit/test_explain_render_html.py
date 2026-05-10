@@ -14,14 +14,13 @@ import re
 import shlex
 from datetime import UTC, datetime
 from html.parser import HTMLParser
-from pathlib import Path
 
 import pytest
 
 from counterfact.attribute import AttributionEntry, FailureAttribution
 from counterfact.diagnose import build_diagnosis_pair
 from counterfact.explain import build_report, render_html
-from counterfact.explain.render_html import _node_label
+from counterfact.explain.render_html import _arm_names, _node_label
 from counterfact.explain.report import ExplainReport
 from counterfact.intervene.estimate import (
     CausalEstimate,
@@ -32,25 +31,13 @@ from counterfact.intervene.estimate import (
     SensitivityBounds,
 )
 from counterfact.schema import Decision, Metadata, Outcome, Run
+from tests.conftest import single_class_refusal_corpus, synthetic_corpus
 
 # ---------------------------------------------------------------------------
 # Fixtures and helpers
 # ---------------------------------------------------------------------------
 
 FIXED_NOW = datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC)
-
-
-def _synthetic_corpus(n: int = 24, seed: int = 7) -> list[Run]:
-    from bench.synthetic import generate_traces
-
-    return [Run.model_validate(t) for t in generate_traces(n=n, seed=seed)]
-
-
-def _single_class_refusal_corpus() -> list[Run]:
-    return [
-        Run.model_validate_json(p.read_text())
-        for p in sorted(Path("bench/real/single_class_refusal").glob("*.json"))
-    ]
 
 
 def test_node_label__hidden_fixture_termination_success_names_public_tests() -> None:
@@ -78,6 +65,17 @@ def test_node_label__hidden_fixture_termination_success_names_public_tests() -> 
     assert _node_label(decision, run) == "termination::public_tests_passed"
 
 
+def test_arm_names__handles_string_list_and_dict_list_and_none() -> None:
+    # `_arm_names` is the boundary between untyped JSON payloads and the
+    # rendered support diagnostics; it must handle each shape upstream
+    # estimators are allowed to emit.
+    assert _arm_names(["a", "b"]) == ["a", "b"]
+    assert _arm_names([{"arm": "x"}, {"arm": "y"}]) == ["x", "y"]
+    assert _arm_names(None) == []
+    # Dict rows without an "arm" key are dropped — preserve current behavior.
+    assert _arm_names([{"no_arm_key": 1}]) == []
+
+
 def _identified_estimate() -> CausalEstimate:
     return CausalEstimate(
         query=InterventionQuery(
@@ -103,8 +101,7 @@ def _identified_estimate() -> CausalEstimate:
                 "power_method": "wilson",
                 "arm_breakdown": [],
                 "suggested_command": (
-                    "uv run counterfact bench real --n 416 "
-                    "--fixture-set broad_calibration"
+                    "uv run counterfact bench real --n 416 --fixture-set broad_calibration"
                 ),
             },
             human_text="Tighten the CI by collecting ~416 traces.",
@@ -241,13 +238,9 @@ def _extract_section(html: str, h2_text: str) -> str:
     return html[start:end]
 
 
-def _build_synthetic_report(
-    *, corpus_size: int = 24, seed: int = 7
-) -> ExplainReport:
-    corpus = _synthetic_corpus(n=corpus_size, seed=seed)
-    return build_report(
-        corpus[0], corpus, decision_type="model_call", bootstrap=20, seed=seed
-    )
+def _build_synthetic_report(*, corpus_size: int = 24, seed: int = 7) -> ExplainReport:
+    corpus = synthetic_corpus(n=corpus_size, seed=seed)
+    return build_report(corpus[0], corpus, decision_type="model_call", bootstrap=20, seed=seed)
 
 
 def _isolate_card(html: str, status: str) -> str:
@@ -309,7 +302,7 @@ def _hand_built_report(
     """Hand-build an ExplainReport from a synthetic run + corpus so tests
     can pin specific CausalEstimate combinations without going through
     `attribute_failure`."""
-    corpus = _synthetic_corpus(n=12, seed=11)
+    corpus = synthetic_corpus(n=12, seed=11)
     focal = corpus[0]
     base = build_report(focal, corpus, bootstrap=10, seed=11)
     return base.model_copy(
@@ -352,7 +345,7 @@ def test_render__timeline_lists_steps_and_decision_metadata() -> None:
 
 
 def test_render__timeline_omits_raw_observation_content() -> None:
-    corpus = _synthetic_corpus(n=12, seed=11)
+    corpus = synthetic_corpus(n=12, seed=11)
     focal = corpus[0].model_copy(
         update={
             "steps": [
@@ -381,8 +374,6 @@ def test_render__timeline_omits_raw_observation_content() -> None:
 
 
 def test_render__badge_text_matches_identifiability_value_for_each_status() -> None:
-    """For every status, the badge element's text equals the enum's
-    `.value`."""
     identified = _identified_estimate()
     unid = _unidentified_estimate()
     attribution = _make_synthetic_attribution(identified, unid)
@@ -390,13 +381,9 @@ def test_render__badge_text_matches_identifiability_value_for_each_status() -> N
     html = render_html(report, now=FIXED_NOW)
 
     # identified badge
-    assert (
-        '<span class="badge ident-identified">identified</span>' in html
-    )
+    assert '<span class="badge ident-identified">identified</span>' in html
     # unidentified badge
-    assert (
-        '<span class="badge ident-unidentified">unidentified</span>' in html
-    )
+    assert '<span class="badge ident-unidentified">unidentified</span>' in html
 
 
 def test_render__identified_card_shows_outcome_delta_with_three_decimals() -> None:
@@ -416,8 +403,6 @@ def test_render__identified_card_shows_outcome_delta_with_three_decimals() -> No
 
 
 def test_render__identified_card_renders_assumptions_list() -> None:
-    """Non-empty `CausalEstimate.assumptions` must surface in the rendered
-    card. Each assumption is a separate list item."""
     identified = _identified_estimate()
     unid = _unidentified_estimate()
     attribution = _make_synthetic_attribution(identified, unid)
@@ -442,9 +427,7 @@ def test_render__bounded_e_value_is_emitted_when_present_and_hidden_when_none() 
             step=2,
         ),
         identifiability=IdentifiabilityStatus.BOUNDED,
-        outcome_delta=DistributionSummary(
-            point=0.21, ci_low=0.05, ci_high=0.37, n_bootstrap=200
-        ),
+        outcome_delta=DistributionSummary(point=0.21, ci_low=0.05, ci_high=0.37, n_bootstrap=200),
         bounds=SensitivityBounds(e_value=1.4, note="loose bound"),
         next_step=NextStep(
             action="replay_required",
@@ -511,9 +494,7 @@ def test_render__unidentified_card_has_no_decimal_estimate() -> None:
     assert "unidentified" in card
 
 
-def test_render__attribution_table_influence_cell_hides_numeric_for_unidentified() -> (
-    None
-):
+def test_render__attribution_table_influence_cell_hides_numeric_for_unidentified() -> None:
     identified = _identified_estimate()
     unid = _unidentified_estimate()
     attribution = _make_synthetic_attribution(identified, unid)
@@ -562,7 +543,7 @@ def test_render__decision_card_renders_support_diagnostics() -> None:
 
 
 def test_render__diagnosis_report_shows_summary_entries() -> None:
-    corpus = _synthetic_corpus(n=60, seed=42)
+    corpus = synthetic_corpus(n=60, seed=42)
     diagnosis, report = build_diagnosis_pair(
         corpus[0],
         corpus,
@@ -588,7 +569,7 @@ def test_render__diagnosis_report_shows_summary_entries() -> None:
 
 
 def test_render__diagnosis_report_is_deterministic_with_frozen_clock() -> None:
-    corpus = _synthetic_corpus(n=48, seed=42)
+    corpus = synthetic_corpus(n=48, seed=42)
     _, report = build_diagnosis_pair(corpus[0], corpus, bootstrap=10, seed=42)
 
     a = render_html(report, now=FIXED_NOW)
@@ -598,7 +579,7 @@ def test_render__diagnosis_report_is_deterministic_with_frozen_clock() -> None:
 
 
 def test_render__diagnosis_report_is_self_contained() -> None:
-    corpus = _synthetic_corpus(n=48, seed=42)
+    corpus = synthetic_corpus(n=48, seed=42)
     _, report = build_diagnosis_pair(corpus[0], corpus, bootstrap=10, seed=42)
 
     html = render_html(report, now=FIXED_NOW)
@@ -657,9 +638,7 @@ def test_render__decision_card_unresolved_step_does_not_leak_none() -> None:
         identifiability=IdentifiabilityStatus.UNIDENTIFIED,
         estimate=unid,
     )
-    attribution = FailureAttribution(
-        entries=[*base_attribution.entries, orphan_entry]
-    )
+    attribution = FailureAttribution(entries=[*base_attribution.entries, orphan_entry])
     report = _hand_built_report(attribution)
 
     html = render_html(report, now=FIXED_NOW)
@@ -797,9 +776,7 @@ def test_render__byte_identical_for_fixed_inputs_and_clock() -> None:
 
 
 def test_render__single_class_corpus_produces_no_decimal_point_estimate() -> None:
-    """End-to-end: the single_class_refusal single-class path must render the
-    unidentified card with no card-level decimal estimate."""
-    corpus = _single_class_refusal_corpus()
+    corpus = single_class_refusal_corpus()
     focal = corpus[0]
     report = build_report(focal, corpus, bootstrap=20, seed=42)
     html = render_html(report, now=FIXED_NOW)
@@ -810,12 +787,22 @@ def test_render__single_class_corpus_produces_no_decimal_point_estimate() -> Non
 
 
 def test_render__rejects_no_external_assets_with_strict_check() -> None:
-    """Reinforce self-containment: no <script src=...> or <link href=...>
-    referencing http(s) anywhere."""
     report = _build_synthetic_report()
     html = render_html(report, now=FIXED_NOW)
     assert "<script src=" not in html
     assert "<link " not in html or "http" not in html.split("<link", 1)[-1].split(">", 1)[0]
+
+
+def test_render_field__escapes_plain_strings_and_passes_raw_through() -> None:
+    from counterfact.explain._html import raw
+    from counterfact.explain.render_html import _render_field
+
+    escaped = _render_field("note", "<script>alert(1)</script>")
+    assert "<script>alert(1)</script>" not in escaped
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in escaped
+
+    passthrough = _render_field("items", raw("<ul><li>a</li></ul>"))
+    assert "<ul><li>a</li></ul>" in passthrough
 
 
 @pytest.mark.parametrize(
