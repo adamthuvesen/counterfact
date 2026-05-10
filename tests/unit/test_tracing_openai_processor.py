@@ -164,6 +164,52 @@ def test_processor_with_no_spans_writes_nothing(tmp_path: Path) -> None:
     assert list(tmp_path.glob("*.json")) == []
 
 
+def test_processor_receipt_count_accumulates_across_traces(tmp_path: Path) -> None:
+    processor = CounterfactSpanProcessor(
+        output_dir=tmp_path,
+        outcome_provider=lambda payload: True,
+    )
+    for i in range(5):
+        trace_id = f"trace-cum-{i:03d}"
+        processor.on_trace_start(_FakeTrace(trace_id=trace_id))
+        for span in _spans_for_minimal(trace_id):
+            processor.on_span_end(span)
+        processor.on_trace_end(_FakeTrace(trace_id=trace_id))
+
+    receipt = json.loads((tmp_path / "ingest-receipt.json").read_text())
+    assert receipt["generated_count"] == 5
+
+
+def test_processor_receipt_count_extends_existing_receipt(tmp_path: Path) -> None:
+    # Pre-seed an existing receipt to simulate a resumed session.
+    (tmp_path / "ingest-receipt.json").write_text(
+        json.dumps(
+            {
+                "source_format": "openai-agents",
+                "source_file": "<live-processor>",
+                "mapping_file": "",
+                "generated_count": 7,
+                "warnings": [],
+                "dropped_fields": [],
+                "validation_errors": [],
+            }
+        )
+    )
+
+    processor = CounterfactSpanProcessor(
+        output_dir=tmp_path,
+        outcome_provider=lambda payload: True,
+    )
+    trace_id = "trace-resume-001"
+    processor.on_trace_start(_FakeTrace(trace_id=trace_id))
+    for span in _spans_for_minimal(trace_id):
+        processor.on_span_end(span)
+    processor.on_trace_end(_FakeTrace(trace_id=trace_id))
+
+    receipt = json.loads((tmp_path / "ingest-receipt.json").read_text())
+    assert receipt["generated_count"] == 8
+
+
 def test_processor_shutdown_clears_buffers(tmp_path: Path) -> None:
     processor = CounterfactSpanProcessor(output_dir=tmp_path)
     processor.on_span_end(

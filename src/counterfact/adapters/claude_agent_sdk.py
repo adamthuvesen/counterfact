@@ -24,14 +24,12 @@ from counterfact.adapters._common import (
     strict_bool,
     write_corpus,
 )
-from counterfact.schema import Decision, Observation, Outcome, Run, Step
+from counterfact.schema import Decision, Metadata, Observation, Outcome, Run, Step
 from counterfact.schema.models import SCHEMA_VERSION
 
 SOURCE_FORMAT = "claude-agent-sdk"
 
-_KNOWN_BLOCK_TYPES = frozenset(
-    {"TextBlock", "ToolUseBlock", "ToolResultBlock", "ThinkingBlock"}
-)
+_KNOWN_BLOCK_TYPES = frozenset({"TextBlock", "ToolUseBlock", "ToolResultBlock", "ThinkingBlock"})
 _KNOWN_MESSAGE_TYPES = frozenset(
     {
         "AssistantMessage",
@@ -68,9 +66,7 @@ def _content_blocks(message: dict[str, Any]) -> list[dict[str, Any]]:
     if isinstance(content, str):
         return [{"__type__": "TextBlock", "text": content}]
     if not isinstance(content, list):
-        raise IngestError(
-            f"unexpected message.content type {type(content).__name__}: {content!r}"
-        )
+        raise IngestError(f"unexpected message.content type {type(content).__name__}: {content!r}")
     blocks: list[dict[str, Any]] = []
     for raw in content:
         if not isinstance(raw, dict):
@@ -98,9 +94,7 @@ def _text_and_thinking(blocks: list[dict[str, Any]]) -> dict[str, Any]:
     text_parts = [b.get("text", "") for b in blocks if _block_type(b) == "TextBlock"]
     if text_parts:
         out["text"] = "\n".join(text_parts)
-    thinking_parts = [
-        b.get("thinking", "") for b in blocks if _block_type(b) == "ThinkingBlock"
-    ]
+    thinking_parts = [b.get("thinking", "") for b in blocks if _block_type(b) == "ThinkingBlock"]
     if thinking_parts:
         out["thinking"] = "\n".join(thinking_parts)
     return out
@@ -138,9 +132,7 @@ def _system_observation(message: dict[str, Any], obs_index: int, run_id: str) ->
     )
 
 
-def _user_observation(
-    message: dict[str, Any], obs_index: int, run_id: str
-) -> Observation:
+def _user_observation(message: dict[str, Any], obs_index: int, run_id: str) -> Observation:
     blocks = _content_blocks(message)
     _has_only_known_blocks(blocks, source_index=obs_index)
     if message.get("tool_use_result") is not None:
@@ -207,9 +199,7 @@ def _assistant_decisions(
         metadata.update(aux)
     if message.get("usage") is not None:
         metadata["usage"] = message["usage"]
-    decision_id = (
-        f"d-{run_id}-msg-{message.get('message_id') or msg_index}"
-    )
+    decision_id = f"d-{run_id}-msg-{message.get('message_id') or msg_index}"
     decisions.append(
         Decision(
             decision_id=decision_id,
@@ -221,9 +211,7 @@ def _assistant_decisions(
     return decisions
 
 
-def _terminal_step(
-    result: dict[str, Any], *, run_id: str, step_index: int
-) -> Step:
+def _terminal_step(result: dict[str, Any], *, run_id: str, step_index: int) -> Step:
     is_error = strict_bool(result.get("is_error"), field_name="ResultMessage.is_error")
     return Step(
         step_index=step_index,
@@ -309,9 +297,7 @@ def run_from_messages(messages: list[dict[str, Any]]) -> Run:
             step = Step(
                 step_index=next_step_index,
                 decisions=decisions,
-                observations=(
-                    pending_pre_assistant_observations if next_step_index == 0 else []
-                ),
+                observations=(pending_pre_assistant_observations if next_step_index == 0 else []),
             )
             pending_pre_assistant_observations = []
             steps.append(step)
@@ -340,7 +326,9 @@ def run_from_messages(messages: list[dict[str, Any]]) -> Run:
         next_step_index += 1
 
     if result_msg is None:
-        _outcome(result_msg)
+        raise IngestError(
+            "claude-agent-sdk message stream has no ResultMessage; cannot derive Outcome"
+        )
     steps.append(_terminal_step(result_msg, run_id=run_id, step_index=next_step_index))
 
     metadata_extra: dict[str, Any] = {"source_format": SOURCE_FORMAT}
@@ -355,7 +343,7 @@ def run_from_messages(messages: list[dict[str, Any]]) -> Run:
         run_id=run_id,
         steps=steps,
         outcome=_outcome(result_msg),
-        metadata={"agent_name": "claude-agent-sdk", "extra": metadata_extra},
+        metadata=Metadata(agent_name="claude-agent-sdk", extra=metadata_extra),
     )
 
 
@@ -384,9 +372,7 @@ def ingest_claude_agent_sdk(
         try:
             payload = json.loads(raw_line)
         except json.JSONDecodeError as exc:
-            raise IngestError(
-                f"{source_path}: line {line_no}: invalid JSON: {exc}"
-            ) from exc
+            raise IngestError(f"{source_path}: line {line_no}: invalid JSON: {exc}") from exc
         if isinstance(payload, dict) and "messages" in payload:
             messages = payload["messages"]
         elif isinstance(payload, list):
@@ -398,9 +384,7 @@ def ingest_claude_agent_sdk(
                 f"got {type(payload).__name__}"
             )
         if not isinstance(messages, list):
-            raise IngestError(
-                f"{source_path}: line {line_no}: 'messages' must be a list"
-            )
+            raise IngestError(f"{source_path}: line {line_no}: 'messages' must be a list")
         try:
             run = run_from_messages(messages)
         except (IngestError, ValidationError, ValueError) as exc:

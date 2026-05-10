@@ -128,10 +128,7 @@ def test_tracer_accepts_dataclass_messages(tmp_path: Path) -> None:
 
     run = Run.model_validate_json((tmp_path / "sess-dc-1.json").read_text())
     model_calls = [
-        d
-        for step in run.steps
-        for d in step.decisions
-        if d.decision_type == "model_call"
+        d for step in run.steps for d in step.decisions if d.decision_type == "model_call"
     ]
     assert len(model_calls) == 1
     assert model_calls[0].chosen_action == "claude-sonnet-4-6"
@@ -170,6 +167,57 @@ def test_tracer_rejects_non_serializable_object_with_clear_error(tmp_path: Path)
         _run_async(go())
 
     assert "claude_agent_sdk" in str(excinfo.value) or "serialize" in str(excinfo.value)
+
+
+def _pass_messages_with_session(session_id: str) -> list[dict]:
+    msgs = _pass_messages()
+    for m in msgs:
+        if "session_id" in m:
+            m["session_id"] = session_id
+        if m.get("__type__") == "UserMessage" and "parent_tool_use_id" in m:
+            # session_id already covered above; nothing else to rewrite
+            pass
+    return msgs
+
+
+def test_tracer_receipt_count_accumulates_across_sessions(tmp_path: Path) -> None:
+    async def go() -> None:
+        for i in range(5):
+            sid = f"sess-cum-{i:03d}"
+            async with ClaudeAgentTracer(output_dir=tmp_path) as tracer:
+                for msg in _pass_messages_with_session(sid):
+                    tracer.observe(msg)
+
+    _run_async(go())
+
+    receipt = json.loads((tmp_path / "ingest-receipt.json").read_text())
+    assert receipt["generated_count"] == 5
+
+
+def test_tracer_receipt_count_extends_existing_receipt(tmp_path: Path) -> None:
+    (tmp_path / "ingest-receipt.json").write_text(
+        json.dumps(
+            {
+                "source_format": "claude-agent-sdk",
+                "source_file": "<live-tracer>",
+                "mapping_file": "",
+                "generated_count": 3,
+                "warnings": [],
+                "dropped_fields": [],
+                "validation_errors": [],
+            }
+        )
+    )
+
+    async def go() -> None:
+        async with ClaudeAgentTracer(output_dir=tmp_path) as tracer:
+            for msg in _pass_messages_with_session("sess-resume-001"):
+                tracer.observe(msg)
+
+    _run_async(go())
+
+    receipt = json.loads((tmp_path / "ingest-receipt.json").read_text())
+    assert receipt["generated_count"] == 4
 
 
 def test_tracer_offline_round_trips_to_ingest_cli(tmp_path: Path) -> None:

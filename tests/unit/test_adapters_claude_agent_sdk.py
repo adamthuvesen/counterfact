@@ -70,12 +70,7 @@ def test_run_id_comes_from_result_message_session_id() -> None:
 def test_tool_use_blocks_become_tool_call_decisions() -> None:
     run = run_from_messages(_pass_messages())
 
-    tool_calls = [
-        d
-        for step in run.steps
-        for d in step.decisions
-        if d.decision_type == "tool_call"
-    ]
+    tool_calls = [d for step in run.steps for d in step.decisions if d.decision_type == "tool_call"]
     assert len(tool_calls) == 1
     assert tool_calls[0].chosen_action == "read_file"
     assert tool_calls[0].metadata["input"] == {"path": "src/foo.py"}
@@ -85,10 +80,7 @@ def test_text_only_assistant_messages_become_model_call_decisions() -> None:
     run = run_from_messages(_pass_messages())
 
     model_calls = [
-        d
-        for step in run.steps
-        for d in step.decisions
-        if d.decision_type == "model_call"
+        d for step in run.steps for d in step.decisions if d.decision_type == "model_call"
     ]
     assert len(model_calls) == 1
     assert model_calls[0].chosen_action == "claude-sonnet-4-6"
@@ -98,9 +90,7 @@ def test_tool_use_result_attaches_to_same_step_as_tool_call() -> None:
     run = run_from_messages(_pass_messages())
 
     tool_call_step = next(
-        step
-        for step in run.steps
-        if any(d.decision_type == "tool_call" for d in step.decisions)
+        step for step in run.steps if any(d.decision_type == "tool_call" for d in step.decisions)
     )
     assert len(tool_call_step.observations) == 1
     obs = tool_call_step.observations[0]
@@ -184,6 +174,19 @@ def test_decisions_have_no_randomization_metadata() -> None:
 def test_empty_message_stream_is_rejected() -> None:
     with pytest.raises(IngestError, match="empty"):
         run_from_messages([])
+
+
+def test_missing_result_message_raises_clear_error() -> None:
+    msgs = [
+        {
+            "__type__": "AssistantMessage",
+            "model": "claude-sonnet-4-6",
+            "session_id": "sess-no-result",
+            "content": [{"__type__": "TextBlock", "text": "hi"}],
+        },
+    ]
+    with pytest.raises(IngestError, match="no ResultMessage"):
+        run_from_messages(msgs)
 
 
 def test_missing_session_id_is_rejected() -> None:

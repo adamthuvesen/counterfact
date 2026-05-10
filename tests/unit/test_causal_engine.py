@@ -48,8 +48,6 @@ def _dag(run: Run):  # convenience
 def test_fit_outcome_model__fits_on_synthetic_corpus_and_returns_a_model(
     fitted: object,
 ) -> None:
-    """WHEN fit_outcome_model is called on synthetic traces with outcome="success"
-    THEN the returned object has non-null .coefficients/.bootstrap_ci/.predict_proba."""
     assert fitted.coefficients is not None
     assert fitted.bootstrap_ci is not None
     assert callable(fitted.predict_proba)
@@ -61,15 +59,11 @@ def test_fit_outcome_model__fits_on_synthetic_corpus_and_returns_a_model(
 
 
 def test_fit_outcome_model__bootstrap_cis_surround_point_estimate(fitted: object) -> None:
-    """WHEN the model is fit with n_bootstrap=N
-    THEN for every coefficient the point estimate is within the [low, high] of the bootstrap CI."""
     cis = fitted.bootstrap_ci
     for name, (lo, hi) in cis.items():
         i = fitted.feature_names.index(name)
         point = float(fitted.coefficients[i])
-        assert lo <= point <= hi, (
-            f"coefficient {name} point={point} outside [{lo}, {hi}]"
-        )
+        assert lo <= point <= hi, f"coefficient {name} point={point} outside [{lo}, {hi}]"
 
 
 def test_fit_outcome_model__all_pass_corpus_raises_domain_error() -> None:
@@ -139,14 +133,136 @@ def test_degenerate_outcome_classes_rejects_non_binary_outcomes() -> None:
         outcome_classes([run])
 
 
+def test_degenerate_estimate_uses_none_step_not_negative_sentinel() -> None:
+    """Single-class degenerate corpora produce CausalEstimate.query.step=None.
+
+    The previous code used -1 as a "no step" sentinel, which forced consumers
+    to know the magic value. None is self-documenting and aligned with the
+    Optional[int] type on InterventionQuery.step.
+    """
+    from counterfact.intervene.degenerate import degenerate_estimate
+
+    runs = [
+        Run(
+            schema_version="0.1.0",
+            run_id=f"refusal-{i}",
+            steps=[
+                Step(
+                    step_index=0,
+                    decisions=[
+                        Decision(
+                            decision_id=f"d-{i}",
+                            decision_type="model_call",
+                            chosen_action="haiku",
+                        )
+                    ],
+                )
+            ],
+            outcome=Outcome(kind="binary", value=False, verifier="stub"),
+        )
+        for i in range(3)
+    ]
+    est = degenerate_estimate(
+        runs,
+        decision_type="model_call",
+        intervention_kind="model_choice",
+        target="sonnet",
+    )
+    assert est.query.step is None
+    assert est.identifiability == IdentifiabilityStatus.UNIDENTIFIED
+
+
+def test_intervene_query_step_accepts_none() -> None:
+    from counterfact.intervene.estimate import InterventionQuery
+
+    q = InterventionQuery(
+        decision_type="model_call",
+        intervention_kind="model_choice",
+        target="sonnet",
+        step=None,
+    )
+    assert q.step is None
+
+
+def test_intervene_missing_train_n_raises_clear_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Per spec scenario: when model.train_n is 0 AND train_X is unavailable,
+    power estimation must raise InvalidInterventionError rather than silently
+    substituting `delta.n_bootstrap` (the old, masking fallback)."""
+    import numpy as np
+
+    from counterfact.intervene import api as intervene_api
+    from counterfact.intervene.estimate import DistributionSummary
+    from counterfact.outcome.model import OutcomeModel
+
+    n = 80
+    rng = np.random.default_rng(11)
+    y = (rng.random(n) < 0.55).astype(int)
+    boot_coefs = np.zeros((50, 1), dtype=float)
+    boot_intercepts = np.linspace(-8.0, 8.0, 50)
+
+    # Model with train_n=0 and train_X=None: a malformed outcome model that
+    # the old fallback would have happily papered over by reading n_bootstrap.
+    bad_model = OutcomeModel(
+        feature_names=["tool_call::run_tests"],
+        coefficients=np.zeros(1),
+        intercept=0.0,
+        bootstrap_coefs=boot_coefs,
+        bootstrap_intercepts=boot_intercepts,
+        train_X=None,  # type: ignore[arg-type]
+        train_y=y,
+        train_n=0,
+        feature_index={"tool_call::run_tests": 0},
+        outcome_kind="binary",
+    )
+
+    # Stub the g-formula adjust so we exercise the post-adjust power branch
+    # directly. (Real adjust would crash on train_X=None; that is a separate
+    # invariant violation, not what this test covers.)
+    def _fake_adjust(model, decision_type, target_action):  # type: ignore[no-untyped-def]
+        return DistributionSummary(
+            point=0.6,
+            ci_low=0.2,
+            ci_high=0.9,
+            n_bootstrap=200,
+        )
+
+    monkeypatch.setattr(intervene_api, "_adjust_g_formula", _fake_adjust)
+
+    run = Run(
+        schema_version="0.1.0",
+        run_id="missing-train-n",
+        steps=[
+            Step(
+                step_index=0,
+                decisions=[
+                    Decision(
+                        decision_id="d-tool",
+                        decision_type="tool_call",
+                        chosen_action="run_tests",
+                    )
+                ],
+            )
+        ],
+        outcome=Outcome(kind="binary", value=True, verifier="stub"),
+    )
+
+    with pytest.raises(InvalidInterventionError, match="train_n"):
+        intervene(
+            dag=build_dag(run),
+            model=bad_model,
+            step=0,
+            intervention={"tool_choice": "run_tests"},
+        )
+
+
 # --- intervene spec scenarios ------------------------------------------------
 
 
 def test_intervene__identified_result_has_outcome_delta_and_adjustment_set(
     small_corpus: list[Run], fitted: object
 ) -> None:
-    """WHEN intervene is called for a tool_choice query that has randomized support
-    THEN identifiability="identified", outcome_delta is non-null, adjustment_set is non-empty."""
     est = intervene(
         dag=_dag(small_corpus[0]),
         model=fitted,
@@ -158,11 +274,9 @@ def test_intervene__identified_result_has_outcome_delta_and_adjustment_set(
     assert len(est.adjustment_set) > 0
 
 
-def test_intervene__bounded_result_has_bounds_and_assumptions(
+def test_intervene__bounded_result_has_null_bounds_and_assumptions(
     small_corpus: list[Run], fitted: object
 ) -> None:
-    """WHEN intervene is called for a memory_content query
-    THEN identifiability="bounded", bounds is non-null, at least one assumption."""
     # The synthetic SCM has no memory_read steps, so we synthesize a small run
     # with a memory_read step at index 1.
     run = Run(
@@ -190,16 +304,17 @@ def test_intervene__bounded_result_has_bounds_and_assumptions(
         intervention={"memory_content": "all"},
     )
     assert est.identifiability == IdentifiabilityStatus.BOUNDED
-    assert est.bounds is not None
+    # Bounded path: no observed P(success | do(...)), so emitting an E-value
+    # against a 0.5 baseline would always be 1.0 — false precision. Honest
+    # stance is bounds=None plus an assumption that says why.
+    assert est.bounds is None
     assert len(est.assumptions) >= 1
+    assert any("E-value not computed" in a for a in est.assumptions)
 
 
 def test_intervene__unidentified_result_has_reason_and_structured_next_step(
     small_corpus: list[Run], fitted: object
 ) -> None:
-    """WHEN intervene is called for a prompt_content query
-    THEN identifiability="unidentified", reason is non-null, and next_step has
-         action="replay_required" with intervention_target in payload."""
     # synthetic SCM has a model_call at step 2
     est = intervene(
         dag=_dag(small_corpus[0]),
@@ -217,8 +332,6 @@ def test_intervene__unidentified_result_has_reason_and_structured_next_step(
 def test_intervene__invalid_intervention_for_decision_type_raises(
     small_corpus: list[Run], fitted: object
 ) -> None:
-    """WHEN intervene is called with intervention tool_choice on a model_call step
-    THEN the system raises InvalidInterventionError."""
     with pytest.raises(InvalidInterventionError):
         intervene(
             dag=_dag(small_corpus[0]),
@@ -287,8 +400,6 @@ def test_intervene__increase_n_power_method_two_arm_matches_power_analysis(
 
 
 def test_intervene__increase_n_power_method_inline_scaling_on_single_arm() -> None:
-    """A model whose feature_index has only one arm for a decision_type falls
-    back to inline_scaling and yields estimated_required_n > current_n."""
     import numpy as np
 
     from counterfact.intervene.api import intervene as intervene_fn
@@ -430,8 +541,6 @@ def test_intervene__repeated_decision_type_reports_localization_limit(
 def test_attribute_failure__top_k_returns_at_most_k(
     small_corpus: list[Run], fitted: object
 ) -> None:
-    """WHEN attribute_failure(...).top_k(5) is called
-    THEN the result is a list of length <= 5."""
     attribution = attribute_failure(dag=_dag(small_corpus[0]), model=fitted)
     assert len(attribution.top_k(5)) <= 5
 
@@ -439,8 +548,6 @@ def test_attribute_failure__top_k_returns_at_most_k(
 def test_attribute_failure__each_entry_carries_identifiability_label(
     small_corpus: list[Run], fitted: object
 ) -> None:
-    """WHEN any entry from top_k is inspected
-    THEN it has identifiability set to one of identified, bounded, unidentified."""
     attribution = attribute_failure(dag=_dag(small_corpus[0]), model=fitted)
     for entry in attribution.top_k(10):
         assert entry.identifiability in {
@@ -451,8 +558,6 @@ def test_attribute_failure__each_entry_carries_identifiability_label(
 
 
 def test_attribute_failure__empty_corpus_yields_empty_ranking(fitted: object) -> None:
-    """WHEN attribute_failure is called on a trace with no decisions
-    THEN top_k(5) returns []."""
     empty_run = Run(
         schema_version="0.1.0",
         run_id="empty",
@@ -497,11 +602,7 @@ def test_attribute_failure__multi_decision_step_is_unidentified(
 # --- E-value spec scenarios --------------------------------------------------
 
 
-def test_evalue__present_on_identified_estimate(
-    small_corpus: list[Run], fitted: object
-) -> None:
-    """WHEN an intervene call returns an identified estimate
-    THEN estimate.bounds.e_value is a finite float >= 1.0."""
+def test_evalue__present_on_identified_estimate(small_corpus: list[Run], fitted: object) -> None:
     est = intervene(
         dag=_dag(small_corpus[0]),
         model=fitted,
@@ -533,9 +634,6 @@ def test_evalue__matches_reference_formula() -> None:
 def test_stacked_uncertainty__bootstrap_ci_does_not_absorb_bounds(
     small_corpus: list[Run], fitted: object
 ) -> None:
-    """WHEN an estimate is bounded (or identified)
-    THEN it has BOTH non-null outcome_delta AND non-null bounds, and they are not
-    the same object."""
     est = intervene(
         dag=_dag(small_corpus[0]),
         model=fitted,
@@ -550,8 +648,6 @@ def test_stacked_uncertainty__bootstrap_ci_does_not_absorb_bounds(
 def test_stacked_uncertainty__stable_model_on_unidentified_query_stays_unidentified(
     small_corpus: list[Run], fitted: object
 ) -> None:
-    """WHEN intervene is called with a prompt_content query (always-replay)
-    THEN identifiability remains unidentified regardless of model stability."""
     # Even though `fitted` has tight bootstrap CIs, the prompt_content query is
     # taxonomy-unidentified.
     est = intervene(
@@ -566,8 +662,6 @@ def test_stacked_uncertainty__stable_model_on_unidentified_query_stays_unidentif
 def test_no_silent_l3__identified_estimate_names_its_adjustment(
     small_corpus: list[Run], fitted: object
 ) -> None:
-    """WHEN any identified estimate is inspected
-    THEN estimate.assumptions is non-empty and at least one entry mentions 'adjustment'."""
     est = intervene(
         dag=_dag(small_corpus[0]),
         model=fitted,
@@ -579,11 +673,12 @@ def test_no_silent_l3__identified_estimate_names_its_adjustment(
     assert any("adjustment" in a for a in est.assumptions)
 
 
-def test_no_silent_l3__bounded_estimate_names_its_sensitivity_technique(
+def test_no_silent_l3__bounded_estimate_explains_sensitivity_stance(
     fitted: object,
 ) -> None:
     """WHEN any bounded estimate is inspected
-    THEN estimate.assumptions references 'E-value' or the sensitivity technique."""
+    THEN estimate.assumptions either names a sensitivity technique used or
+    explicitly says no E-value/sensitivity bound was computed (and why)."""
     run = Run(
         schema_version="0.1.0",
         run_id="r-mem-2",
@@ -608,16 +703,14 @@ def test_no_silent_l3__bounded_estimate_names_its_sensitivity_technique(
         intervention={"memory_content": "all"},
     )
     assert est.identifiability == IdentifiabilityStatus.BOUNDED
-    assert any(
-        "E-value" in a or "e_value" in a for a in est.assumptions
-    ), f"assumptions did not name sensitivity technique: {est.assumptions}"
+    assert any("E-value" in a or "e_value" in a for a in est.assumptions), (
+        f"assumptions did not address E-value stance: {est.assumptions}"
+    )
 
 
 def test_unsupported_outcome__non_binary_model_rejected_at_intervene(
     small_corpus: list[Run],
 ) -> None:
-    """An intervene call against a model whose outcome_kind != binary must raise."""
-
     class _ContinuousModel:
         outcome_kind = "continuous"
         feature_index: ClassVar[dict] = {}

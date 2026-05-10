@@ -136,8 +136,15 @@ def _power_from_arm_table(
         n_b = sibling_row["n"]
         p_a = target_row["pass_rate"]
         p_b = sibling_row["pass_rate"]
-        f_a = n_a / (n_a + n_b)
-        f_b = n_b / (n_a + n_b)
+        # Arm fractions must use the full per-arm-table total, not just the
+        # two focal arms — otherwise multi-arm corpora under-project required n.
+        # Mirrors `counterfact.power._two_arm_ci_width` semantically so the
+        # engine and the public power_analysis stay in agreement.
+        n_total = sum(int(r.get("n", 0)) for r in arm_table)
+        if n_total <= 0:
+            n_total = n_a + n_b
+        f_a = n_a / n_total
+        f_b = n_b / n_total
         var_per_n = p_a * (1 - p_a) / f_a + p_b * (1 - p_b) / f_b
         if var_per_n <= 0:
             # Degenerate per-arm rates (0 or 1 on both arms): the binomial
@@ -162,8 +169,7 @@ def _replay_inputs_for(decision_type: str, intervention_kind: str) -> list[str]:
 
 
 _REPLAY_NOTE = (
-    "v0 does not ship replay infrastructure; this next step is upstream of "
-    "the bench harness."
+    "v0 does not ship replay infrastructure; this next step is upstream of the bench harness."
 )
 
 
@@ -178,9 +184,7 @@ def _bootstrap_predict(model: Any, X: np.ndarray) -> tuple[np.ndarray, np.ndarra
     return point, boot
 
 
-def _adjust_g_formula(
-    model: Any, decision_type: str, target_action: str
-) -> DistributionSummary:
+def _adjust_g_formula(model: Any, decision_type: str, target_action: str) -> DistributionSummary:
     """g-formula: set target one-hot to 1, zero out sibling arms in every training row.
 
     The marginal `P(Y | do(decision_type=target_action))` is the average of the
@@ -263,8 +267,7 @@ def _duplicate_decision_steps(dag: DAG, step: int, decision_type: str) -> list[i
     return [
         s.step_index
         for s in dag.run.steps
-        if s.step_index != step
-        and any(d.decision_type == decision_type for d in s.decisions)
+        if s.step_index != step and any(d.decision_type == decision_type for d in s.decisions)
     ]
 
 
@@ -378,9 +381,7 @@ def intervene(
                 action="replay_required",
                 payload={
                     "intervention_target": intervention_kind,
-                    "replay_inputs_required": _replay_inputs_for(
-                        decision_type, intervention_kind
-                    ),
+                    "replay_inputs_required": _replay_inputs_for(decision_type, intervention_kind),
                     "note": _REPLAY_NOTE,
                 },
                 human_text=(
@@ -392,8 +393,11 @@ def intervene(
 
     if stance == "requires-back-door-adjustment":
         # v0 returns a bounded estimate: we name the adjustment strategy in
-        # assumptions and emit an E-value sentinel against a 0.5 baseline.
-        ev = _e_value_from_probs(0.5, baseline=0.5)
+        # assumptions but cannot emit a meaningful E-value here. The bounded
+        # path has no observed marginal P(success | do(...)), so any E-value
+        # would have to be computed against a hardcoded 0.5/0.5 — which is
+        # always 1.0 and conveys false precision. The honest stance is to
+        # leave `bounds=None` and explain why in `assumptions`.
         observed_arms = _arm_table_for(model, decision_type)
         observed_arm_names = [r["arm"] for r in observed_arms]
         suggestion = suggest_harness_command(
@@ -409,9 +413,7 @@ def intervene(
                 f"{decision_type} jointly with its parents; v0 returns a bound."
             ],
             "observed_arms": observed_arms,
-            "missing_arms": _missing_arms_for(
-                decision_type, intervention_kind, observed_arm_names
-            ),
+            "missing_arms": _missing_arms_for(decision_type, intervention_kind, observed_arm_names),
         }
         if suggestion is not None:
             payload["suggested_command"] = suggestion
@@ -421,12 +423,13 @@ def intervene(
             adjustment_set=[decision_type],
             assumptions=[
                 f"back-door adjustment on {decision_type} via taxonomy parents",
-                "E-value computed against a 0.5 baseline",
+                "E-value not computed: bounded path has no observed marginal "
+                "P(success | do(...)) to compare against a baseline",
             ],
-            bounds=SensitivityBounds(e_value=ev, technique="e_value"),
+            bounds=None,
             warnings=[
-                "bounded path: confounders may exist; sensitivity bound holds the "
-                "result against unmeasured strength of confounding."
+                "bounded path: confounders may exist; v0 does not ship a "
+                "sensitivity measure here — broaden arm support to promote to identified."
             ],
             next_step=NextStep(
                 action="broaden_arm_support",
@@ -447,9 +450,7 @@ def intervene(
         observed_arm_names = [r["arm"] for r in observed_arms]
         # The target arm is, by definition, not in observed_arms here.
         target_arm_name = str(target_value) if target_value is not None else None
-        canonical_missing = _missing_arms_for(
-            decision_type, intervention_kind, observed_arm_names
-        )
+        canonical_missing = _missing_arms_for(decision_type, intervention_kind, observed_arm_names)
         if target_arm_name and target_arm_name not in canonical_missing:
             canonical_missing = [target_arm_name, *canonical_missing]
         suggestion = suggest_harness_command(
@@ -496,12 +497,20 @@ def intervene(
             ),
         )
     else:
-        current_n = int(
-            getattr(model, "train_n", 0)
-            or getattr(getattr(model, "train_X", None), "shape", [0])[0]
-            or delta.n_bootstrap
-        )
-        current_n = max(current_n, 1)
+        # Power must be measured against the actual corpus size. Falling back
+        # to `delta.n_bootstrap` (the bootstrap draw count) silently substitutes
+        # a power-irrelevant constant; if `train_n`/`train_X` are missing the
+        # outcome model is malformed and we should surface that explicitly.
+        train_n = int(getattr(model, "train_n", 0) or 0)
+        if train_n <= 0:
+            train_X = getattr(model, "train_X", None)
+            train_n = int(getattr(train_X, "shape", [0])[0]) if train_X is not None else 0
+        if train_n <= 0:
+            raise InvalidInterventionError(
+                "outcome model is missing train_n / train_X; cannot estimate power "
+                "without the true corpus size"
+            )
+        current_n = train_n
         arm_table = _arm_table_for(model, decision_type)
         estimated_required_n, power_method = _power_from_arm_table(
             arm_table,
