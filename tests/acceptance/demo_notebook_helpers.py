@@ -31,9 +31,7 @@ def execute_demo_notebook(out_dir: Path) -> dict:
         text=True,
         timeout=300,
     )
-    assert proc.returncode == 0, (
-        f"nbconvert failed: stdout={proc.stdout!r} stderr={proc.stderr!r}"
-    )
+    assert proc.returncode == 0, f"nbconvert failed: stdout={proc.stdout!r} stderr={proc.stderr!r}"
     return json.loads((out_dir / EXECUTED_NOTEBOOK_NAME).read_text())
 
 

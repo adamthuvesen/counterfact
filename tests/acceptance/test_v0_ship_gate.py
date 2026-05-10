@@ -72,10 +72,7 @@ FORBIDDEN_IMPORTS = ("dowhy", "causalml", "pyro", "langchain", "langgraph")
 def _load_real_corpus() -> list[Run]:
     if not REAL_CORPUS_DIR.exists():
         return []
-    return [
-        Run.model_validate_json(p.read_text())
-        for p in sorted(REAL_CORPUS_DIR.glob("*.json"))
-    ]
+    return [Run.model_validate_json(p.read_text()) for p in sorted(REAL_CORPUS_DIR.glob("*.json"))]
 
 
 @pytest.fixture(scope="module")
@@ -127,19 +124,13 @@ def _pick_three_queries(real_corpus: list[Run]) -> list[tuple[Run, int, dict[str
                 if d.decision_type in seen_types:
                     continue
                 if d.decision_type == "model_call":
-                    queries.append(
-                        (run, step.step_index, {"model_choice": d.chosen_action})
-                    )
+                    queries.append((run, step.step_index, {"model_choice": d.chosen_action}))
                     seen_types.add("model_call")
                 elif d.decision_type == "tool_call" and d.policy:
-                    queries.append(
-                        (run, step.step_index, {"tool_choice": d.chosen_action})
-                    )
+                    queries.append((run, step.step_index, {"tool_choice": d.chosen_action}))
                     seen_types.add("tool_call")
                 elif d.decision_type == "retry":
-                    queries.append(
-                        (run, step.step_index, {"retry_policy": d.chosen_action})
-                    )
+                    queries.append((run, step.step_index, {"retry_policy": d.chosen_action}))
                     seen_types.add("retry")
         if len(queries) >= 3:
             break
@@ -149,9 +140,7 @@ def _pick_three_queries(real_corpus: list[Run]) -> list[tuple[Run, int, dict[str
         for step in run.steps:
             for d in step.decisions:
                 if d.decision_type == "model_call":
-                    queries.append(
-                        (run, step.step_index, {"prompt_content": "be more careful"})
-                    )
+                    queries.append((run, step.step_index, {"prompt_content": "be more careful"}))
                     return [*queries[:3], queries[-1]] if len(queries) > 3 else queries
     return queries
 
@@ -183,9 +172,7 @@ def _degenerate_real_corpus_estimate(real_corpus: list[Run]) -> CausalEstimate:
             f"Outcome.value={observed}; no outcome variation exists for an "
             "outcome model or back-door adjustment to leverage"
         ),
-        warnings=[
-            "fit_outcome_model is intentionally skipped for single-class real corpora"
-        ],
+        warnings=["fit_outcome_model is intentionally skipped for single-class real corpora"],
         next_step=NextStep(
             action="broaden_arm_support",
             payload={
@@ -259,7 +246,7 @@ def test_real_corpus_identifiability_is_honest(real_corpus: list[Run]) -> None:
             assert est.outcome_delta.ci_low <= est.outcome_delta.ci_high
 
             # Naive marginal must fall inside the bootstrap CI for the chosen arm.
-            (kind, value), = list(intervention.items())
+            ((kind, value),) = list(intervention.items())
             if kind in {"model_choice", "tool_choice", "retry_policy"}:
                 decision_type_for_arm = {
                     "model_choice": "model_call",
@@ -274,9 +261,7 @@ def test_real_corpus_identifiability_is_honest(real_corpus: list[Run]) -> None:
                     # bracket the same truth.
                     assert (
                         est.outcome_delta.ci_low <= row.pass_rate <= est.outcome_delta.ci_high
-                        or (
-                            row.ci_low <= est.outcome_delta.point <= row.ci_high
-                        )
+                        or (row.ci_low <= est.outcome_delta.point <= row.ci_high)
                     ), (
                         f"naive vs identified disagree dramatically: naive "
                         f"{row.pass_rate:.3f} (CI [{row.ci_low:.3f}, {row.ci_high:.3f}]) "
@@ -323,9 +308,7 @@ def test_at_least_one_unidentified_with_actionable_next_step(
                 assert est.next_step.payload.get("replay_inputs_required"), (
                     "replay_required payload missing replay_inputs_required"
                 )
-                assert est.next_step.payload.get("note"), (
-                    "replay_required payload missing note"
-                )
+                assert est.next_step.payload.get("note"), "replay_required payload missing note"
             elif est.next_step.action == "broaden_arm_support":
                 assert est.next_step.payload, (
                     "broaden_arm_support unidentified estimate has empty payload"
@@ -336,9 +319,7 @@ def test_at_least_one_unidentified_with_actionable_next_step(
                 assert isinstance(est.next_step.payload["observed_arms"], list)
                 assert isinstance(est.next_step.payload["missing_arms"], list)
             else:
-                assert est.next_step.payload, (
-                    "non-replay unidentified estimate has empty payload"
-                )
+                assert est.next_step.payload, "non-replay unidentified estimate has empty payload"
             found = True
             break
     assert found, (
@@ -365,13 +346,9 @@ def test_top1_attribution_label_artifact_is_present() -> None:
     labels = json.loads(labels_path.read_text())
     assert "labels" in labels, "labels.json missing top-level 'labels' field"
     if not labels["labels"]:
-        pytest.skip(
-            "labels.json has zero entries — §14.1 HUMAN GATE not yet completed"
-        )
+        pytest.skip("labels.json has zero entries — §14.1 HUMAN GATE not yet completed")
     entry = labels["labels"][0]
-    assert entry.get("root_cause_decision_id"), (
-        "first label entry has no root_cause_decision_id"
-    )
+    assert entry.get("root_cause_decision_id"), "first label entry has no root_cause_decision_id"
 
 
 # --- §15.5: demo notebook renders the naive-vs-honest contrast --------------
@@ -393,9 +370,7 @@ def test_demo_renders_naive_vs_honest_contrast(tmp_path: Path) -> None:
     )
     # Either an actionable next_step or a nontrivial action label rendered
     # somewhere — the demo must show one such label per the spec scenario.
-    rendered_actions = {
-        a for a in ACTIONABLE_NEXT_STEP_ACTIONS if a in all_text
-    }
+    rendered_actions = {a for a in ACTIONABLE_NEXT_STEP_ACTIONS if a in all_text}
     assert rendered_actions, (
         "demo notebook does not render any actionable next_step.action; "
         f"expected one of {sorted(ACTIONABLE_NEXT_STEP_ACTIONS)}"
@@ -429,22 +404,5 @@ def test_no_forbidden_imports_in_src() -> None:
     assert not found, "forbidden imports found:\n  - " + "\n  - ".join(found)
 
 
-# --- §15.10/§15.11 are explicit human gates (opsx:verify + demo eyeball) ----
-
-
-def test_manual_gates_are_documented() -> None:
-    """§15.10/§15.11 are explicit human gates — this test exists so the gate
-    appears in pytest output as a reminder, not as a soft pass."""
-    gates = [
-        (
-            "§15.10: run `/opsx:verify identifiability-first-pivot` — "
-            "surface drift between specs and impl"
-        ),
-        (
-            "§15.11: human reads notebooks/demo.ipynb end-to-end; "
-            "the naive-vs-honest narrative must land without hand-waving"
-        ),
-        "§15.11: at least one `bounded` query renders an E-value",
-        "§15.11: every rendered `next_step.human_text` is reader-comprehensible",
-    ]
-    assert all(isinstance(g, str) for g in gates), gates
+# §15.10/§15.11 are explicit human gates (opsx:verify + demo eyeball);
+# they live in the change docs, not in pytest.

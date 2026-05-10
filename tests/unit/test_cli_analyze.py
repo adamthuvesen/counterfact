@@ -59,9 +59,7 @@ def test_analyze_synthetic_corpus_exits_0(tmp_path: Path, capsys) -> None:
     assert not fail_lines, f"unexpected FAIL lines: {fail_lines}"
 
 
-def test_analyze_mixed_outcome_without_features_reports_not_ready(
-    tmp_path: Path, capsys
-) -> None:
+def test_analyze_mixed_outcome_without_features_reports_not_ready(tmp_path: Path, capsys) -> None:
     out_dir = tmp_path / "no-features"
     out_dir.mkdir()
     runs = [

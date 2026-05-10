@@ -33,9 +33,7 @@ def test_demo__on_single_class_refusal_reports_honest_refusal(capsys) -> None:
     With --runs-dir explicitly pointed at it, the engine must surface the
     degenerate-corpus refusal rather than fitting a one-class model.
     """
-    rc = main(
-        ["demo", "--runs-dir", "bench/real/single_class_refusal", "--bootstrap", "20"]
-    )
+    rc = main(["demo", "--runs-dir", "bench/real/single_class_refusal", "--bootstrap", "20"])
     out = capsys.readouterr().out
 
     assert rc == 0

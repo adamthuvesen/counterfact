@@ -27,12 +27,34 @@ def executed_notebook(tmp_path_factory: pytest.TempPathFactory) -> dict:
 
 
 def test_demo__clean_kernel_execution_succeeds(executed_notebook: dict) -> None:
-    """WHEN the notebook is executed via nbconvert against the shipped corpus
-    THEN every cell completes without raising and the notebook exits 0."""
-    # If the fixture got here, nbconvert exited 0 — the assertion in the
-    # fixture covers the requirement. Spot-check we got output back.
-    assert "cells" in executed_notebook
-    assert any(c.get("cell_type") == "code" for c in executed_notebook["cells"])
+    """Every code cell ran cleanly and the headline `identified` cell
+    actually produced its expected stdout. The previous version only checked
+    that *some* code cell existed, which the fixture itself already
+    guarantees — that gave nbconvert a free pass even if no cell printed.
+    """
+    code_cells = [c for c in executed_notebook["cells"] if c.get("cell_type") == "code"]
+    assert code_cells, "executed notebook contains no code cells"
+
+    # No cell may have raised. nbconvert records errors as outputs of type
+    # "error" (not as a top-level `errored` flag), so check both shapes.
+    for cell in code_cells:
+        for out in cell.get("outputs", []):
+            assert out.get("output_type") != "error", (
+                f"code cell raised: {out.get('ename')}: {out.get('evalue')}"
+            )
+
+    # At least one cell must have produced output — proves cells actually ran
+    # rather than nbconvert silently emitting an empty notebook.
+    assert any(cell.get("outputs") for cell in code_cells), (
+        "no code cell produced any output — nbconvert may have skipped execution"
+    )
+
+    # Pin a specific, well-known stdout: the "identified" intervene call in
+    # the synthetic-SCM section prints `identifiability : identified`. If a
+    # future edit reorders or rewrites that cell, this assertion forces a
+    # deliberate update rather than a silent regression.
+    text = all_text_outputs(executed_notebook)
+    assert "identifiability : identified" in text
 
 
 def test_demo__synthetic_section_reports_recovery_vs_truth(executed_notebook: dict) -> None:
@@ -86,6 +108,4 @@ def test_demo__top_k_table_is_rendered_with_labels(executed_notebook: dict) -> N
     assert "rank" in text and "decision_id" in text and "influence" in text
     # Header line + at most 5 ranked rows. Each row line should include an
     # identifiability value.
-    assert (
-        "identified" in text or "bounded" in text or "unidentified" in text
-    )
+    assert "identified" in text or "bounded" in text or "unidentified" in text

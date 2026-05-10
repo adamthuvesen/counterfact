@@ -7,38 +7,23 @@ determinism — without going through the HTML renderer.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from counterfact.explain import build_report
 from counterfact.intervene.estimate import IdentifiabilityStatus
 from counterfact.schema import Outcome, Run
-
-
-def _synthetic_corpus(n: int = 24, seed: int = 7) -> list[Run]:
-    from bench.synthetic import generate_traces
-
-    return [Run.model_validate(t) for t in generate_traces(n=n, seed=seed)]
-
-
-def _single_class_refusal_corpus() -> list[Run]:
-    paths = sorted(Path("bench/real/single_class_refusal").glob("*.json"))
-    assert paths, "single_class_refusal corpus must be committed for this test"
-    return [Run.model_validate_json(p.read_text()) for p in paths]
+from tests.conftest import single_class_refusal_corpus, synthetic_corpus
 
 
 def test_build_report__mixed_outcome_corpus_has_ranked_attribution() -> None:
     """A small synthetic corpus with both pass and fail outcomes must
     produce a non-empty attribution ranked by influence descending."""
-    corpus = _synthetic_corpus()
+    corpus = synthetic_corpus(n=24, seed=7)
     classes = {bool(r.outcome.value) for r in corpus}
     assert len(classes) == 2, "synthetic corpus should not be single-class"
 
     focal = corpus[0]
-    report = build_report(
-        focal, corpus, decision_type="model_call", bootstrap=20, seed=42
-    )
+    report = build_report(focal, corpus, decision_type="model_call", bootstrap=20, seed=42)
 
     assert report.degenerate_estimate is None
     assert report.attribution.entries, "mixed-outcome corpus must yield entries"
@@ -47,14 +32,10 @@ def test_build_report__mixed_outcome_corpus_has_ranked_attribution() -> None:
 
 
 def test_build_report__single_class_corpus_returns_degenerate_refusal() -> None:
-    """The single_class_refusal single-class corpus must surface the unidentified
-    refusal and yield zero attribution entries."""
-    corpus = _single_class_refusal_corpus()
+    corpus = single_class_refusal_corpus()
     focal = corpus[0]
 
-    report = build_report(
-        focal, corpus, decision_type="model_call", bootstrap=20, seed=42
-    )
+    report = build_report(focal, corpus, decision_type="model_call", bootstrap=20, seed=42)
 
     assert report.attribution.entries == []
     assert report.degenerate_estimate is not None
@@ -73,13 +54,11 @@ def test_build_report__never_calls_fit_outcome_model_on_single_class(
 
     def fail_if_called(*args, **kwargs):
         calls["n"] += 1
-        raise AssertionError(
-            "fit_outcome_model must not be called on a single-class corpus"
-        )
+        raise AssertionError("fit_outcome_model must not be called on a single-class corpus")
 
     monkeypatch.setattr(report_module, "fit_outcome_model", fail_if_called)
 
-    corpus = _single_class_refusal_corpus()
+    corpus = single_class_refusal_corpus()
     focal = corpus[0]
     report = build_report(focal, corpus, bootstrap=20, seed=42)
 
@@ -112,7 +91,7 @@ def test_build_report__mixed_outcome_without_features_returns_unidentified() -> 
 
 
 def test_build_report__deterministic_for_fixed_inputs() -> None:
-    corpus = _synthetic_corpus()
+    corpus = synthetic_corpus(n=24, seed=7)
     focal = corpus[0]
 
     a = build_report(focal, corpus, bootstrap=20, seed=42)
@@ -123,7 +102,7 @@ def test_build_report__deterministic_for_fixed_inputs() -> None:
 
 
 def test_build_report__rejects_focal_run_not_in_corpus() -> None:
-    corpus = _synthetic_corpus()
-    intruder = _single_class_refusal_corpus()[0]
+    corpus = synthetic_corpus(n=24, seed=7)
+    intruder = single_class_refusal_corpus()[0]
     with pytest.raises(ValueError, match="not present in the supplied corpus"):
         build_report(intruder, corpus, bootstrap=20, seed=42)

@@ -8,21 +8,17 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from bench.synthetic import generate_traces
 from counterfact.compare import compare_traces
 from counterfact.diagnose import build_diagnosis
-from counterfact.eval_audit_export import export_eval_audit_parquet
 from counterfact.ingest import IngestError, ingest_generic_jsonl
 from counterfact.intervene.estimate import IdentifiabilityStatus
+from counterfact.runrecord_export import export_runrecord_parquet
 from counterfact.schema import Decision, Run, Step
-
-
-def _synthetic_corpus(n: int = 48, seed: int = 42) -> list[Run]:
-    return [Run.model_validate(trace) for trace in generate_traces(n=n, seed=seed)]
+from tests.conftest import synthetic_corpus
 
 
 def test_build_diagnosis__deterministic_for_fixed_inputs() -> None:
-    corpus = _synthetic_corpus()
+    corpus = synthetic_corpus(n=48, seed=42)
     a = build_diagnosis(corpus[0], corpus, bootstrap=10, seed=42)
     b = build_diagnosis(corpus[0], corpus, bootstrap=10, seed=42)
 
@@ -32,7 +28,7 @@ def test_build_diagnosis__deterministic_for_fixed_inputs() -> None:
 
 
 def test_build_diagnosis__decision_type_filters_ranked_entries() -> None:
-    corpus = _synthetic_corpus(n=60, seed=42)
+    corpus = synthetic_corpus(n=60, seed=42)
 
     model_report = build_diagnosis(
         corpus[0],
@@ -72,7 +68,7 @@ def test_build_diagnosis__single_class_refusal_has_no_outcome_delta() -> None:
 
 
 def test_build_diagnosis__repeated_decision_type_is_unidentified() -> None:
-    corpus = _synthetic_corpus(n=60, seed=7)
+    corpus = synthetic_corpus(n=60, seed=7)
     focal = corpus[0]
     repeated = Decision(
         decision_id="d-extra-model",
@@ -94,14 +90,13 @@ def test_build_diagnosis__repeated_decision_type_is_unidentified() -> None:
 
     assert model_entries
     assert all(
-        entry.identifiability == IdentifiabilityStatus.UNIDENTIFIED
-        for entry in model_entries
+        entry.identifiability == IdentifiabilityStatus.UNIDENTIFIED for entry in model_entries
     )
     assert "no supported" in report.summary or "most plausible" in report.summary
 
 
 def test_compare_traces__descriptive_diff_without_diagnosis() -> None:
-    left, right = _synthetic_corpus(n=2, seed=11)
+    left, right = synthetic_corpus(n=2, seed=11)
     comparison = compare_traces(left, right)
 
     assert comparison.left_run_id == left.run_id
@@ -203,11 +198,11 @@ def test_ingest_generic_jsonl__partial_randomization_fails(tmp_path: Path) -> No
         ingest_generic_jsonl(source, mapping, tmp_path / "out")
 
 
-def test_export_eval_audit_parquet__writes_rows_and_receipt(tmp_path: Path) -> None:
-    runs = _synthetic_corpus(n=3)
+def test_export_runrecord_parquet__writes_rows_and_receipt(tmp_path: Path) -> None:
+    runs = synthetic_corpus(n=3, seed=42)
     output = tmp_path / "runs.parquet"
 
-    receipt = export_eval_audit_parquet(runs, source_corpus=tmp_path / "runs", output_path=output)
+    receipt = export_runrecord_parquet(runs, source_corpus=tmp_path / "runs", output_path=output)
 
     assert output.exists()
     assert output.with_suffix(".parquet.receipt.json").exists()
