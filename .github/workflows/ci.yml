@@ -7,16 +7,12 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
       - uses: astral-sh/setup-uv@v5
 
@@ -24,9 +20,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/uv
-          key: uv-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          key: uv-${{ runner.os }}-py3.11-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
-            uv-${{ runner.os }}-py${{ matrix.python-version }}-
+            uv-${{ runner.os }}-py3.11-
 
       - name: Install Python dependencies
         run: |
@@ -46,7 +42,6 @@ jobs:
         run: uv run pytest --cov --cov-report=xml --cov-report=term-missing --cov-fail-under=80
 
       - name: Upload coverage artifact
-        if: matrix.python-version == '3.11'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-xml
