@@ -11,7 +11,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from counterfact._fmt import outcome_label as _outcome_label
 from counterfact.attribute import AttributionEntry, FailureAttribution
+from counterfact.attribute.failure import _intervention_kind_for
 from counterfact.explain import ExplainReport, build_report
 from counterfact.intervene.estimate import (
     CausalEstimate,
@@ -21,7 +23,7 @@ from counterfact.intervene.estimate import (
     NextStep,
 )
 from counterfact.schema import Decision, Run
-from counterfact.taxonomy import identifiability_stance, valid_interventions
+from counterfact.taxonomy import valid_interventions
 
 
 class _Strict(BaseModel):
@@ -53,26 +55,12 @@ class DiagnosisReport(_Strict):
     corpus_dir: str | None = None
 
 
-def _outcome_label(run: Run) -> str:
-    if run.outcome.kind == "binary":
-        return "pass" if bool(run.outcome.value) else "fail"
-    return f"{run.outcome.kind}={run.outcome.value!r}"
-
-
 def _decision_index(run: Run) -> dict[str, tuple[int, Decision]]:
     out: dict[str, tuple[int, Decision]] = {}
     for step in run.steps:
         for decision in step.decisions:
             out[decision.decision_id] = (step.step_index, decision)
     return out
-
-
-def _intervention_kind_for(decision_type: str) -> str | None:
-    kinds = sorted(valid_interventions(decision_type))
-    for kind in kinds:
-        if identifiability_stance(decision_type, kind) == "requires-randomized-support":
-            return kind
-    return kinds[0] if kinds else None
 
 
 def _unsupported_estimate(
@@ -212,9 +200,7 @@ def _summary_for(
             f"{decision_type} decisions were found for counterfactual diagnosis."
         )
     supported = [
-        entry
-        for entry in entries
-        if entry.identifiability != IdentifiabilityStatus.UNIDENTIFIED
+        entry for entry in entries if entry.identifiability != IdentifiabilityStatus.UNIDENTIFIED
     ]
     if supported:
         top = supported[0]
@@ -250,14 +236,9 @@ def _diagnosis_from_explain_report(
         )
     else:
         ranked_entries = [
-            entry
-            for entry in report.attribution.entries
-            if entry.decision_type == decision_type
+            entry for entry in report.attribution.entries if entry.decision_type == decision_type
         ]
-        entries = [
-            _entry_from_attribution(entry, decisions)
-            for entry in ranked_entries[:top_k]
-        ]
+        entries = [_entry_from_attribution(entry, decisions) for entry in ranked_entries[:top_k]]
     return DiagnosisReport(
         run_id=report.run.run_id,
         outcome=_outcome_label(report.run),
@@ -293,9 +274,7 @@ def explain_report_from_diagnosis(
             "attribution": attribution,
             "diagnosis_summary": diagnosis.summary,
             "counterfactual_lookup": [
-                entry.estimate
-                for entry in diagnosis.entries
-                if entry.estimate is not None
+                entry.estimate for entry in diagnosis.entries if entry.estimate is not None
             ],
             "run_path": diagnosis.run_path or base_report.run_path,
             "corpus_dir": diagnosis.corpus_dir or base_report.corpus_dir,

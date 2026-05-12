@@ -12,6 +12,8 @@ Every answer is labelled:
 - `bounded` - a point estimate is not supported, but sensitivity bounds are available.
 - `unidentified` - the corpus cannot support the counterfactual without more data, stronger assumptions, or replay.
 
+For the design philosophy and a reading guide through the source, see [`docs/architecture.md`](docs/architecture.md).
+
 ## Install
 
 ```bash
@@ -19,6 +21,12 @@ uv pip install -e ".[dev]"
 ```
 
 Requires Python 3.11+.
+
+The published wheel ships only the core causal-attribution library. The
+real-agent harness under `bench/` is excluded from the wheel; if you need
+`counterfact bench real`, install the `bench` extra (`pip install
+"counterfact[bench]"`, which pulls `litellm`) or use an editable dev
+install from a checkout.
 
 ## Quickstart
 
@@ -113,6 +121,8 @@ uv run counterfact demo --confound --synthetic-n 1000 --seed 42
 ```
 
 It prints a descriptive pass-rate table, a causal intervention estimate, and the contrast between the two. The table says what happened in the logged corpus. The intervention estimate asks what the model predicts under a declared decision edit. Those are different claims.
+
+`uv run counterfact demo` without `--confound` reads the committed real demo corpus at `bench/real/smoke_mixed_outcome`. If that corpus is missing, the command exits instead of quietly switching evidence bases; pass `--synthetic-fallback` only when you explicitly want synthetic data.
 
 ## CLI
 
@@ -217,24 +227,20 @@ The command writes native `Run` JSON files plus `ingest-receipt.json` with
 warnings about dropped fields and missing randomization metadata. It does not
 loosen the native trace schema.
 
-### Export To eval-audit
+### Export To RunRecord Parquet
 
 ```bash
 uv run counterfact export-runs bench/real/smoke_mixed_outcome \
-  --to eval-audit-parquet \
+  --to runrecord-parquet \
   --output /tmp/counterfact-runs.parquet
 ```
 
-This writes an `eval-audit` RunRecord-shaped parquet and a receipt. Use it when
-you want to take a trace corpus into a separate population-level benchmark
-audit:
-
-```bash
-eval-audit validate /tmp/counterfact-runs.parquet study.yaml
-```
-
-`counterfact` does not render model-switch verdicts; `eval-audit` owns that
-question.
+This writes a RunRecord-shaped parquet (one row per run; columns for agent
+identity, outcome, cost, tokens, provenance) plus a receipt documenting how
+each field was derived. The output is consumable by any downstream tool that
+reads RunRecord-style parquet — population-level benchmark audits, dashboards,
+or your own analysis. `counterfact` itself does not render verdicts at the
+population level; the export is the boundary.
 
 ### Generate Synthetic Traces
 
@@ -283,7 +289,7 @@ print(estimate.next_step)
 
 The real-agent harness can call external LLM APIs and spend money. The local demo, synthetic generator, analyzer, and tests do not require provider credentials.
 
-Do not run real-agent benchmarks as routine validation. See `bench/real/README.md` for corpus promotion conventions, fixture sets, and budgeted pilot commands.
+Do not run real-agent benchmarks as routine validation. `counterfact bench real` refuses to start until `.counterfact/approved` contains a JSON approval receipt matching the command's trace count, budget cap, output directory, fixture set, model map, and randomization config. See `bench/real/README.md` for corpus promotion conventions, fixture sets, and budgeted pilot commands.
 
 ## Development
 

@@ -7,25 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from bench.synthetic import generate_traces
 from counterfact.cli import main
 from counterfact.diagnose import DiagnosisReport
-from counterfact.schema import Run
-
-
-def _write_synthetic_corpus(target: Path, *, n: int = 48, seed: int = 42) -> list[Path]:
-    target.mkdir(parents=True, exist_ok=True)
-    paths: list[Path] = []
-    for trace in generate_traces(n=n, seed=seed):
-        run = Run.model_validate(trace)
-        path = target / f"{run.run_id}.json"
-        path.write_text(run.model_dump_json())
-        paths.append(path)
-    return paths
+from tests.conftest import write_synthetic_corpus
 
 
 def test_diagnose_cli__json_round_trips(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    paths = _write_synthetic_corpus(tmp_path / "runs")
+    paths = write_synthetic_corpus(tmp_path / "runs", n=48)
 
     rc = main(
         [
@@ -48,7 +36,7 @@ def test_diagnose_cli__json_round_trips(tmp_path: Path, capsys: pytest.CaptureFi
 def test_diagnose_cli__decision_type_filters_ranked_entries(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    paths = _write_synthetic_corpus(tmp_path / "runs", n=60)
+    paths = write_synthetic_corpus(tmp_path / "runs", n=60)
 
     rc = main(
         [
@@ -75,7 +63,7 @@ def test_diagnose_cli__decision_type_filters_ranked_entries(
 def test_diagnose_cli__html_writes_report_and_keeps_text_summary(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    paths = _write_synthetic_corpus(tmp_path / "runs")
+    paths = write_synthetic_corpus(tmp_path / "runs", n=48)
     html_path = tmp_path / "diagnosis.html"
 
     rc = main(
@@ -104,7 +92,7 @@ def test_diagnose_cli__html_writes_report_and_keeps_text_summary(
 def test_diagnose_cli__json_with_html_keeps_stdout_parseable(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    paths = _write_synthetic_corpus(tmp_path / "runs")
+    paths = write_synthetic_corpus(tmp_path / "runs", n=48)
     html_path = tmp_path / "diagnosis.html"
 
     rc = main(
@@ -132,7 +120,7 @@ def test_diagnose_cli__json_with_html_keeps_stdout_parseable(
 def test_diagnose_cli__html_write_failure_exits_2(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    paths = _write_synthetic_corpus(tmp_path / "runs")
+    paths = write_synthetic_corpus(tmp_path / "runs", n=48)
 
     rc = main(
         [
@@ -165,9 +153,9 @@ def test_diagnose_cli__missing_run_exits_2(
 def test_diagnose_cli__focal_not_in_corpus_exits_2(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    paths = _write_synthetic_corpus(tmp_path / "runs")
+    paths = write_synthetic_corpus(tmp_path / "runs", n=48)
     other_dir = tmp_path / "other"
-    other_paths = _write_synthetic_corpus(other_dir, seed=99)
+    other_paths = write_synthetic_corpus(other_dir, n=48, seed=99)
     focal_payload = json.loads(paths[0].read_text())
     focal_payload["run_id"] = "intruder-run"
     paths[0].write_text(json.dumps(focal_payload))
@@ -183,7 +171,7 @@ def test_diagnose_cli__focal_not_in_corpus_exits_2(
 def test_compare_cli__descriptive_without_corpus(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    paths = _write_synthetic_corpus(tmp_path / "runs", n=2)
+    paths = write_synthetic_corpus(tmp_path / "runs", n=2)
 
     rc = main(["compare", str(paths[0]), str(paths[1])])
 
@@ -280,13 +268,13 @@ def test_ingest_and_export_cli__write_receipts(
     assert (out_dir / "ingest-receipt.json").exists()
     assert "wrote 1 trace" in capsys.readouterr().out
 
-    export_path = tmp_path / "eval-audit-runs.parquet"
+    export_path = tmp_path / "runrecord.parquet"
     rc = main(
         [
             "export-runs",
             str(out_dir),
             "--to",
-            "eval-audit-parquet",
+            "runrecord-parquet",
             "--output",
             str(export_path),
         ]

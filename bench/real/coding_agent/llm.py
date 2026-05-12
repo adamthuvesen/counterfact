@@ -4,7 +4,7 @@ The `LLMClient` protocol is what the agent loop talks to; concrete
 implementations are `LiteLLMClient` (real, used at runtime) and any test
 stub that conforms to the protocol.
 
-Role mapping (design.md D16):
+Role mapping:
 * `small`  → haiku-class model
 * `large`  → sonnet-class model
 
@@ -60,10 +60,13 @@ def extract_cost(resp: object) -> float:
         raw = resp.get("response_cost")  # type: ignore[union-attr]
     elif hasattr(resp, "response_cost"):
         raw = resp.response_cost
-    cost = float(raw or 0.0)
-    if not math.isfinite(cost):
-        raise CostUnknownError(f"non-finite response cost: {cost!r}")
-    if cost > 0.0:
+    # Distinguish "provider didn't populate cost" (None) from "provider says
+    # the call was free" (0.0). Only the former should fall through to the
+    # litellm price-table fallback; a real 0.0 must round-trip as 0.0.
+    cost = float(raw) if raw is not None else None
+    if cost is not None:
+        if not math.isfinite(cost):
+            raise CostUnknownError(f"non-finite response cost: {cost!r}")
         return cost
     try:
         import litellm  # type: ignore[import-not-found]
@@ -114,8 +117,9 @@ class LiteLLMClient:
     provider response when available, falling back to litellm's published
     price table via `completion_cost`.
 
-    Note: the actual API call is gated behind §12.3 HUMAN GATE — no LLM call
-    happens until the human approves the smoke run.
+    Note: the actual API call is gated behind the first-run human approval
+    marker in `runner.first_run_gate_check` — no LLM call happens until the
+    operator creates `.counterfact/approved` after eyeballing a smoke corpus.
     """
 
     def __init__(self, role_to_model: dict[str, str] | None = None) -> None:

@@ -69,12 +69,8 @@ def test_hidden_fixture_root_has_four_required_entries() -> None:
 
     for fx in HIDDEN_FIXTURES:
         assert (fx.root / "src").is_dir(), f"{fx.fixture_id}: src/ missing"
-        assert (fx.root / "tests_public").is_dir(), (
-            f"{fx.fixture_id}: tests_public/ missing"
-        )
-        assert (fx.root / "tests_hidden").is_dir(), (
-            f"{fx.fixture_id}: tests_hidden/ missing"
-        )
+        assert (fx.root / "tests_public").is_dir(), f"{fx.fixture_id}: tests_public/ missing"
+        assert (fx.root / "tests_hidden").is_dir(), f"{fx.fixture_id}: tests_hidden/ missing"
         assert (fx.root / "spec.md").is_file(), f"{fx.fixture_id}: spec.md missing"
         # Distinct path attributes
         assert fx.public_tests_relpath is not None
@@ -163,9 +159,7 @@ def test_csv_dedupe_hidden_covers_four_normalization_rules() -> None:
     text = "\n".join(p.read_text() for p in test_files).lower()
     # At least one test per rule — we look for the rule keyword in test names.
     for keyword in ("whitespace", "case", "nfc", "bom"):
-        assert keyword in text, (
-            f"hidden tests must include at least one test for {keyword!r} rule"
-        )
+        assert keyword in text, f"hidden tests must include at least one test for {keyword!r} rule"
 
 
 def test_csv_dedupe_reference_implementation_passes_both_sets(tmp_path: Path) -> None:
@@ -236,9 +230,7 @@ def test_csv_dedupe_buggy_src_fails_hidden_passes_public(tmp_path: Path) -> None
         text=True,
         timeout=30,
     )
-    assert proc_pub.returncode == 0, (
-        f"buggy src must satisfy public tests:\n{proc_pub.stdout}"
-    )
+    assert proc_pub.returncode == 0, f"buggy src must satisfy public tests:\n{proc_pub.stdout}"
     proc_hid = subprocess.run(
         [sys.executable, "-m", "pytest", "tests_hidden/", "-q"],
         cwd=workspace,
@@ -512,9 +504,7 @@ def test_date_window_buggy_src_fails_hidden_passes_public(tmp_path: Path) -> Non
 
 
 @pytest.mark.parametrize("fixture_id", ["rate_limit", "version_range"])
-def test_new_hard_hidden_fixtures_fail_hidden_pass_public(
-    fixture_id: str, tmp_path: Path
-) -> None:
+def test_new_hard_hidden_fixtures_fail_hidden_pass_public(fixture_id: str, tmp_path: Path) -> None:
     """Req: new hard hidden fixtures are public-passing but hidden-failing
     WHEN the pristine source is tested
     THEN public tests pass and hidden tests catch the incomplete implementation."""
@@ -536,8 +526,7 @@ def test_new_hard_hidden_fixtures_fail_hidden_pass_public(
         timeout=30,
     )
     assert proc_pub.returncode == 0, (
-        f"{fixture_id} buggy src must satisfy public tests:\n"
-        f"{proc_pub.stdout}\n{proc_pub.stderr}"
+        f"{fixture_id} buggy src must satisfy public tests:\n{proc_pub.stdout}\n{proc_pub.stderr}"
     )
     proc_hid = subprocess.run(
         [sys.executable, "-m", "pytest", "tests_hidden/", "-q"],
@@ -646,8 +635,7 @@ def test_new_hard_hidden_known_good_source_passes_hidden(
         timeout=30,
     )
     assert proc_hid.returncode == 0, (
-        f"{fixture_id} known-good source fails hidden tests:\n"
-        f"{proc_hid.stdout}\n{proc_hid.stderr}"
+        f"{fixture_id} known-good source fails hidden tests:\n{proc_hid.stdout}\n{proc_hid.stderr}"
     )
 
 
@@ -824,9 +812,7 @@ def test_hidden_fixture_prompt_does_not_mention_tests_hidden(tmp_path: Path) -> 
         "test_combined_rules_treat_full_normalization_as_equal",
     ):
         assert needle in hidden_text, "test fixture self-check (hidden file unchanged)"
-        assert needle not in prompt, (
-            f"hidden test name leaked into prompt: {needle}"
-        )
+        assert needle not in prompt, f"hidden test name leaked into prompt: {needle}"
 
 
 def test_date_window_prompt_contains_spec_and_public_only(tmp_path: Path) -> None:
@@ -948,9 +934,7 @@ def test_stateful_raw_class_response_is_extracted_and_evaluated(
     from bench.real.coding_agent.budget import BudgetTracker
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
-    fixture = next(
-        fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe"
-    )
+    fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe")
     reference = (fixture.root / "src" / "_watermark_dedupe_reference.py").read_text()
     run = run_one_trace(
         fixture,
@@ -1073,11 +1057,7 @@ def test_retry_prompt_tail_comes_from_public_not_hidden(tmp_path: Path) -> None:
     captured: list[str] = []
     # Patch that BREAKS public tests (raises on import), so a public failure
     # drives the retry prompt.
-    public_breaking_fence = (
-        "```python\n"
-        "raise RuntimeError('public-breaking patch')\n"
-        "```"
-    )
+    public_breaking_fence = "```python\nraise RuntimeError('public-breaking patch')\n```"
 
     class _Stub:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -1086,9 +1066,7 @@ def test_retry_prompt_tail_comes_from_public_not_hidden(tmp_path: Path) -> None:
 
     budget = BudgetTracker(cap_usd=1.0)
     # Force retry_once via greedy + epsilon=0
-    cfg = AgentRunConfig(
-        epsilon=0.0, seed=0, retry_greedy="retry_once", retry_epsilon=0.0
-    )
+    cfg = AgentRunConfig(epsilon=0.0, seed=0, retry_greedy="retry_once", retry_epsilon=0.0)
     run_one_trace(
         csv,
         run_index=0,
@@ -1097,9 +1075,7 @@ def test_retry_prompt_tail_comes_from_public_not_hidden(tmp_path: Path) -> None:
         sandbox_root=tmp_path,
         config=cfg,
     )
-    assert len(captured) == 2, (
-        f"expected initial + retry prompts, got {len(captured)}"
-    )
+    assert len(captured) == 2, f"expected initial + retry prompts, got {len(captured)}"
     retry_prompt = captured[1]
     # The retry prompt's failure tail must mention public test output, not hidden.
     assert "tests_public" in retry_prompt or "test_dedupe.py" in retry_prompt
@@ -1165,13 +1141,27 @@ def test_run_real_corpus_with_fixtures_csv_dedupe(tmp_path: Path) -> None:
          fixture_id (and verifier='pytest_hidden')."""
     import json
 
-    from bench.real.coding_agent.llm import LLMResponse
-    from bench.real.coding_agent.runner import run_real_corpus
+    from bench.real.coding_agent.agent import AgentRunConfig
+    from bench.real.coding_agent.llm import ROLE_TO_MODEL, LLMResponse
+    from bench.real.coding_agent.runner import (
+        approval_receipt_template,
+        resolve_fixtures,
+        run_real_corpus,
+    )
 
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
+    receipt = approval_receipt_template(
+        n=2,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        fixtures=resolve_fixtures(fixture_ids=("csv_dedupe",)),
+        config=AgentRunConfig(),
+        role_to_model=ROLE_TO_MODEL,
+    )
+    receipt["approved_at"] = "2026-05-10T00:00:00Z"
     marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    marker.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
 
     class _NullLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -1245,9 +1235,7 @@ def test_streaming_watermark_dedupe_buggy_src_fails_hidden_passes_public(
 
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
-    fixture = next(
-        fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe"
-    )
+    fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe")
     workspace = tmp_path / "streaming_watermark_dedupe"
     shutil.copytree(fixture.root, workspace)
 
@@ -1268,9 +1256,7 @@ def test_streaming_watermark_dedupe_buggy_src_fails_hidden_passes_public(
         text=True,
         timeout=30,
     )
-    assert proc_hid.returncode != 0, (
-        "buggy src must fail hidden stateful stream semantics"
-    )
+    assert proc_hid.returncode != 0, "buggy src must fail hidden stateful stream semantics"
 
 
 def test_streaming_watermark_dedupe_reference_passes_hidden(
@@ -1285,9 +1271,7 @@ def test_streaming_watermark_dedupe_reference_passes_hidden(
 
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
-    fixture = next(
-        fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe"
-    )
+    fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe")
     workspace = tmp_path / "streaming_watermark_dedupe"
     shutil.copytree(fixture.root, workspace)
 
@@ -1314,9 +1298,7 @@ def test_streaming_watermark_dedupe_spec_md_names_hidden_categories() -> None:
     THEN it states every hidden category."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
-    fixture = next(
-        fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe"
-    )
+    fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe")
     text = (fixture.root / "spec.md").read_text().lower()
     for keyword in (
         "event-time watermark",
@@ -1335,9 +1317,7 @@ def test_streaming_watermark_dedupe_hidden_names_stateful_categories() -> None:
     THEN each required semantic category is named."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
-    fixture = next(
-        fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe"
-    )
+    fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe")
     text = "\n".join(
         path.read_text().lower() for path in (fixture.root / "tests_hidden").glob("test_*.py")
     )
@@ -1407,10 +1387,17 @@ def test_hidden_v1_fixture_set_stays_csv_dedupe_only() -> None:
     assert ids == ["csv_dedupe"]
 
 
-def test_cli_real_subcommand_accepts_hard_hidden_v1() -> None:
-    """Req: hard hidden fixture set is selectable
-    WHEN the CLI parser sees --fixture-set hard_hidden_v1
-    THEN argparse accepts it."""
+@pytest.mark.parametrize(
+    "fixture_set",
+    [
+        "hard_hidden_v1",
+        "broad_calibration",
+        "very_hard_hidden_v1",
+        "stateful_calibration",
+    ],
+)
+def test_cli_real_subcommand_accepts_fixture_set(fixture_set: str) -> None:
+    """Each known fixture-set name parses cleanly through the CLI."""
     from counterfact.cli import build_parser
 
     parser = build_parser()
@@ -1421,67 +1408,7 @@ def test_cli_real_subcommand_accepts_hard_hidden_v1() -> None:
             "--n",
             "1",
             "--fixture-set",
-            "hard_hidden_v1",
+            fixture_set,
         ]
     )
-    assert ns.fixture_set == "hard_hidden_v1"
-
-
-def test_cli_real_subcommand_accepts_broad_calibration() -> None:
-    """Req: broad_calibration is selectable
-    WHEN the CLI parser sees --fixture-set broad_calibration
-    THEN argparse accepts it."""
-    from counterfact.cli import build_parser
-
-    parser = build_parser()
-    ns = parser.parse_args(
-        [
-            "bench",
-            "real",
-            "--n",
-            "1",
-            "--fixture-set",
-            "broad_calibration",
-        ]
-    )
-    assert ns.fixture_set == "broad_calibration"
-
-
-def test_cli_real_subcommand_accepts_very_hard_hidden_v1() -> None:
-    """Req: very_hard_hidden_v1 is selectable
-    WHEN the CLI parser sees --fixture-set very_hard_hidden_v1
-    THEN argparse accepts it."""
-    from counterfact.cli import build_parser
-
-    parser = build_parser()
-    ns = parser.parse_args(
-        [
-            "bench",
-            "real",
-            "--n",
-            "1",
-            "--fixture-set",
-            "very_hard_hidden_v1",
-        ]
-    )
-    assert ns.fixture_set == "very_hard_hidden_v1"
-
-
-def test_cli_real_subcommand_accepts_stateful_calibration() -> None:
-    """Req: stateful_calibration is selectable
-    WHEN the CLI parser sees --fixture-set stateful_calibration
-    THEN argparse accepts it."""
-    from counterfact.cli import build_parser
-
-    parser = build_parser()
-    ns = parser.parse_args(
-        [
-            "bench",
-            "real",
-            "--n",
-            "1",
-            "--fixture-set",
-            "stateful_calibration",
-        ]
-    )
-    assert ns.fixture_set == "stateful_calibration"
+    assert ns.fixture_set == fixture_set

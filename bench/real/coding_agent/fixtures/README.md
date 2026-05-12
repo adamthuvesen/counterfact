@@ -89,7 +89,7 @@ miss hidden semantics, not because the model omitted a parseable patch.
   single-function normalization fixtures because correctness depends on state
   transitions across multiple `process()` calls.
 
-Historical fixtures:
+Historical/internal fixtures:
 
 - `csv_dedupe/` — lower-bound hidden-test calibration, exposed as `hidden_v1`.
 - `unicode_normalize/` — semantic calibration that proved too easy for current

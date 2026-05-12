@@ -32,23 +32,48 @@ from bench.real.coding_agent.llm import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_NUM_RETRIES,
     DEFAULT_REQUEST_TIMEOUT_S,
+    ROLE_TO_MODEL,
     CostUnknownError,
     LiteLLMClient,
     LLMResponse,
     extract_cost,
 )
 from bench.real.coding_agent.runner import (
+    approval_receipt_template,
     check_credentials,
+    resolve_fixtures,
     run_real_corpus,
 )
 from counterfact.schema import Run
+
+
+def _write_approval(
+    marker: Path,
+    *,
+    n: int,
+    budget_cap_usd: float,
+    output_dir: Path,
+    config: AgentRunConfig | None = None,
+    fixture_ids: tuple[str, ...] | None = None,
+    fixture_set: str | None = None,
+) -> None:
+    receipt = approval_receipt_template(
+        n=n,
+        budget_cap_usd=budget_cap_usd,
+        output_dir=output_dir,
+        fixtures=resolve_fixtures(fixture_ids, fixture_set),
+        config=config or AgentRunConfig(),
+        role_to_model=ROLE_TO_MODEL,
+    )
+    receipt["approved_at"] = "2026-05-10T00:00:00Z"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+
 
 # --- ε-greedy randomization spec scenarios ----------------------------------
 
 
 def test_epsilon_greedy__greedy_action_propensity() -> None:
-    """WHEN ε=0.2, |actions|=4, greedy chosen
-    THEN logged propensity = (1-ε) + ε/|actions| = 0.85."""
     actions = ["a", "b", "c", "d"]
     # Force the greedy branch by exhausting the RNG path; we just validate the
     # math directly by computing expected values for both branches.
@@ -67,8 +92,6 @@ def test_epsilon_greedy__greedy_action_propensity() -> None:
 
 
 def test_epsilon_greedy__non_greedy_action_propensity() -> None:
-    """WHEN ε=0.2, |actions|=2, non-greedy chosen
-    THEN logged propensity = ε/|actions| = 0.1."""
     # Drive multiple draws; since we test the formula above, any non-greedy
     # outcome must equal 0.1. Verify the formula is correct.
     actions = ["a", "b"]
@@ -95,8 +118,6 @@ def test_epsilon_greedy__rejects_greedy_not_in_valid() -> None:
 
 
 def test_budget__halt_at_80_percent() -> None:
-    """WHEN cumulative spend reaches 0.8 * cap
-    THEN BudgetExceeded fires and message reports both spent and cap."""
     tracker = BudgetTracker(cap_usd=10.0)
     tracker.add(3.0)
     tracker.add(4.0)
@@ -125,12 +146,11 @@ def test_budget__rejects_non_finite_spend(cost: float) -> None:
 
 
 def test_real_corpus_has_at_least_three_fixtures() -> None:
-    """WHEN the real-agent harness is initialized
-    THEN at least 3 fixture directories are registered, each with a failing pytest."""
     assert len(FIXTURES) >= 3
     for fx in FIXTURES:
         assert fx.root.is_dir()
         assert fx.source_path.is_file()
+        assert fx.test_path is not None
         assert fx.test_path.is_file()
         # Each fixture's pristine pytest must currently fail (the bug).
         passed, _ = run_pytest(fx.root)
@@ -138,8 +158,6 @@ def test_real_corpus_has_at_least_three_fixtures() -> None:
 
 
 def test_outcome_is_pytest_exit_code(tmp_path: Path) -> None:
-    """WHEN the real-agent harness completes a run on a fixture
-    THEN Outcome.value is True iff `pytest <fixture>` returned exit code 0."""
     # Use an easy fixture (string-utils) so a known good patch makes pytest pass.
     fixture = EASY_FIXTURES[0]
 
@@ -188,15 +206,19 @@ def test_agent_logs_per_decision_policy_params_with_resolved_config(
         seed=42,
         epsilon=0.2,
         tool_greedy="inspect_file",
-        tool_epsilon=None,        # falls back to 0.2
-        model_greedy="small",     # explicit non-default greedy
-        model_epsilon=0.4,        # explicit non-default ε
+        tool_epsilon=None,  # falls back to 0.2
+        model_greedy="small",  # explicit non-default greedy
+        model_epsilon=0.4,  # explicit non-default ε
         retry_greedy="retry_once",
-        retry_epsilon=None,       # falls back to 0.2
+        retry_epsilon=None,  # falls back to 0.2
     )
     run = run_one_trace(
-        fixture, run_index=0, llm=_BlankLLM(), budget=budget,
-        sandbox_root=tmp_path, config=cfg,
+        fixture,
+        run_index=0,
+        llm=_BlankLLM(),
+        budget=budget,
+        sandbox_root=tmp_path,
+        config=cfg,
     )
 
     by_type: dict[str, dict] = {}
@@ -241,18 +263,14 @@ def test_agent_logs_retry_policy_on_every_trace_even_when_first_attempt_passes(
         config=AgentRunConfig(epsilon=0.2, seed=1),
     )
     assert run.outcome.value is True  # first attempt passed
-    retry_decisions = [
-        d for s in run.steps for d in s.decisions if d.decision_type == "retry"
-    ]
+    retry_decisions = [d for s in run.steps for d in s.decisions if d.decision_type == "retry"]
     assert len(retry_decisions) == 1
     rd = retry_decisions[0]
     assert rd.policy == "epsilon_greedy"
     assert rd.chosen_action in {"no_retry", "retry_once"}
     assert rd.propensity is not None
     # The retry decision is sequenced BEFORE any model_call (D18 ordering).
-    decision_types_in_order: list[str] = [
-        d.decision_type for s in run.steps for d in s.decisions
-    ]
+    decision_types_in_order: list[str] = [d.decision_type for s in run.steps for d in s.decisions]
     first_retry = decision_types_in_order.index("retry")
     first_model = decision_types_in_order.index("model_call")
     assert first_retry < first_model, (
@@ -293,9 +311,7 @@ def test_agent_retry_branch_includes_failure_context_in_prompt(tmp_path: Path) -
     assert retry_prompt != initial
     assert "previous patch" in retry_prompt.lower() or "test output" in retry_prompt.lower()
     # The trace also captures the retry decision and both model_call attempts.
-    model_calls = [
-        d for s in run.steps for d in s.decisions if d.decision_type == "model_call"
-    ]
+    model_calls = [d for s in run.steps for d in s.decisions if d.decision_type == "model_call"]
     assert len(model_calls) == 2
     assert model_calls[0].context_features.get("attempt") == 1
     assert model_calls[1].context_features.get("attempt") == 2
@@ -303,9 +319,6 @@ def test_agent_retry_branch_includes_failure_context_in_prompt(tmp_path: Path) -
 
 
 def test_agent_logs_all_randomization_fields(tmp_path: Path) -> None:
-    """WHEN any randomized decision is logged in a real-agent trace
-    THEN policy, policy_params, valid_actions, chosen_action, propensity, and
-    context_features are present."""
     fixture = FIXTURES[1]  # date-utils — bug isn't auto-fixable by trivial regex, that's fine
 
     class _BlankLLM:
@@ -412,7 +425,7 @@ def test_agent_observation_extracted_code_is_none_when_parse_fails(tmp_path: Pat
     assert obs["extraction_failure_reason"] == "raw_response_not_python"
 
 
-def test_agent_observation_records_finish_reason_and_raw_response_chars(
+def test_agent_observation_records_finish_reason_and_response_chars(
     tmp_path: Path,
 ) -> None:
     """WHEN the LLM response includes provider finish metadata
@@ -438,8 +451,8 @@ def test_agent_observation_records_finish_reason_and_raw_response_chars(
 
     obs = _first_model_call_observation(run)
     assert obs["finish_reason"] == "length"
-    assert obs["raw_response_chars"] == len("I don't know how to fix this.")
-    assert obs["response_chars"] == obs["raw_response_chars"]
+    assert obs["response_chars"] == len("I don't know how to fix this.")
+    assert "raw_response_chars" not in obs
 
 
 def test_extract_python_block_prefers_fenced_code() -> None:
@@ -486,8 +499,6 @@ def test_extract_python_block_rejects_wrong_function() -> None:
 
 
 def test_first_run_prompts_before_any_api_call(tmp_path: Path) -> None:
-    """WHEN counterfact bench real is invoked and no .counterfact/approved marker exists
-    THEN the harness prints an approval prompt and exits before making any external API call."""
     output = tmp_path / "out"
 
     class _ExplodingLLM:
@@ -505,12 +516,9 @@ def test_first_run_prompts_before_any_api_call(tmp_path: Path) -> None:
 
 
 def test_approved_marker_skips_prompt(tmp_path: Path) -> None:
-    """WHEN the approval marker exists and the harness is invoked
-    THEN the harness proceeds to corpus generation without re-prompting."""
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _write_approval(marker, n=3, budget_cap_usd=5.0, output_dir=output)
 
     class _NullLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -528,13 +536,51 @@ def test_approved_marker_skips_prompt(tmp_path: Path) -> None:
     assert len(written) == 3
 
 
-def test_resume_after_partial_run(tmp_path: Path) -> None:
-    """WHEN a run is halted and re-invoked
-    THEN the harness skips already-completed traces and writes only new ones."""
+def test_empty_approval_marker_is_rejected_before_any_api_call(tmp_path: Path) -> None:
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
     marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    marker.write_text("")
+
+    class _ExplodingLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            raise AssertionError("LLM was invoked despite invalid approval receipt")
+
+    rc = run_real_corpus(
+        n=1,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        llm_client_factory=lambda: _ExplodingLLM(),
+        marker_path=marker,
+    )
+
+    assert rc == 2
+
+
+def test_approval_receipt_must_match_budget_before_any_api_call(tmp_path: Path) -> None:
+    output = tmp_path / "out"
+    marker = tmp_path / ".counterfact" / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=5.0, output_dir=output)
+
+    class _ExplodingLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            raise AssertionError("LLM was invoked despite mismatched approval receipt")
+
+    rc = run_real_corpus(
+        n=1,
+        budget_cap_usd=10.0,
+        output_dir=output,
+        llm_client_factory=lambda: _ExplodingLLM(),
+        marker_path=marker,
+    )
+
+    assert rc == 2
+
+
+def test_resume_after_partial_run(tmp_path: Path) -> None:
+    output = tmp_path / "out"
+    marker = tmp_path / ".counterfact" / "approved"
+    _write_approval(marker, n=4, budget_cap_usd=5.0, output_dir=output)
 
     # First call: 0 cost, write 2 traces.
     class _NullLLM:
@@ -569,8 +615,7 @@ def test_resume_after_partial_run(tmp_path: Path) -> None:
 def test_run_real_corpus__cost_unknown_exits_before_writing_trace(tmp_path: Path) -> None:
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _write_approval(marker, n=1, budget_cap_usd=5.0, output_dir=output)
 
     class _UnknownCostLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -590,8 +635,7 @@ def test_run_real_corpus__cost_unknown_exits_before_writing_trace(tmp_path: Path
 def test_resume_counts_existing_spend_before_new_calls(tmp_path: Path) -> None:
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _write_approval(marker, n=1, budget_cap_usd=10.0, output_dir=output)
 
     class _CostLLM:
         def __init__(self, cost: float) -> None:
@@ -610,6 +654,7 @@ def test_resume_counts_existing_spend_before_new_calls(tmp_path: Path) -> None:
     assert rc == 0
     assert len(list(output.glob("real-*.json"))) == 1
 
+    _write_approval(marker, n=2, budget_cap_usd=1.0, output_dir=output)
     rc2 = run_real_corpus(
         n=2,
         budget_cap_usd=1.0,
@@ -626,8 +671,7 @@ def test_resume_halts_before_call_when_existing_spend_exceeds_threshold(
 ) -> None:
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _write_approval(marker, n=1, budget_cap_usd=10.0, output_dir=output)
 
     class _CostLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -646,6 +690,7 @@ def test_resume_halts_before_call_when_existing_spend_exceeds_threshold(
         def call(self, *, role: str, prompt: str) -> LLMResponse:
             raise AssertionError("resume should halt before a new LLM call")
 
+    _write_approval(marker, n=2, budget_cap_usd=1.0, output_dir=output)
     rc2 = run_real_corpus(
         n=2,
         budget_cap_usd=1.0,
@@ -656,11 +701,33 @@ def test_resume_halts_before_call_when_existing_spend_exceeds_threshold(
     assert rc2 == 3
 
 
+def test_resume_rejects_malformed_budget_ledger_before_call(tmp_path: Path) -> None:
+    output = tmp_path / "out"
+    marker = tmp_path / ".counterfact" / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=5.0, output_dir=output)
+    ledger = output / ".checkpoints" / "budget_ledger.jsonl"
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text("{bad json}\n")
+
+    class _ExplodingLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            raise AssertionError("resume should reject bad ledger before an LLM call")
+
+    rc = run_real_corpus(
+        n=1,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        llm_client_factory=lambda: _ExplodingLLM(),
+        marker_path=marker,
+    )
+
+    assert rc == 7
+
+
 def test_resume_rejects_changed_fixture_selection(tmp_path: Path) -> None:
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _write_approval(marker, n=1, budget_cap_usd=5.0, output_dir=output)
 
     class _NullLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -675,6 +742,13 @@ def test_resume_rejects_changed_fixture_selection(tmp_path: Path) -> None:
             marker_path=marker,
         )
         == 0
+    )
+    _write_approval(
+        marker,
+        n=2,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        fixture_ids=("csv_dedupe",),
     )
     rc = run_real_corpus(
         n=2,
@@ -690,8 +764,14 @@ def test_resume_rejects_changed_fixture_selection(tmp_path: Path) -> None:
 def test_resume_rejects_changed_randomization_config(tmp_path: Path) -> None:
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    first_config = AgentRunConfig(epsilon=0.2, seed=0)
+    _write_approval(
+        marker,
+        n=1,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        config=first_config,
+    )
 
     class _NullLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -704,9 +784,17 @@ def test_resume_rejects_changed_randomization_config(tmp_path: Path) -> None:
             output_dir=output,
             llm_client_factory=lambda: _NullLLM(),
             marker_path=marker,
-            config=AgentRunConfig(epsilon=0.2, seed=0),
+            config=first_config,
         )
         == 0
+    )
+    second_config = AgentRunConfig(epsilon=0.4, seed=0)
+    _write_approval(
+        marker,
+        n=2,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        config=second_config,
     )
     rc = run_real_corpus(
         n=2,
@@ -714,7 +802,7 @@ def test_resume_rejects_changed_randomization_config(tmp_path: Path) -> None:
         output_dir=output,
         llm_client_factory=lambda: _NullLLM(),
         marker_path=marker,
-        config=AgentRunConfig(epsilon=0.4, seed=0),
+        config=second_config,
     )
     assert rc == 6
 
@@ -726,8 +814,7 @@ def test_resume_rejects_existing_traces_without_identity(tmp_path: Path) -> None
     output.mkdir()
     shutil.copy(source, output / source.name)
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
+    _write_approval(marker, n=2, budget_cap_usd=5.0, output_dir=output)
 
     class _ExplodingLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -757,12 +844,27 @@ def test_extract_cost__rejects_non_finite_response_cost(cost: float) -> None:
 
 
 def test_extract_cost__falls_back_to_completion_cost(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When response_cost is absent or 0, derive cost via litellm.completion_cost."""
+    """When response_cost is absent (None), derive cost via litellm.completion_cost."""
     import litellm  # type: ignore[import-not-found]
 
-    resp = {"choices": [{"message": {"content": "x"}}], "response_cost": 0}
+    resp = {"choices": [{"message": {"content": "x"}}]}
     monkeypatch.setattr(litellm, "completion_cost", lambda completion_response: 0.0123)
     assert extract_cost(resp) == pytest.approx(0.0123)
+
+
+def test_extract_cost__zero_response_cost_is_returned_not_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real `response_cost == 0.0` is a valid zero, not a missing value."""
+    import litellm  # type: ignore[import-not-found]
+
+    resp = {"choices": [{"message": {"content": "x"}}], "response_cost": 0.0}
+
+    def _should_not_be_called(**_kw: object) -> float:
+        raise AssertionError("litellm fallback must not run when response_cost is 0.0")
+
+    monkeypatch.setattr(litellm, "completion_cost", _should_not_be_called)
+    assert extract_cost(resp) == 0.0
 
 
 @pytest.mark.parametrize("cost", [math.nan, math.inf, -math.inf, 0.0])
@@ -772,7 +874,7 @@ def test_extract_cost__rejects_non_positive_or_non_finite_fallback(
 ) -> None:
     import litellm  # type: ignore[import-not-found]
 
-    resp = {"choices": [{"message": {"content": "x"}}], "response_cost": 0}
+    resp = {"choices": [{"message": {"content": "x"}}]}
     monkeypatch.setattr(litellm, "completion_cost", lambda completion_response: cost)
     with pytest.raises(CostUnknownError):
         extract_cost(resp)
@@ -924,9 +1026,8 @@ def test_run_real_corpus__exits_4_when_credentials_missing(
     """With marker present but no API key (and no custom client factory), the
     runner must exit 4 BEFORE any LLM call."""
     marker = tmp_path / ".counterfact" / "approved"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
     output = tmp_path / "out"
+    _write_approval(marker, n=1, budget_cap_usd=1.0, output_dir=output)
 
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
@@ -1008,9 +1109,7 @@ def _write_pilot_trace(
     run = {
         "steps": [
             {
-                "decisions": [
-                    {"decision_type": "model_call", "chosen_action": model}
-                ],
+                "decisions": [{"decision_type": "model_call", "chosen_action": model}],
                 "observations": [
                     {
                         "content": {
@@ -1021,9 +1120,7 @@ def _write_pilot_trace(
                 ],
             },
             {
-                "decisions": [
-                    {"decision_type": "tool_call", "chosen_action": "run_tests"}
-                ],
+                "decisions": [{"decision_type": "tool_call", "chosen_action": "run_tests"}],
                 "observations": [{"content": {"stdout_tail": stdout_tail}}],
             },
         ],
@@ -1047,12 +1144,8 @@ def test_analyze_pilot_counts_hidden_semantic_failures_by_model(tmp_path: Path) 
 
     report = analyze(tmp_path)
     assert report["failure_modes"]["hidden_semantic_failure"] == 2
-    assert report["failure_modes_by_model"][
-        "model=small,mode=hidden_semantic_failure"
-    ] == 1
-    assert report["failure_modes_by_model"][
-        "model=large,mode=hidden_semantic_failure"
-    ] == 1
+    assert report["failure_modes_by_model"]["model=small,mode=hidden_semantic_failure"] == 1
+    assert report["failure_modes_by_model"]["model=large,mode=hidden_semantic_failure"] == 1
     assert report["showcase_gate_passed"] is True
     assert "Showcase composition gate" in render(report)
 

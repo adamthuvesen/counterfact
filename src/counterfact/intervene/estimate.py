@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -22,14 +22,18 @@ class InterventionQuery(_Strict):
     decision_type: str
     intervention_kind: str
     target: Any
-    step: int
+    # `step` is None when no specific trace step applies (e.g. corpus-wide
+    # degenerate refusal). Avoid sentinels like -1 — None is self-documenting.
+    step: int | None
 
 
 class DistributionSummary(_Strict):
     """Summary of the predicted outcome distribution under the intervention.
 
-    Per design.md D3 the bootstrap CI is *coefficient/prediction* uncertainty.
-    Identifiability uncertainty is a separate concern (see SensitivityBounds).
+    The bootstrap CI here is *coefficient/prediction* uncertainty (resampling
+    over the outcome model fit). Identifiability uncertainty — confounding
+    bias the data cannot rule out — is a separate concern, captured on
+    `SensitivityBounds`. The two must not be conflated.
     """
 
     point: float
@@ -47,10 +51,10 @@ class SensitivityBounds(_Strict):
 
 
 # Required payload keys per action. Each action's payload must contain at
-# least these keys; extra keys are tolerated. `none` accepts an empty payload.
-# The full per-action schema (including optional keys like `suggested_command`)
-# is documented in openspec/specs/causal-engine/spec.md under the
-# `intervene returns a CausalEstimate with identifiability label` requirement.
+# least these keys; extra keys (e.g. `suggested_command`) are tolerated.
+# `none` accepts an empty payload. Consumers rely on this shape rather than
+# string-matching `human_text`, so adding/removing required keys is a
+# breaking change to the intervene contract.
 _REQUIRED_PAYLOAD_KEYS: dict[str, tuple[str, ...]] = {
     "increase_n": (
         "current_n",
@@ -75,13 +79,33 @@ _REQUIRED_PAYLOAD_KEYS: dict[str, tuple[str, ...]] = {
 }
 
 
+class SupportPayload(TypedDict, total=False):
+    """Static-typing hint for the support-context shape inside `NextStep.payload`.
+
+    `NextStep.payload` itself stays `dict[str, Any]` so we don't break the
+    intervene contract; this TypedDict is a renderer-side narrowing aid for
+    mypy and editors. Keys are the union of fields produced by the
+    `broaden_arm_support` and `replay_required` actions.
+    """
+
+    observed_arms: list[str | dict[str, object]]
+    missing_arms: list[str]
+    missing_strata: list[str]
+    localization_limit: object
+    replay_inputs_required: list[str] | dict[str, object]
+    suggested_command: str
+    arm_name: str
+    intervention_target: str
+    note: str
+
+
 class NextStep(_Strict):
     """Structured guidance for what to do when an estimate is not actionable as-is.
 
     The validator enforces that each action's minimum payload keys are present
     so consumers can rely on the shape rather than string-matching `human_text`.
-    See openspec/specs/causal-engine/spec.md for the full per-action contract,
-    including optional keys (`suggested_command`) not enforced here.
+    Optional keys (e.g. `suggested_command`) are tolerated but not enforced
+    here; see `_REQUIRED_PAYLOAD_KEYS` above for the per-action contract.
     """
 
     action: Literal[
@@ -100,8 +124,7 @@ class NextStep(_Strict):
         missing = [k for k in required if k not in self.payload]
         if missing:
             raise ValueError(
-                f"NextStep(action={self.action!r}) is missing required payload "
-                f"keys: {missing}"
+                f"NextStep(action={self.action!r}) is missing required payload keys: {missing}"
             )
         return self
 

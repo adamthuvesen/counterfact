@@ -59,9 +59,7 @@ def test_analyze_synthetic_corpus_exits_0(tmp_path: Path, capsys) -> None:
     assert not fail_lines, f"unexpected FAIL lines: {fail_lines}"
 
 
-def test_analyze_mixed_outcome_without_features_reports_not_ready(
-    tmp_path: Path, capsys
-) -> None:
+def test_analyze_mixed_outcome_without_features_reports_not_ready(tmp_path: Path, capsys) -> None:
     out_dir = tmp_path / "no-features"
     out_dir.mkdir()
     runs = [
@@ -140,3 +138,28 @@ def test_analyze_thresholds_can_be_overridden_via_flags(tmp_path: Path, capsys) 
     assert "support_ready: False" in out_strict
     assert "FAIL outcome_balance:" in out_strict
     assert "next_collection_guidance:" in out_strict
+
+
+def test_analyze_rejects_inverted_pass_rate_thresholds(tmp_path: Path, capsys) -> None:
+    out_dir = tmp_path / "syn"
+    out_dir.mkdir()
+    for i, trace in enumerate(generate_traces(n=4, seed=3)):
+        run = Run.model_validate(trace)
+        (out_dir / f"r-{i:04d}.json").write_text(run.model_dump_json())
+
+    rc = main(
+        [
+            "analyze",
+            "corpus",
+            str(out_dir),
+            "--min-pass-rate",
+            "0.8",
+            "--max-pass-rate",
+            "0.3",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert rc == 2
+    assert "invalid thresholds" in captured.err
+    assert "min_pass_rate must be <= max_pass_rate" in captured.err

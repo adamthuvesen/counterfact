@@ -1,4 +1,4 @@
-.PHONY: install lint test
+.PHONY: install lint format typecheck test cov ci
 
 install:
 	uv pip install -e ".[dev]"
@@ -10,7 +10,13 @@ lint:
 format:
 	ruff format src tests
 
+typecheck:
+	mypy src/counterfact
+
 test:
 	pytest
 
-ci: lint test
+cov:
+	pytest --cov --cov-report=term-missing
+
+ci: lint typecheck cov

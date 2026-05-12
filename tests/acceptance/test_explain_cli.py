@@ -7,30 +7,17 @@ single-class path, and the missing-input error path.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from counterfact.cli import main
-
-
-def _write_synthetic_corpus(target: Path, *, n: int = 16, seed: int = 42) -> Path:
-    """Materialize a small synthetic SCM corpus to disk for CLI input."""
-    from bench.synthetic import generate_traces
-
-    target.mkdir(parents=True, exist_ok=True)
-    paths: list[Path] = []
-    for trace in generate_traces(n=n, seed=seed):
-        path = target / f"{trace['run_id']}.json"
-        path.write_text(json.dumps(trace))
-        paths.append(path)
-    return paths[0]
+from tests.conftest import write_synthetic_corpus
 
 
 def test_explain__synthetic_run_writes_identified_report(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
-    focal = _write_synthetic_corpus(runs_dir)
+    focal = write_synthetic_corpus(runs_dir, n=16)[0]
     output = tmp_path / "report.html"
 
     rc = main(

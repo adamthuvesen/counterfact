@@ -10,14 +10,12 @@ def binary_outcome_value(run: Run) -> bool:
     """Return `Outcome.value` for binary runs; reject other outcome kinds."""
     if run.outcome.kind != "binary":
         raise UnsupportedOutcomeError(
-            f"v0 only supports binary outcomes; got kind={run.outcome.kind!r} "
-            f"on run {run.run_id!r}"
+            f"v0 only supports binary outcomes; got kind={run.outcome.kind!r} on run {run.run_id!r}"
         )
     value = run.outcome.value
     if not isinstance(value, bool):
         raise UnsupportedOutcomeError(
-            f"binary outcome on run {run.run_id!r} must be bool; "
-            f"got {type(value).__name__}"
+            f"binary outcome on run {run.run_id!r} must be bool; got {type(value).__name__}"
         )
     return value
 

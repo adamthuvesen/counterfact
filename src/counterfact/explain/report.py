@@ -124,9 +124,7 @@ def build_report(
     if not corpus:
         raise ValueError("build_report requires a non-empty corpus")
     if focal_run.run_id not in {r.run_id for r in corpus}:
-        raise ValueError(
-            f"focal run {focal_run.run_id!r} is not present in the supplied corpus"
-        )
+        raise ValueError(f"focal run {focal_run.run_id!r} is not present in the supplied corpus")
 
     intervention_kind = _INTERVENTION_KIND_BY_DECISION_TYPE[decision_type]
     table = pass_rate_by_arm(corpus, decision_type)

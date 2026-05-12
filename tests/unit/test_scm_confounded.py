@@ -28,9 +28,7 @@ def test_default_mode_run0_is_unchanged() -> None:
     risk."""
     trace = next(generate_traces(n=1, seed=42))
     decisions_by_type = {
-        d["decision_type"]: d
-        for step in trace["steps"]
-        for d in step["decisions"]
+        d["decision_type"]: d for step in trace["steps"] for d in step["decisions"]
     }
     # Tool, model, retry are uniform in default mode.
     for dt in ("tool_call", "model_call", "retry"):
@@ -115,10 +113,7 @@ def test_confounded_constants_satisfy_relationships() -> None:
     # Sanity: naive headline differs from the do-calculus headline by exactly
     # the gap.
     assert (
-        abs(
-            (CONFOUNDED_NAIVE_HEADLINE - CONFOUNDED_DO_HEADLINE)
-            - CONFOUNDED_NAIVE_VS_CAUSAL_GAP
-        )
+        abs((CONFOUNDED_NAIVE_HEADLINE - CONFOUNDED_DO_HEADLINE) - CONFOUNDED_NAIVE_VS_CAUSAL_GAP)
         < 1e-12
     )
 

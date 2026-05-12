@@ -8,14 +8,14 @@ should never be hidden behind environment variables or yaml.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class RubricThresholds(BaseModel):
     """Thresholds the analyzer scores a corpus against.
 
-    See `openspec/specs/corpus-analyzer/spec.md` for the requirements text and
-    `design.md` decision 2 for why this lives in code rather than config.
+    Lives in code (not config or env) so threshold changes show up as a visible
+    diff and require a deliberate PR. Bumping the bar is a product decision.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -26,6 +26,15 @@ class RubricThresholds(BaseModel):
     min_n_per_arm: int = Field(default=5, ge=1)
     min_identified_decision_types: int = Field(default=1, ge=0)
     require_model_arm_outcome_mix: bool = True
+
+    @model_validator(mode="after")
+    def _pass_rate_bounds_are_ordered(self) -> RubricThresholds:
+        if self.min_pass_rate > self.max_pass_rate:
+            raise ValueError(
+                "min_pass_rate must be <= max_pass_rate; got "
+                f"{self.min_pass_rate} > {self.max_pass_rate}"
+            )
+        return self
 
 
 DEFAULT_THRESHOLDS = RubricThresholds()

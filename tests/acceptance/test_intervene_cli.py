@@ -9,18 +9,7 @@ import pytest
 
 from counterfact.cli import main
 from counterfact.intervene.estimate import CausalEstimate, IdentifiabilityStatus
-
-
-def _write_synthetic_corpus(target: Path, *, n: int = 80, seed: int = 42) -> Path:
-    from bench.synthetic import generate_traces
-
-    target.mkdir(parents=True, exist_ok=True)
-    paths: list[Path] = []
-    for trace in generate_traces(n=n, seed=seed):
-        path = target / f"{trace['run_id']}.json"
-        path.write_text(json.dumps(trace))
-        paths.append(path)
-    return paths[0]
+from tests.conftest import write_synthetic_corpus
 
 
 def _decision_id_for(path: Path, decision_type: str) -> str:
@@ -36,7 +25,7 @@ def test_intervene__decision_id_json_round_trips(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     runs_dir = tmp_path / "runs"
-    focal = _write_synthetic_corpus(runs_dir)
+    focal = write_synthetic_corpus(runs_dir, n=80)[0]
     decision_id = _decision_id_for(focal, "model_call")
 
     rc = main(
@@ -71,7 +60,7 @@ def test_intervene__output_writes_json_artifact(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     runs_dir = tmp_path / "runs"
-    focal = _write_synthetic_corpus(runs_dir)
+    focal = write_synthetic_corpus(runs_dir, n=80)[0]
     decision_id = _decision_id_for(focal, "tool_call")
     output = tmp_path / "estimate.json"
 
@@ -104,7 +93,7 @@ def test_intervene__json_plus_output_separates_streams(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     runs_dir = tmp_path / "runs"
-    focal = _write_synthetic_corpus(runs_dir)
+    focal = write_synthetic_corpus(runs_dir, n=80)[0]
     decision_id = _decision_id_for(focal, "model_call")
     output = tmp_path / "estimate.json"
 
@@ -138,7 +127,7 @@ def test_intervene__human_output_names_decision_and_next_step(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     runs_dir = tmp_path / "runs"
-    focal = _write_synthetic_corpus(runs_dir)
+    focal = write_synthetic_corpus(runs_dir, n=80)[0]
     decision_id = _decision_id_for(focal, "retry")
 
     rc = main(
@@ -167,7 +156,7 @@ def test_intervene__missing_arm_surfaces_support_diagnostics(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     runs_dir = tmp_path / "runs"
-    focal = _write_synthetic_corpus(runs_dir)
+    focal = write_synthetic_corpus(runs_dir, n=80)[0]
     decision_id = _decision_id_for(focal, "model_call")
 
     rc = main(
@@ -197,7 +186,7 @@ def test_intervene__invalid_inputs_exit_2(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     runs_dir = tmp_path / "runs"
-    focal = _write_synthetic_corpus(runs_dir)
+    focal = write_synthetic_corpus(runs_dir, n=80)[0]
     decision_id = _decision_id_for(focal, "model_call")
 
     assert (

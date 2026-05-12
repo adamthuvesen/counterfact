@@ -1,9 +1,9 @@
 """Binomial-CI power analysis: how many traces to tighten the CI on a 2-arm marginal effect.
 
-This is the v0 power helper. Scope is deliberately narrow per design.md D2:
-the only question it answers is "given the current per-arm pass rates and arm
-fractions, how large must n be for a 95% bootstrap CI on the marginal-effect
-difference to be at most `target_ci_width` wide?"
+This is the v0 power helper. Scope is deliberately narrow: the only question
+it answers is "given the current per-arm pass rates and arm fractions, how
+large must n be for a 95% bootstrap CI on the marginal-effect difference to
+be at most `target_ci_width` wide?"
 
 Real power analysis (effect-size hypotheses, multi-arm corrections, sequential
 designs) is its own research project and is out of v0 scope.
@@ -42,9 +42,7 @@ class PowerReport(_Strict):
     warnings: list[str] = Field(default_factory=list)
 
 
-def _two_arm_ci_width(
-    *, p_a: float, p_b: float, n_a: int, n_b: int
-) -> float:
+def _two_arm_ci_width(*, p_a: float, p_b: float, n_a: int, n_b: int) -> float:
     """95% CI full width on (p_a - p_b) under the binomial-Wald approximation."""
     if n_a <= 0 or n_b <= 0:
         return float("inf")
@@ -106,8 +104,12 @@ def power_analysis(
     p_b = row_b.pass_rate
     n_a = row_a.n
     n_b = row_b.n
-    f_a = n_a / (n_a + n_b)
-    f_b = n_b / (n_a + n_b)
+    # Arm fractions must be over the full corpus, not just the two focal arms.
+    # In a 3+ arm corpus, n_arm / (n_a + n_b) overstates each fraction and
+    # under-projects required n. With exactly 2 arms `n_total == n_a + n_b`,
+    # so this is a no-op for the 2-arm case.
+    f_a = n_a / n_total
+    f_b = n_b / n_total
 
     current_width = _two_arm_ci_width(p_a=p_a, p_b=p_b, n_a=n_a, n_b=n_b)
 

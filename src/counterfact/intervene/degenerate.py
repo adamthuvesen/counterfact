@@ -71,7 +71,7 @@ def degenerate_estimate(
             decision_type=decision_type,
             intervention_kind=intervention_kind,
             target=target,
-            step=-1,
+            step=None,
         ),
         identifiability=IdentifiabilityStatus.UNIDENTIFIED,
         reason=(
@@ -79,9 +79,7 @@ def degenerate_estimate(
             f"Outcome.value={observed}; no outcome variation exists for an outcome "
             "model or back-door adjustment to leverage"
         ),
-        warnings=[
-            "fit_outcome_model is intentionally skipped for single-class real corpora"
-        ],
+        warnings=["fit_outcome_model is intentionally skipped for single-class real corpora"],
         next_step=NextStep(
             action="broaden_arm_support",
             payload=payload,

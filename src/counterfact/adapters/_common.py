@@ -8,6 +8,7 @@ adapters under `counterfact.adapters` reuse these primitives.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -43,9 +44,7 @@ def strict_bool(value: Any, *, field_name: str) -> bool:
     """Return a JSON boolean or reject ambiguous truthy/falsy values."""
     if isinstance(value, bool):
         return value
-    raise IngestError(
-        f"{field_name} must be a JSON boolean; got {type(value).__name__}"
-    )
+    raise IngestError(f"{field_name} must be a JSON boolean; got {type(value).__name__}")
 
 
 def randomization_warning(source_format: str) -> str:
@@ -121,12 +120,31 @@ def write_corpus(runs: list[Run], output_dir: Path, receipt: IngestReceipt) -> N
 
     output_dir.mkdir(parents=True, exist_ok=True)
     for run, out_path in planned:
-        out_path.write_text(
-            run.model_dump_json(indent=2) + "\n"
-        )
-    (output_dir / "ingest-receipt.json").write_text(
-        receipt.model_dump_json(indent=2) + "\n"
-    )
+        out_path.write_text(run.model_dump_json(indent=2) + "\n")
+    (output_dir / "ingest-receipt.json").write_text(receipt.model_dump_json(indent=2) + "\n")
+
+
+def read_existing_receipt_count(output_dir: Path) -> int:
+    """Return `generated_count` from any pre-existing receipt, else 0.
+
+    Live tracers use this to seed their per-session counter so a new trace
+    written to a directory that already has a receipt extends the count
+    rather than overwriting it with 1. A missing or unparseable receipt is
+    treated as a fresh start; we do not raise here because the on-disk
+    state is informational, not authoritative.
+    """
+
+    receipt_path = output_dir / "ingest-receipt.json"
+    if not receipt_path.exists():
+        return 0
+    try:
+        payload = json.loads(receipt_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return 0
+    count = payload.get("generated_count")
+    if isinstance(count, int) and count >= 0:
+        return count
+    return 0
 
 
 __all__ = [
@@ -134,6 +152,7 @@ __all__ = [
     "IngestReceipt",
     "per_decision_randomization_warnings",
     "randomization_warning",
+    "read_existing_receipt_count",
     "strict_bool",
     "write_corpus",
 ]

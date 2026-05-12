@@ -14,12 +14,8 @@ import pytest
 from counterfact.cli import main
 from counterfact.schema import Run
 
-CLAUDE_FIXTURE = (
-    Path(__file__).parent.parent / "fixtures/adapters/claude_agent_sdk/minimal.jsonl"
-)
-OPENAI_FIXTURE_DIR = (
-    Path(__file__).parent.parent / "fixtures/adapters/openai_agents"
-)
+CLAUDE_FIXTURE = Path(__file__).parent.parent / "fixtures/adapters/claude_agent_sdk/minimal.jsonl"
+OPENAI_FIXTURE_DIR = Path(__file__).parent.parent / "fixtures/adapters/openai_agents"
 
 
 def test_claude_agent_sdk_subcommand_writes_corpus_and_receipt(

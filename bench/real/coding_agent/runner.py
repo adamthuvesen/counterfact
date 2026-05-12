@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import os
 import sys
 import tempfile
@@ -16,12 +17,8 @@ from bench.real.coding_agent.fixtures import (
     BROAD_CALIBRATION_FIXTURES,
     EASY_FIXTURES,
     FIXTURES,
-    HARD_HIDDEN_V1_FIXTURES,
-    HIDDEN_FIXTURES,
-    HIDDEN_V1_FIXTURES,
-    STATEFUL_CALIBRATION_FIXTURES,
-    VERY_HARD_HIDDEN_V1_FIXTURES,
     FixtureSpec,
+    fixtures_by_id,
 )
 from bench.real.coding_agent.llm import (
     ROLE_TO_MODEL,
@@ -31,6 +28,7 @@ from bench.real.coding_agent.llm import (
 )
 
 APPROVAL_MARKER = Path(".counterfact") / "approved"
+APPROVAL_SCHEMA_VERSION = 1
 
 # Provider credential lookup table. Keys are env-var names that satisfy each
 # provider; the first non-empty hit wins. Adding a new provider means adding a
@@ -41,13 +39,84 @@ _PROVIDER_CREDENTIALS: dict[str, tuple[str, ...]] = {
 }
 
 
-def first_run_gate_check(*, marker_path: Path | None = None) -> bool:
-    """Return True iff the harness is approved to make external API calls.
+class BudgetLedgerError(RuntimeError):
+    """Raised when resume spend cannot be read safely."""
 
-    Per design.md autonomy contract / §12.2: the first real-agent run requires
-    explicit human approval. The autonomous loop MUST NOT create the marker.
+
+def first_run_gate_check(*, marker_path: Path | None = None) -> bool:
+    """Return True iff an approval receipt exists.
+
+    The first real-agent run requires explicit human approval — the operator
+    must create `.counterfact/approved` after eyeballing a smoke corpus.
+    Autonomous loops MUST NOT create the marker.
     """
     return (marker_path or APPROVAL_MARKER).exists()
+
+
+def approval_receipt_template(
+    *,
+    n: int,
+    budget_cap_usd: float,
+    output_dir: Path,
+    fixtures: tuple[FixtureSpec, ...],
+    config: AgentRunConfig,
+    role_to_model: dict[str, str],
+) -> dict[str, object]:
+    """Return the approval receipt shape expected for this real-agent command."""
+    identity = _run_identity(fixtures=fixtures, config=config, role_to_model=role_to_model)
+    return {
+        "schema_version": APPROVAL_SCHEMA_VERSION,
+        "approved_at": "<ISO-8601 timestamp>",
+        "max_traces": n,
+        "budget_cap_usd": budget_cap_usd,
+        "output_dir": str(output_dir),
+        **identity,
+    }
+
+
+def _approval_error(marker_path: Path, expected: dict[str, object]) -> str | None:
+    if not marker_path.exists():
+        return f"approval receipt not found at {marker_path}"
+    try:
+        receipt = json.loads(marker_path.read_text())
+    except json.JSONDecodeError as exc:
+        return f"approval receipt is not valid JSON: {exc}"
+    if not isinstance(receipt, dict):
+        return "approval receipt must be a JSON object"
+    if receipt.get("schema_version") != APPROVAL_SCHEMA_VERSION:
+        return (
+            "approval receipt schema_version mismatch; expected "
+            f"{APPROVAL_SCHEMA_VERSION}"
+        )
+    approved_at = receipt.get("approved_at")
+    if not isinstance(approved_at, str) or not approved_at.strip():
+        return "approval receipt must include a non-empty approved_at timestamp"
+    if approved_at == "<ISO-8601 timestamp>":
+        return "approval receipt approved_at still contains the template placeholder"
+
+    max_traces = receipt.get("max_traces")
+    if not isinstance(max_traces, int) or max_traces < int(expected["max_traces"]):
+        return (
+            "approval receipt max_traces is lower than this invocation "
+            f"({max_traces!r} < {expected['max_traces']!r})"
+        )
+
+    budget = receipt.get("budget_cap_usd")
+    if not isinstance(budget, int | float) or not math.isclose(
+        float(budget), float(expected["budget_cap_usd"])
+    ):
+        return (
+            "approval receipt budget_cap_usd does not match this invocation "
+            f"({budget!r} != {expected['budget_cap_usd']!r})"
+        )
+
+    for key in ("output_dir", "fixtures", "config", "role_to_model"):
+        if receipt.get(key) != expected[key]:
+            return (
+                f"approval receipt {key} does not match this invocation; "
+                "create a new receipt for the exact command you intend to run"
+            )
+    return None
 
 
 def _provider_for_model(model_name: str) -> str:
@@ -95,20 +164,33 @@ def check_credentials(
     return "\n".join(lines)
 
 
-def print_approval_prompt(stream=sys.stderr) -> None:
+def print_approval_prompt(
+    *,
+    marker_path: Path | None = None,
+    expected_receipt: dict[str, object] | None = None,
+    reason: str | None = None,
+    stream=sys.stderr,
+) -> None:
     """Render the first-run prompt the user sees before any API call."""
+    marker = marker_path or APPROVAL_MARKER
+    receipt = (
+        json.dumps(expected_receipt, indent=2, sort_keys=True)
+        if expected_receipt is not None
+        else "{}"
+    )
+    reason_line = f"Refusing to start: {reason}\n\n" if reason else ""
     print(
         "------------------------------------------------------------\n"
-        "counterfact bench real — first-run HUMAN GATE (§12.3)\n"
+        "counterfact bench real — first-run HUMAN GATE\n"
         "------------------------------------------------------------\n"
+        f"{reason_line}"
         "This will make external LLM API calls and incur USD spend.\n"
-        "Before proceeding, the user must:\n"
-        "  1. Run a tiny smoke corpus:\n"
-        "       counterfact bench real --n 5 --budget-cap 5\n"
-        "  2. Eyeball the resulting traces under bench/real/pilot/.\n"
-        "  3. If sane, create the approval marker:\n"
-        "       mkdir -p .counterfact && touch .counterfact/approved\n"
-        "Re-run after the marker exists.\n",
+        "Before proceeding, write an approval receipt for the exact command/config "
+        "you intend to run. Approve a tiny smoke command first, inspect those "
+        "traces, then write a separate receipt before scaling up.\n"
+        f"Create {marker} with this JSON, replacing approved_at with the current "
+        "UTC timestamp:\n"
+        f"{receipt}\n",
         file=stream,
     )
 
@@ -206,11 +288,18 @@ def _ledger_spend(ledger_path: Path) -> float:
     spent = 0.0
     try:
         with ledger_path.open() as f:
-            for line in f:
+            for line_number, line in enumerate(f, start=1):
                 line = line.strip()
                 if not line:
                     continue
-                spent += float(json.loads(line)["cost_usd"])
+                try:
+                    spent += float(json.loads(line)["cost_usd"])
+                except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+                    raise BudgetLedgerError(
+                        f"{ledger_path}:{line_number}: cannot read cost_usd; "
+                        "refusing to resume because prior spend cannot be "
+                        "accounted safely"
+                    ) from exc
     except FileNotFoundError:
         return 0.0
     return spent
@@ -223,11 +312,11 @@ def _fixture_for_index(index: int, fixtures: tuple[FixtureSpec, ...]) -> Fixture
 _FIXTURE_SETS: dict[str, tuple[FixtureSpec, ...]] = {
     "v0": FIXTURES,
     "easy": EASY_FIXTURES,
-    "hidden_v1": HIDDEN_V1_FIXTURES,
-    "hard_hidden_v1": HARD_HIDDEN_V1_FIXTURES,
+    "hidden_v1": fixtures_by_id("csv_dedupe"),
+    "hard_hidden_v1": fixtures_by_id("date_window"),
     "broad_calibration": BROAD_CALIBRATION_FIXTURES,
-    "very_hard_hidden_v1": VERY_HARD_HIDDEN_V1_FIXTURES,
-    "stateful_calibration": STATEFUL_CALIBRATION_FIXTURES,
+    "very_hard_hidden_v1": fixtures_by_id("unicode_normalize"),
+    "stateful_calibration": fixtures_by_id("streaming_watermark_dedupe"),
 }
 
 
@@ -241,14 +330,10 @@ def resolve_fixtures(
     `FIXTURES` (preserving existing behavior).
     """
     if fixture_ids:
-        registry = {
-            fx.fixture_id: fx
-            for fx in (*FIXTURES, *EASY_FIXTURES, *HIDDEN_FIXTURES)
-        }
-        unknown = [fid for fid in fixture_ids if fid not in registry]
-        if unknown:
-            raise ValueError(f"unknown fixture id(s): {unknown}")
-        return tuple(registry[fid] for fid in fixture_ids)
+        try:
+            return fixtures_by_id(*fixture_ids)
+        except KeyError as exc:
+            raise ValueError(str(exc)) from exc
     if fixture_set:
         if fixture_set not in _FIXTURE_SETS:
             raise ValueError(
@@ -274,11 +359,29 @@ def run_real_corpus(
 ) -> int:
     """Generate `n` real-agent traces. Returns process-style exit code.
 
-    HUMAN GATE: if the approval marker is missing, prints the prompt and
-    returns 2 without making any external call.
+    HUMAN GATE: if the approval receipt is missing, invalid, or for a different
+    command/config, prints the prompt and returns 2 without making any external
+    call.
     """
-    if not first_run_gate_check(marker_path=marker_path):
-        print_approval_prompt(stream=write_to_stream)
+    config = config or AgentRunConfig()
+    fixtures = resolve_fixtures(fixture_ids, fixture_set)
+    approval_path = marker_path or APPROVAL_MARKER
+    expected_receipt = approval_receipt_template(
+        n=n,
+        budget_cap_usd=budget_cap_usd,
+        output_dir=output_dir,
+        fixtures=fixtures,
+        config=config,
+        role_to_model=ROLE_TO_MODEL,
+    )
+    approval_error = _approval_error(approval_path, expected_receipt)
+    if approval_error is not None:
+        print_approval_prompt(
+            marker_path=approval_path,
+            expected_receipt=expected_receipt,
+            reason=approval_error,
+            stream=write_to_stream,
+        )
         return 2
 
     # Credential pre-flight. Catches the missing-key case before any agent
@@ -291,8 +394,6 @@ def run_real_corpus(
             print(cred_error, file=sys.stderr)
             return 4
 
-    config = config or AgentRunConfig()
-    fixtures = resolve_fixtures(fixture_ids, fixture_set)
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_dir = _checkpoint_dir(output_dir)
     done = _completed_indices(output_dir)
@@ -307,10 +408,12 @@ def run_real_corpus(
         return 6
 
     ledger_path = checkpoint_dir / "budget_ledger.jsonl"
-    budget = BudgetTracker(
-        cap_usd=budget_cap_usd,
-        spent_usd=_completed_spend(output_dir) + _ledger_spend(ledger_path),
-    )
+    try:
+        spent_usd = _completed_spend(output_dir) + _ledger_spend(ledger_path)
+    except BudgetLedgerError as exc:
+        print(f"Budget accounting failed: {exc}", file=sys.stderr)
+        return 7
+    budget = BudgetTracker(cap_usd=budget_cap_usd, spent_usd=spent_usd)
     if budget.spent_usd >= budget.halt_threshold:
         print(
             f"Budget cap {int(budget.halt_fraction * 100)}% reached: "

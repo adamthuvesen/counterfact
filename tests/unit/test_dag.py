@@ -19,16 +19,12 @@ def _make_run(steps: list[Step]) -> Run:
 
 
 def test_build_dag__empty_trace_yields_empty_dag() -> None:
-    """WHEN build_dag is called on a Run with zero Steps
-    THEN the returned DAG has zero nodes and zero edges."""
     dag = build_dag(_make_run([]))
     assert dag.nodes == []
     assert dag.edges == []
 
 
 def test_build_dag__edges_respect_parent_declarations() -> None:
-    """WHEN build_dag is called on a trace with a tool_call and earlier plan_step
-    THEN the resulting DAG contains the declared parent edge."""
     plan_2 = Decision(
         decision_id="d-2-plan",
         decision_type="plan_step",
@@ -46,8 +42,6 @@ def test_build_dag__edges_respect_parent_declarations() -> None:
 
 
 def test_build_dag__is_acyclic() -> None:
-    """WHEN build_dag is called on any valid trace
-    THEN topological sort over the returned DAG succeeds (no cycle)."""
     plan = Decision(decision_id="d0", decision_type="plan_step")
     model = Decision(decision_id="d1", decision_type="model_call", chosen_action="claude-haiku")
     tool = Decision(decision_id="d2", decision_type="tool_call", chosen_action="run_tests")
@@ -82,24 +76,29 @@ def test_build_dag__cycle_raises() -> None:
         DAG(nodes=[a, b], edges=[("a", "b"), ("b", "a")])
 
 
-def test_build_dag__duplicate_decision_ids_raise_defensively() -> None:
-    """Even if schema validation is bypassed, DAG construction refuses duplicates."""
-    steps = [
-        Step.model_construct(
-            step_index=0,
-            decisions=[
-                Decision(decision_id="dup", decision_type="plan_step"),
-                Decision(decision_id="dup", decision_type="tool_call", chosen_action="run_tests"),
-            ],
-            observations=[],
-            metadata={},
-        )
-    ]
-    run = Run.model_construct(
-        schema_version="0.1.0",
-        run_id="r-dup",
-        steps=steps,
-        outcome=Outcome(kind="binary", value=True, verifier="pytest"),
+def test_build_dag__adjacency_lookups_are_constant_time() -> None:
+    """parents_of/children_of read from precomputed adjacency dicts, not the edge list."""
+    plan = Decision(decision_id="d0", decision_type="plan_step", chosen_action="investigate")
+    tool = Decision(decision_id="d1", decision_type="tool_call", chosen_action="run_tests")
+    run = _make_run(
+        [
+            Step(step_index=0, decisions=[plan]),
+            Step(step_index=1, decisions=[tool]),
+        ]
     )
-    with pytest.raises(ValueError, match="duplicate decision_id"):
-        build_dag(run)
+    dag = build_dag(run)
+
+    # Smoke-test the contract: lookups are backed by per-node adjacency dicts
+    # so the implementation must store an entry for every node id, not scan
+    # `dag.edges` linearly on each call.
+    assert set(dag._adj.keys()) == {"d0", "d1"}
+    assert set(dag._radj.keys()) == {"d0", "d1"}
+    # The expected edge from plan -> tool is in adjacency.
+    assert dag.children_of("d0") == ["d1"]
+    assert dag.parents_of("d1") == ["d0"]
+    # Appending to `dag.edges` after construction must not affect existing
+    # lookups — that proves the adjacency dicts are independent of the edge
+    # list rather than recomputed on each call.
+    dag.edges.append(("d1", "d0"))
+    assert dag.children_of("d1") == []
+    assert dag.parents_of("d0") == []

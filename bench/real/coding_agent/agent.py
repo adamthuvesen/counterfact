@@ -25,7 +25,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench.real.coding_agent.budget import BudgetExceeded, BudgetTracker
+from bench.real.coding_agent.budget import BudgetTracker
 from bench.real.coding_agent.fixtures import (
     FixtureSpec,
     build_hidden_eval_workspace,
@@ -40,7 +40,10 @@ from bench.real.coding_agent.randomize import EpsilonGreedy
 from counterfact.schema import Decision, Observation, Outcome, Run, Step
 
 DEFAULT_MAX_STEPS = 8
-TOOL_ARMS: list[str] = ["inspect_file", "run_tests", "search_docs"]
+# `search_docs` is intentionally excluded: the agent loop has no distinct
+# observation for it (would dispatch identically to `inspect_file`), so logging
+# it as a separate arm would be a fictitious decision.
+TOOL_ARMS: list[str] = ["inspect_file", "run_tests"]
 MODEL_ARMS: list[str] = ["small", "large"]
 RETRY_ARMS: list[str] = ["no_retry", "retry_once"]
 
@@ -173,7 +176,6 @@ def _model_observation_content(
 ) -> dict[str, object]:
     return {
         "response_chars": len(resp_text),
-        "raw_response_chars": len(resp_text),
         "cost_usd": cost_usd,
         "finish_reason": finish_reason,
         "extraction_status": extraction.status,
@@ -220,6 +222,7 @@ def build_fix_prompt(fixture: FixtureSpec, sandbox: Path) -> str:
             public_tests_relpath=fixture.public_tests_relpath,
             public_tests=public_text,
         )
+    assert fixture.test_relpath is not None  # non-hidden fixtures always set it
     test_path = sandbox / "tests" / fixture.test_relpath
     test_text = test_path.read_text()
     return _FIX_PROMPT.format(
@@ -321,6 +324,7 @@ def run_one_trace(
             (sandbox / "tests_public" / fixture.public_tests_relpath).read_text()
         )
     else:
+        assert fixture.test_relpath is not None
         test_chars = len((sandbox / "tests" / fixture.test_relpath).read_text())
     steps.append(
         Step(
@@ -605,13 +609,11 @@ def _finalize_run(
     )
 
 
-# Re-export for tests / callers that imported BudgetExceeded from this module.
 __all__ = [
     "DEFAULT_MAX_STEPS",
     "MODEL_ARMS",
     "RETRY_ARMS",
     "TOOL_ARMS",
     "AgentRunConfig",
-    "BudgetExceeded",
     "run_one_trace",
 ]

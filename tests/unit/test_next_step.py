@@ -64,7 +64,7 @@ def test_next_step_increase_n_round_trips_through_json() -> None:
 
 
 def test_next_step_increase_n_missing_required_keys_raises() -> None:
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(ValidationError) as exc:
         NextStep(action="increase_n", payload={}, human_text="…")
     msg = str(exc.value)
     assert "current_n" in msg
@@ -75,7 +75,7 @@ def test_next_step_increase_n_missing_required_keys_raises() -> None:
 
 def test_next_step_increase_n_missing_only_new_keys_raises() -> None:
     """Old (pre-sharpening) payload is now incomplete and must raise."""
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(ValidationError) as exc:
         NextStep(
             action="increase_n",
             payload={"current_n": 30, "estimated_required_n": 1200, "target_ci_width": 0.10},
@@ -101,13 +101,13 @@ def test_next_step_replay_required_full_payload_validates() -> None:
 
 
 def test_next_step_replay_required_missing_intervention_target_raises() -> None:
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(ValidationError) as exc:
         NextStep(action="replay_required", payload={}, human_text="…")
     assert "intervention_target" in str(exc.value)
 
 
 def test_next_step_replay_required_missing_replay_inputs_raises() -> None:
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(ValidationError) as exc:
         NextStep(
             action="replay_required",
             payload={"intervention_target": "prompt_content"},
@@ -127,7 +127,7 @@ def test_next_step_broaden_arm_support_full_payload_validates() -> None:
 
 
 def test_next_step_broaden_arm_support_missing_strata_raises() -> None:
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(ValidationError) as exc:
         NextStep(
             action="broaden_arm_support",
             payload={
@@ -141,7 +141,7 @@ def test_next_step_broaden_arm_support_missing_strata_raises() -> None:
 
 
 def test_next_step_broaden_arm_support_missing_observed_arms_raises() -> None:
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(ValidationError) as exc:
         NextStep(
             action="broaden_arm_support",
             payload={"arm_name": "model_choice", "missing_strata": ["small"]},
@@ -158,7 +158,7 @@ def test_next_step_add_arm_randomization_requires_policy() -> None:
         payload={"arm_name": "tool_choice", "current_policy": "always_inspect_file"},
         human_text="…",
     )
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(ValidationError) as exc:
         NextStep(
             action="add_arm_randomization",
             payload={"arm_name": "tool_choice"},
@@ -173,7 +173,6 @@ def test_next_step_unknown_action_raises() -> None:
 
 
 def test_next_step_optional_suggested_command_is_accepted() -> None:
-    """`suggested_command` is optional and tolerated when present."""
     payload = _full_broaden_payload()
     payload["suggested_command"] = "uv run counterfact bench real --n 30 --fixture-set hidden_v1"
     ns = NextStep(
