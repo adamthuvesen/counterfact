@@ -33,6 +33,7 @@ from counterfact.intervene.estimate import (
     SensitivityBounds,
 )
 from counterfact.intervene.suggest import known_arms, suggest_harness_command
+from counterfact.outcome.features import canonical_intervention_value, intervention_feature_family
 
 # Width below which an `identified` estimate is considered "tight enough" — no
 # action is needed and `next_step.action="none"`. Above this, intervene
@@ -56,7 +57,7 @@ def _wilson_ci(k: int, n: int) -> tuple[float, float]:
     return (max(0.0, center - half), min(1.0, center + half))
 
 
-def _arm_table_for(model: Any, decision_type: str) -> list[dict[str, Any]]:
+def _arm_table_for(model: Any, feature_family: str) -> list[dict[str, Any]]:
     """Per-arm rows derived from the model's one-hot feature matrix.
 
     Each row mirrors the shape of `counterfact.baselines.PassRateRow` so the
@@ -70,7 +71,7 @@ def _arm_table_for(model: Any, decision_type: str) -> list[dict[str, Any]]:
     if train_X is None or train_y is None or not feature_index:
         return []
 
-    prefix = f"{decision_type}::"
+    prefix = f"{feature_family}::"
     rows: list[dict[str, Any]] = []
     for key, idx in sorted(feature_index.items()):
         if not key.startswith(prefix):
@@ -184,20 +185,27 @@ def _bootstrap_predict(model: Any, X: np.ndarray) -> tuple[np.ndarray, np.ndarra
     return point, boot
 
 
-def _adjust_g_formula(model: Any, decision_type: str, target_action: str) -> DistributionSummary:
+def _adjust_g_formula(
+    model: Any,
+    feature_family: str,
+    intervention_kind: str,
+    target_action: Any,
+) -> DistributionSummary:
     """g-formula: set target one-hot to 1, zero out sibling arms in every training row.
 
     The marginal `P(Y | do(decision_type=target_action))` is the average of the
     per-row predicted probabilities under the modified feature matrix.
     """
     feat_index = model.feature_index
-    target_key = f"{decision_type}::{target_action}"
+    target_key = (
+        f"{feature_family}::{canonical_intervention_value(intervention_kind, target_action)}"
+    )
     if target_key not in feat_index:
         # The target arm has zero observed support in the training corpus.
         # That is an unidentified situation in v0.
         raise _NoSupport(target_key)
 
-    sibling_keys = [k for k in feat_index if k.startswith(f"{decision_type}::")]
+    sibling_keys = [k for k in feat_index if k.startswith(f"{feature_family}::")]
     target_idx = feat_index[target_key]
     sibling_idx = [feat_index[k] for k in sibling_keys]
 
@@ -236,11 +244,18 @@ def _e_value_from_probs(point: float, baseline: float = 0.5) -> float:
     return _ev(p / b)
 
 
-def _decision_type_at_step(dag: DAG, step: int) -> str:
+def _decision_type_at_step(dag: DAG, step: int, *, decision_id: str | None = None) -> str:
     if dag.run is None:
         raise InvalidInterventionError("DAG has no associated trace")
     for s in dag.run.steps:
         if s.step_index == step:
+            if decision_id is not None:
+                for decision in s.decisions:
+                    if decision.decision_id == decision_id:
+                        return decision.decision_type
+                raise InvalidInterventionError(
+                    f"decision_id {decision_id!r} not found on step {step}"
+                )
             if not s.decisions:
                 raise InvalidInterventionError(f"step {step} has no decisions")
             if len(s.decisions) > 1:
@@ -286,6 +301,7 @@ def intervene(
     model: Any,
     step: int,
     intervention: dict[str, Any],
+    decision_id: str | None = None,
 ) -> CausalEstimate:
     """Run an intervention query and return a CausalEstimate."""
     from counterfact.taxonomy import (
@@ -300,7 +316,7 @@ def intervene(
         )
 
     intervention_kind, target_value = _resolve_intervention(intervention)
-    decision_type = _decision_type_at_step(dag, step)
+    decision_type = _decision_type_at_step(dag, step, decision_id=decision_id)
 
     if not is_valid_intervention(decision_type, intervention_kind):
         raise InvalidInterventionError(
@@ -313,13 +329,49 @@ def intervene(
         target=target_value,
         step=step,
     )
+    feature_family = intervention_feature_family(decision_type, intervention_kind)
+    target_arm_name = canonical_intervention_value(intervention_kind, target_value)
+
+    stance = identifiability_stance(decision_type, intervention_kind)
+
+    if stance == "always-replay":
+        return CausalEstimate(
+            query=query,
+            identifiability=IdentifiabilityStatus.UNIDENTIFIED,
+            reason=(
+                f"{decision_type}.{intervention_kind} is treated as always-replay; "
+                f"the prompt/content is high-dim and not identifiable from "
+                f"observational traces alone."
+            ),
+            assumptions=[
+                f"{intervention_kind} on {decision_type} marked always-replay in taxonomy"
+            ],
+            warnings=[
+                "latent prompt quality and LLM completion noise are unblocked; "
+                "no identifying assumptions hold here without replay infrastructure."
+            ],
+            next_step=NextStep(
+                action="replay_required",
+                payload={
+                    "intervention_target": intervention_kind,
+                    "replay_inputs_required": _replay_inputs_for(decision_type, intervention_kind),
+                    "note": _REPLAY_NOTE,
+                },
+                human_text=(
+                    f"{intervention_kind} is high-dimensional; only deterministic "
+                    "replay can answer this query."
+                ),
+            ),
+        )
 
     # Honesty check: a step-scoped intervention on a decision type that
     # repeats elsewhere in the same trace is not licensed by the v0 g-formula
-    # (which is corpus-wide on a single one-hot feature). Surface as
-    # unidentified rather than answering the broader "set everywhere" query.
+    # (which is corpus-wide on a single one-hot feature). Surface randomized-
+    # support queries as unidentified rather than answering the broader "set
+    # everywhere" query. Replay-only queries are handled above because replay,
+    # not arm support, is their binding requirement.
     duplicate_steps = _duplicate_decision_steps(dag, step, decision_type)
-    if duplicate_steps:
+    if stance == "requires-randomized-support" and duplicate_steps:
         return CausalEstimate(
             query=query,
             identifiability=IdentifiabilityStatus.UNIDENTIFIED,
@@ -359,38 +411,6 @@ def intervene(
             ),
         )
 
-    stance = identifiability_stance(decision_type, intervention_kind)
-
-    if stance == "always-replay":
-        return CausalEstimate(
-            query=query,
-            identifiability=IdentifiabilityStatus.UNIDENTIFIED,
-            reason=(
-                f"{decision_type}.{intervention_kind} is treated as always-replay; "
-                f"the prompt/content is high-dim and not identifiable from "
-                f"observational traces alone."
-            ),
-            assumptions=[
-                f"{intervention_kind} on {decision_type} marked always-replay in taxonomy"
-            ],
-            warnings=[
-                "latent prompt quality and LLM completion noise are unblocked; "
-                "no identifying assumptions hold here without replay infrastructure."
-            ],
-            next_step=NextStep(
-                action="replay_required",
-                payload={
-                    "intervention_target": intervention_kind,
-                    "replay_inputs_required": _replay_inputs_for(decision_type, intervention_kind),
-                    "note": _REPLAY_NOTE,
-                },
-                human_text=(
-                    f"{intervention_kind} is high-dimensional; only deterministic "
-                    "replay can answer this query."
-                ),
-            ),
-        )
-
     if stance == "requires-back-door-adjustment":
         # v0 returns a bounded estimate: we name the adjustment strategy in
         # assumptions but cannot emit a meaningful E-value here. The bounded
@@ -398,7 +418,7 @@ def intervene(
         # would have to be computed against a hardcoded 0.5/0.5 — which is
         # always 1.0 and conveys false precision. The honest stance is to
         # leave `bounds=None` and explain why in `assumptions`.
-        observed_arms = _arm_table_for(model, decision_type)
+        observed_arms = _arm_table_for(model, feature_family)
         observed_arm_names = [r["arm"] for r in observed_arms]
         suggestion = suggest_harness_command(
             decision_type=decision_type,
@@ -444,12 +464,10 @@ def intervene(
 
     # stance == "requires-randomized-support" → identified path via g-formula.
     try:
-        delta = _adjust_g_formula(model, decision_type, target_value)
+        delta = _adjust_g_formula(model, feature_family, intervention_kind, target_value)
     except _NoSupport as exc:
-        observed_arms = _arm_table_for(model, decision_type)
+        observed_arms = _arm_table_for(model, feature_family)
         observed_arm_names = [r["arm"] for r in observed_arms]
-        # The target arm is, by definition, not in observed_arms here.
-        target_arm_name = str(target_value) if target_value is not None else None
         canonical_missing = _missing_arms_for(decision_type, intervention_kind, observed_arm_names)
         if target_arm_name and target_arm_name not in canonical_missing:
             canonical_missing = [target_arm_name, *canonical_missing]
@@ -511,10 +529,10 @@ def intervene(
                 "without the true corpus size"
             )
         current_n = train_n
-        arm_table = _arm_table_for(model, decision_type)
+        arm_table = _arm_table_for(model, feature_family)
         estimated_required_n, power_method = _power_from_arm_table(
             arm_table,
-            target_value,
+            target_arm_name,
             _IDENTIFIED_TIGHT_CI_WIDTH,
             current_n=current_n,
             current_ci_width=ci_width,
