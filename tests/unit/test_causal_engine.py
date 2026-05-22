@@ -136,6 +136,36 @@ def test_fit_outcome_model__mixed_binary_without_features_raises_domain_error() 
         fit_outcome_model(runs)
 
 
+def test_fit_outcome_model__extracts_temperature_feature_from_model_config() -> None:
+    runs = [
+        Run(
+            schema_version="0.1.0",
+            run_id=f"temp-{i}",
+            steps=[
+                Step(
+                    step_index=0,
+                    decisions=[
+                        Decision(
+                            decision_id=f"d-temp-{i}",
+                            decision_type="model_call",
+                            chosen_action="haiku",
+                            metadata={"model_config": {"temperature": 0.7 if i % 2 else 0}},
+                        )
+                    ],
+                )
+            ],
+            outcome=Outcome(kind="binary", value=bool(i % 2), verifier="test"),
+        )
+        for i in range(20)
+    ]
+
+    model = fit_outcome_model(runs, n_bootstrap=8, seed=8)
+
+    assert "model_call::haiku" in model.feature_index
+    assert "model_call.temperature::0" in model.feature_index
+    assert "model_call.temperature::0.7" in model.feature_index
+
+
 def test_degenerate_outcome_classes_rejects_non_binary_outcomes() -> None:
     from counterfact.intervene.degenerate import outcome_classes
 
@@ -346,6 +376,43 @@ def test_intervene__unidentified_result_has_reason_and_structured_next_step(
     assert est.next_step.human_text
 
 
+def test_intervene__temperature_uses_logged_temperature_support() -> None:
+    runs = [
+        Run(
+            schema_version="0.1.0",
+            run_id=f"temp-intervene-{i}",
+            steps=[
+                Step(
+                    step_index=0,
+                    decisions=[
+                        Decision(
+                            decision_id=f"d-temp-intervene-{i}",
+                            decision_type="model_call",
+                            chosen_action="haiku",
+                            metadata={"model_config": {"temperature": 0.7 if i % 2 else 0}},
+                        )
+                    ],
+                )
+            ],
+            outcome=Outcome(kind="binary", value=bool(i % 2), verifier="test"),
+        )
+        for i in range(40)
+    ]
+    model = fit_outcome_model(runs, n_bootstrap=10, seed=9)
+
+    est = intervene(
+        dag=build_dag(runs[0]),
+        model=model,
+        step=0,
+        intervention={"temperature": "0.70"},
+    )
+
+    assert est.identifiability == IdentifiabilityStatus.IDENTIFIED
+    assert est.outcome_delta is not None
+    if est.next_step.action == "increase_n":
+        assert any(row["arm"] == "0.7" for row in est.next_step.payload["arm_breakdown"])
+
+
 def test_intervene__invalid_intervention_for_decision_type_raises(
     small_corpus: list[Run], fitted: object
 ) -> None:
@@ -509,6 +576,42 @@ def test_intervene__multi_decision_step_raises_clear_error(fitted: object) -> No
         )
 
 
+def test_intervene__decision_id_disambiguates_multi_decision_step(fitted: object) -> None:
+    run = Run(
+        schema_version="0.1.0",
+        run_id="multi-decision-id",
+        steps=[
+            Step(
+                step_index=0,
+                decisions=[
+                    Decision(
+                        decision_id="d-tool",
+                        decision_type="tool_call",
+                        chosen_action="run_tests",
+                    ),
+                    Decision(
+                        decision_id="d-model",
+                        decision_type="model_call",
+                        chosen_action="haiku",
+                    ),
+                ],
+            )
+        ],
+        outcome=Outcome(kind="binary", value=True, verifier="stub"),
+    )
+
+    est = intervene(
+        dag=build_dag(run),
+        model=fitted,
+        step=0,
+        decision_id="d-model",
+        intervention={"model_choice": "sonnet"},
+    )
+
+    assert est.query.decision_type == "model_call"
+    assert est.query.intervention_kind == "model_choice"
+
+
 def test_intervene__repeated_decision_type_reports_localization_limit(
     fitted: object,
 ) -> None:
@@ -550,6 +653,50 @@ def test_intervene__repeated_decision_type_reports_localization_limit(
     assert est.identifiability == IdentifiabilityStatus.UNIDENTIFIED
     assert est.outcome_delta is None
     assert "localization_limit" in est.next_step.payload
+
+
+def test_intervene__repeated_replay_query_still_reports_replay_required(
+    fitted: object,
+) -> None:
+    run = Run(
+        schema_version="0.1.0",
+        run_id="repeat-model-replay",
+        steps=[
+            Step(
+                step_index=0,
+                decisions=[
+                    Decision(
+                        decision_id="d-model-0",
+                        decision_type="model_call",
+                        chosen_action="haiku",
+                    )
+                ],
+            ),
+            Step(
+                step_index=1,
+                decisions=[
+                    Decision(
+                        decision_id="d-model-1",
+                        decision_type="model_call",
+                        chosen_action="sonnet",
+                    )
+                ],
+            ),
+        ],
+        outcome=Outcome(kind="binary", value=False, verifier="stub"),
+    )
+
+    est = intervene(
+        dag=build_dag(run),
+        model=fitted,
+        step=0,
+        intervention={"prompt_content": "be more careful"},
+    )
+
+    assert est.identifiability == IdentifiabilityStatus.UNIDENTIFIED
+    assert est.next_step.action == "replay_required"
+    assert est.next_step.payload["intervention_target"] == "prompt_content"
+    assert "localization_limit" not in est.next_step.payload
 
 
 # --- attribute_failure spec scenarios ----------------------------------------

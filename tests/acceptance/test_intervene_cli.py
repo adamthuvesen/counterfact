@@ -21,6 +21,29 @@ def _decision_id_for(path: Path, decision_type: str) -> str:
     raise AssertionError(f"no {decision_type} decision in {path}")
 
 
+def _move_termination_into_model_step(path: Path) -> str:
+    payload = json.loads(path.read_text())
+    model_step = next(
+        step
+        for step in payload["steps"]
+        if any(d["decision_type"] == "model_call" for d in step["decisions"])
+    )
+    term_step = next(
+        step
+        for step in payload["steps"]
+        if any(d["decision_type"] == "termination" for d in step["decisions"])
+    )
+    term_decision = next(d for d in term_step["decisions"] if d["decision_type"] == "termination")
+    model_step["decisions"].append(term_decision)
+    payload["steps"] = [
+        step for step in payload["steps"] if step["step_index"] != term_step["step_index"]
+    ]
+    path.write_text(json.dumps(payload) + "\n")
+    return next(
+        d["decision_id"] for d in model_step["decisions"] if d["decision_type"] == "model_call"
+    )
+
+
 def test_intervene__decision_id_json_round_trips(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -52,6 +75,36 @@ def test_intervene__decision_id_json_round_trips(
     }
     assert estimate.query.intervention_kind == "model_choice"
     assert estimate.query.target == "sonnet"
+    assert estimate.next_step.payload["decision_id"] == decision_id
+    assert estimate.next_step.payload["targeting_mode"] == "decision_id"
+
+
+def test_intervene__decision_id_targets_decision_inside_multi_decision_step(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    runs_dir = tmp_path / "runs"
+    focal = _write_synthetic_corpus(runs_dir)
+    decision_id = _move_termination_into_model_step(focal)
+
+    rc = main(
+        [
+            "intervene",
+            str(focal),
+            "--runs-dir",
+            str(runs_dir),
+            "--decision-id",
+            decision_id,
+            "--set",
+            "model_choice=sonnet",
+            "--bootstrap",
+            "20",
+            "--json",
+        ]
+    )
+
+    assert rc == 0
+    estimate = CausalEstimate.model_validate_json(capsys.readouterr().out)
+    assert estimate.query.decision_type == "model_call"
     assert estimate.next_step.payload["decision_id"] == decision_id
     assert estimate.next_step.payload["targeting_mode"] == "decision_id"
 

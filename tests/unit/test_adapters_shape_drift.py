@@ -12,6 +12,8 @@ from counterfact.adapters.claude_agent_sdk import (
     ingest_claude_agent_sdk,
     run_from_messages,
 )
+from counterfact.adapters.openai_agents import ingest_openai_agents
+from counterfact.adapters.openai_agents import run_from_trace as run_from_openai_trace
 from counterfact.schema import Outcome, Run
 
 
@@ -158,11 +160,95 @@ def test_openai_unknown_span_type_aborts(tmp_path: Path) -> None:
     src.write_text(json.dumps(bad_trace))
     out_dir = tmp_path / "out"
 
-    from counterfact.adapters.openai_agents import ingest_openai_agents
-
     with pytest.raises(IngestError) as excinfo:
         ingest_openai_agents(src, out_dir, outcome=True)
 
     assert "future_widget" in str(excinfo.value)
     assert "span-bogus" in str(excinfo.value)
     assert not out_dir.exists() or list(out_dir.glob("*.json")) == []
+
+
+def test_openai_spans_must_be_an_array() -> None:
+    with pytest.raises(IngestError, match=r"spans.*JSON array"):
+        run_from_openai_trace(
+            {"trace_id": "trace-bad", "spans": {"id": "span-root"}},
+            outcome=True,
+        )
+
+
+def test_openai_spans_must_contain_objects() -> None:
+    with pytest.raises(IngestError, match="span 1 is str"):
+        run_from_openai_trace(
+            {"trace_id": "trace-bad", "spans": ["span-root"]},
+            outcome=True,
+        )
+
+
+def test_openai_trace_id_must_be_non_empty_string() -> None:
+    with pytest.raises(IngestError, match="non-empty string trace_id"):
+        run_from_openai_trace(
+            {"trace_id": 123, "spans": []},
+            outcome=True,
+        )
+
+
+def test_openai_span_data_must_be_an_object() -> None:
+    with pytest.raises(IngestError, match="invalid span_data"):
+        run_from_openai_trace(
+            {
+                "trace_id": "trace-bad",
+                "spans": [
+                    {
+                        "object": "trace.span",
+                        "id": "span-root",
+                        "trace_id": "trace-bad",
+                        "parent_id": None,
+                        "span_data": "agent",
+                    }
+                ],
+            },
+            outcome=True,
+        )
+
+
+def test_openai_span_ids_must_be_non_empty_strings() -> None:
+    with pytest.raises(IngestError, match="non-empty string id"):
+        run_from_openai_trace(
+            {
+                "trace_id": "trace-bad",
+                "spans": [
+                    {
+                        "object": "trace.span",
+                        "parent_id": None,
+                        "span_data": {"type": "agent", "name": "root"},
+                    }
+                ],
+            },
+            outcome=True,
+        )
+
+
+def test_openai_parent_ids_must_be_strings_or_null() -> None:
+    with pytest.raises(IngestError, match="invalid parent_id"):
+        run_from_openai_trace(
+            {
+                "trace_id": "trace-bad",
+                "spans": [
+                    {
+                        "object": "trace.span",
+                        "id": "span-root",
+                        "trace_id": "trace-bad",
+                        "parent_id": None,
+                        "span_data": {"type": "agent", "name": "root"},
+                    },
+                    {
+                        "object": "trace.span",
+                        "id": "span-child",
+                        "trace_id": "trace-bad",
+                        "parent_id": 123,
+                        "span_data": {"type": "function", "name": "tool"},
+                    },
+                ],
+            },
+            outcome=True,
+        )
