@@ -134,9 +134,7 @@ HIDDEN_FIXTURES: tuple[FixtureSpec, ...] = (
 # `streaming_watermark_dedupe`) are looked up inline via `fixtures_by_id` —
 # they don't earn a named alias because the alias is just renaming an id.
 BROAD_CALIBRATION_FIXTURES: tuple[FixtureSpec, ...] = tuple(
-    fx
-    for fx in HIDDEN_FIXTURES
-    if fx.fixture_id in {"date_window", "rate_limit", "version_range"}
+    fx for fx in HIDDEN_FIXTURES if fx.fixture_id in {"date_window", "rate_limit", "version_range"}
 )
 
 
@@ -183,9 +181,7 @@ def _tail_text(path: Path, limit: int = _OUTPUT_TAIL_CHARS) -> str:
         return f.read().decode(errors="replace")
 
 
-def _run_pytest_at(
-    fixture_root: Path, target: str, *, timeout_s: int = 30
-) -> tuple[bool, str]:
+def _run_pytest_at(fixture_root: Path, target: str, *, timeout_s: int = 30) -> tuple[bool, str]:
     with tempfile.TemporaryDirectory(prefix="counterfact-pytest-") as tmp:
         tmp_path = Path(tmp)
         stdout_path = tmp_path / "stdout.txt"
@@ -225,9 +221,7 @@ def run_pytest_public(sandbox_root: Path, *, timeout_s: int = 30) -> tuple[bool,
     return _run_pytest_at(sandbox_root, "tests_public/", timeout_s=timeout_s)
 
 
-def run_pytest_hidden(
-    eval_workspace: Path, *, timeout_s: int = 30
-) -> tuple[bool, str]:
+def run_pytest_hidden(eval_workspace: Path, *, timeout_s: int = 30) -> tuple[bool, str]:
     """Run pytest in a hidden-eval workspace's `tests_hidden/` directory.
 
     The harness invokes this exactly once per trace, after the agent loop
@@ -256,9 +250,7 @@ def snapshot_fixture(fixture: FixtureSpec, dest_root: Path) -> Path:
     return dest
 
 
-def build_hidden_eval_workspace(
-    fixture: FixtureSpec, sandbox_root: Path, dest_root: Path
-) -> Path:
+def build_hidden_eval_workspace(fixture: FixtureSpec, sandbox_root: Path, dest_root: Path) -> Path:
     """Stage a hidden-eval workspace by copying the agent's patched src/ next
     to the canonical tests_hidden/ from the fixture's source tree.
 
