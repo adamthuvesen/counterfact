@@ -5,20 +5,28 @@ where running the bench harness with different flags would produce the missing
 data, this module composes the exact `uv run counterfact bench …` invocation.
 
 Kept out of `intervene/api.py` so the engine doesn't import the CLI module.
-The flag names mirror those in `counterfact.cli.build_parser()`; the
-`tests/unit/test_suggest.py` test parses every returned command back through
-that parser to keep the two in lockstep.
+Flag defaults live in `counterfact.cli.bench_flags`; `tests/unit/test_suggest.py`
+parses every returned command through `build_parser()` to keep CLI and suggest
+in lockstep.
 """
 
 from __future__ import annotations
+
+from counterfact.bench_flags import (
+    MIN_BENCH_N,
+    MODEL_GREEDY_CHOICES,
+    RANDOMIZATION_EPSILON,
+    RETRY_GREEDY_CHOICES,
+    SUGGESTED_FIXTURE_SET,
+)
 
 # Canonical arm sets per (decision_type, intervention_kind), pulled from the
 # CLI's flag `choices=...` lists. When a kind is absent, arms are free-form
 # (e.g. tool_choice) and `missing_arms` cannot be enumerated from the schema
 # alone.
 _KNOWN_ARMS: dict[tuple[str, str], tuple[str, ...]] = {
-    ("model_call", "model_choice"): ("small", "large"),
-    ("retry", "retry_policy"): ("no_retry", "retry_once"),
+    ("model_call", "model_choice"): MODEL_GREEDY_CHOICES,
+    ("retry", "retry_policy"): RETRY_GREEDY_CHOICES,
 }
 
 
@@ -27,36 +35,23 @@ def known_arms(decision_type: str, intervention_kind: str) -> tuple[str, ...]:
     return _KNOWN_ARMS.get((decision_type, intervention_kind), ())
 
 
-# Default ε to suggest when we want to *introduce* randomization at an arm.
-# Matches the CLI's default ε for un-tuned decision types.
-_RANDOMIZATION_EPSILON = 0.5
-
-# Floor for `--n` on broaden-arm or add-arm commands. Below this the binomial
-# math is too noisy to be useful.
-_MIN_BENCH_N = 30
-
-# Hidden-v1 (`csv_dedupe`) is the calibration fixture; future data-collection
-# suggestions target the broader hard set intended for mixed-outcome pilots.
-_SUGGESTED_FIXTURE_SET = "broad_calibration"
-
-
 def _model_flags(arm_name: str | None) -> list[str]:
-    arm = arm_name if arm_name in {"small", "large"} else "large"
+    arm = arm_name if arm_name in MODEL_GREEDY_CHOICES else "large"
     return [
         "--model-greedy",
         arm,
         "--model-epsilon",
-        f"{_RANDOMIZATION_EPSILON}",
+        f"{RANDOMIZATION_EPSILON}",
     ]
 
 
 def _retry_flags(arm_name: str | None) -> list[str]:
-    arm = arm_name if arm_name in {"no_retry", "retry_once"} else "retry_once"
+    arm = arm_name if arm_name in RETRY_GREEDY_CHOICES else "retry_once"
     return [
         "--retry-greedy",
         arm,
         "--retry-epsilon",
-        f"{_RANDOMIZATION_EPSILON}",
+        f"{RANDOMIZATION_EPSILON}",
     ]
 
 
@@ -66,7 +61,7 @@ def _tool_flags(arm_name: str | None) -> list[str]:
         "--tool-greedy",
         arm,
         "--tool-epsilon",
-        f"{_RANDOMIZATION_EPSILON}",
+        f"{RANDOMIZATION_EPSILON}",
     ]
 
 
@@ -106,12 +101,12 @@ def suggest_harness_command(
 
     arm_flags = _arm_flags(decision_type, arm_name)
     if action == "increase_n":
-        n = max(int(estimated_required_n or _MIN_BENCH_N), _MIN_BENCH_N)
+        n = max(int(estimated_required_n or MIN_BENCH_N), MIN_BENCH_N)
         # Preserve existing ε implicitly by not passing per-decision ε flags.
         parts = [
             "uv run counterfact bench real",
             f"--n {n}",
-            f"--fixture-set {_SUGGESTED_FIXTURE_SET}",
+            f"--fixture-set {SUGGESTED_FIXTURE_SET}",
         ]
         return " ".join(parts)
 
@@ -120,11 +115,11 @@ def suggest_harness_command(
         # No canonical flag mapping for this decision_type; the bench can't
         # generate the missing arm directly.
         return None
-    n = max(int(estimated_required_n or _MIN_BENCH_N), _MIN_BENCH_N)
+    n = max(int(estimated_required_n or MIN_BENCH_N), MIN_BENCH_N)
     parts = [
         "uv run counterfact bench real",
         f"--n {n}",
-        f"--fixture-set {_SUGGESTED_FIXTURE_SET}",
+        f"--fixture-set {SUGGESTED_FIXTURE_SET}",
         *arm_flags,
     ]
     return " ".join(parts)

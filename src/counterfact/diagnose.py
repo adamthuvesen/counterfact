@@ -13,7 +13,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from counterfact._fmt import outcome_label as _outcome_label
 from counterfact.attribute import AttributionEntry, FailureAttribution
-from counterfact.attribute.failure import _intervention_kind_for
 from counterfact.explain import ExplainReport, build_report
 from counterfact.intervene.estimate import (
     CausalEstimate,
@@ -23,7 +22,7 @@ from counterfact.intervene.estimate import (
     NextStep,
 )
 from counterfact.schema import Decision, Run
-from counterfact.taxonomy import valid_interventions
+from counterfact.taxonomy import attribution_intervention_kind, valid_interventions
 
 
 class _Strict(BaseModel):
@@ -69,7 +68,7 @@ def _unsupported_estimate(
     decision: Decision,
     reason: str,
 ) -> CausalEstimate:
-    intervention_kind = _intervention_kind_for(decision.decision_type) or "unknown"
+    intervention_kind = attribution_intervention_kind(decision.decision_type) or "unknown"
     return CausalEstimate(
         query=InterventionQuery(
             decision_type=decision.decision_type,
@@ -162,7 +161,7 @@ def _degenerate_entries(
             query = estimate.query.model_copy(
                 update={
                     "decision_type": decision.decision_type,
-                    "intervention_kind": _intervention_kind_for(decision.decision_type)
+                    "intervention_kind": attribution_intervention_kind(decision.decision_type)
                     or estimate.query.intervention_kind,
                     "target": decision.chosen_action,
                     "step": step.step_index,
