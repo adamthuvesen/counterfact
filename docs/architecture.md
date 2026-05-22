@@ -30,7 +30,7 @@ trace JSON ──► Run (schema/models.py)
         outcome model (outcome/model.py)    ← logistic regression w/ bootstrap
                 │
                 ▼
-        intervention (intervene/api.py)     ← g-formula style adjustment
+        intervention (intervene/api.py + dispatch.py)  ← stance-dispatched g-formula
                 │
                 ▼
     CausalEstimate (intervene/estimate.py)
@@ -60,7 +60,7 @@ Reading order if you have fifteen minutes and want to evaluate the codebase, not
 2. **`src/counterfact/taxonomy/types.py`** — the decision-type taxonomy. This is what drives DAG edges and what makes some interventions valid and others structurally unanswerable.
 3. **`src/counterfact/dag/graph.py`** — how a single trace becomes an inspectable graph. The graph is built from logged structure, not learned.
 4. **`src/counterfact/outcome/model.py`** — featurization and the bootstrap fit. Notice the single-class refusal path.
-5. **`src/counterfact/intervene/api.py`** — the `intervene()` entry point and the identifiability dispatch. This is where the three labels actually get assigned.
+5. **`src/counterfact/intervene/api.py`** — thin `intervene()` entry; **`intervene/dispatch.py`** — stance handlers; **`stats.py`** — shared Wilson/z helpers; **`trace_localization.py`** — duplicate-step honesty; **`cli/`** — decomposed CLI package (`commands/`, `parser.py`, `demo_showcase.py`).
 6. **`src/counterfact/intervene/estimate.py`** — the `CausalEstimate` and `NextStep` schemas. The shape of the output is the contract with every downstream consumer.
 7. **`src/counterfact/attribute/failure.py`** — per-decision attribution ranking that powers `counterfact diagnose`.
 8. **`tests/acceptance/test_scm_recovery.py`** — the canonical "we recover the synthetic ground truth within tolerance" test. This is the proof the engine is doing what it claims.
