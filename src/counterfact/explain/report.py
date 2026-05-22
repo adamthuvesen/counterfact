@@ -9,7 +9,7 @@ stays bit-identical to what `counterfact demo` already emits.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -27,12 +27,7 @@ from counterfact.intervene.estimate import (
 from counterfact.outcome import fit_outcome_model
 from counterfact.outcome.binary import binary_outcome_value
 from counterfact.schema import DecisionTypeLiteral, Run
-
-_INTERVENTION_KIND_BY_DECISION_TYPE: dict[str, str] = {
-    "model_call": "model_choice",
-    "tool_call": "tool_choice",
-    "retry": "retry_policy",
-}
+from counterfact.taxonomy import default_intervention_kind, first_observed_arm
 
 
 class ExplainReport(BaseModel):
@@ -57,15 +52,6 @@ class ExplainReport(BaseModel):
     notes: list[str] = Field(default_factory=list)
     diagnosis_summary: str | None = None
     counterfactual_lookup: list[CausalEstimate] = Field(default_factory=list)
-
-
-def _first_arm(runs: list[Run], decision_type: str) -> str | None:
-    for run in runs:
-        for step in run.steps:
-            for decision in step.decisions:
-                if decision.decision_type == decision_type and decision.chosen_action:
-                    return decision.chosen_action
-    return None
 
 
 def _no_feature_estimate(
@@ -103,6 +89,55 @@ def _no_feature_estimate(
     )
 
 
+class _ReportCommon(TypedDict):
+    table: PassRateTable
+    dag: DAG
+    pass_rate: float | None
+    intervention_kind: str
+    decision_type: DecisionTypeLiteral
+    bootstrap: int
+    seed: int
+    run_path: str | None
+    corpus_dir: str | None
+
+
+def _report_shell(
+    focal_run: Run,
+    corpus: list[Run],
+    *,
+    table: PassRateTable,
+    dag: DAG,
+    pass_rate: float | None,
+    intervention_kind: str,
+    decision_type: DecisionTypeLiteral,
+    bootstrap: int,
+    seed: int,
+    run_path: str | None,
+    corpus_dir: str | None,
+    attribution: FailureAttribution,
+    degenerate_estimate: CausalEstimate | None,
+    target_arm: str | None,
+    notes: list[str] | None = None,
+) -> ExplainReport:
+    return ExplainReport(
+        run=focal_run,
+        corpus_size=len(corpus),
+        corpus_pass_rate=pass_rate,
+        pass_rate_table=table,
+        dag=dag,
+        attribution=attribution,
+        degenerate_estimate=degenerate_estimate,
+        summary_decision_type=decision_type,
+        decision_type_intervention_kind=intervention_kind,
+        target_arm=target_arm,
+        bootstrap=bootstrap,
+        seed=seed,
+        run_path=run_path,
+        corpus_dir=corpus_dir,
+        notes=notes or [],
+    )
+
+
 def build_report(
     focal_run: Run,
     corpus: list[Run],
@@ -126,82 +161,68 @@ def build_report(
     if focal_run.run_id not in {r.run_id for r in corpus}:
         raise ValueError(f"focal run {focal_run.run_id!r} is not present in the supplied corpus")
 
-    intervention_kind = _INTERVENTION_KIND_BY_DECISION_TYPE[decision_type]
+    intervention_kind = default_intervention_kind(decision_type)
     table = pass_rate_by_arm(corpus, decision_type)
     dag = build_dag(focal_run)
 
     classes = outcome_classes(corpus)
     n_pass = sum(1 for r in corpus if binary_outcome_value(r))
     pass_rate: float | None = n_pass / len(corpus) if corpus else None
+    common: _ReportCommon = {
+        "table": table,
+        "dag": dag,
+        "pass_rate": pass_rate,
+        "intervention_kind": intervention_kind,
+        "decision_type": decision_type,
+        "bootstrap": bootstrap,
+        "seed": seed,
+        "run_path": run_path,
+        "corpus_dir": corpus_dir,
+    }
 
     if len(classes) < 2:
-        target = _first_arm(corpus, decision_type)
-        # Single-class corpora are not model-fit inputs (CLAUDE.md invariant);
-        # surface the degenerate case as `unidentified` and skip the engine.
+        target = first_observed_arm(corpus, decision_type)
         estimate = degenerate_estimate(
             corpus,
             decision_type=decision_type,
             intervention_kind=intervention_kind,
             target=target,
         )
-        return ExplainReport(
-            run=focal_run,
-            corpus_size=len(corpus),
-            corpus_pass_rate=pass_rate,
-            pass_rate_table=table,
-            dag=dag,
+        return _report_shell(
+            focal_run,
+            corpus,
+            **common,
             attribution=FailureAttribution(entries=[]),
             degenerate_estimate=estimate,
-            summary_decision_type=decision_type,
-            decision_type_intervention_kind=intervention_kind,
             target_arm=target,
-            bootstrap=bootstrap,
-            seed=seed,
-            run_path=run_path,
-            corpus_dir=corpus_dir,
         )
 
     try:
         model = fit_outcome_model(corpus, n_bootstrap=bootstrap, seed=seed)
     except InsufficientOutcomeSupportError as exc:
-        target = _first_arm(corpus, decision_type)
+        target = first_observed_arm(corpus, decision_type)
         estimate = _no_feature_estimate(
             decision_type=decision_type,
             intervention_kind=intervention_kind,
             target=target,
             reason=str(exc),
         )
-        return ExplainReport(
-            run=focal_run,
-            corpus_size=len(corpus),
-            corpus_pass_rate=pass_rate,
-            pass_rate_table=table,
-            dag=dag,
+        return _report_shell(
+            focal_run,
+            corpus,
+            **common,
             attribution=FailureAttribution(entries=[]),
             degenerate_estimate=estimate,
-            summary_decision_type=decision_type,
-            decision_type_intervention_kind=intervention_kind,
             target_arm=target,
-            bootstrap=bootstrap,
-            seed=seed,
-            run_path=run_path,
-            corpus_dir=corpus_dir,
             notes=[str(exc)],
         )
+
     attribution = attribute_failure(dag=dag, model=model)
-    return ExplainReport(
-        run=focal_run,
-        corpus_size=len(corpus),
-        corpus_pass_rate=pass_rate,
-        pass_rate_table=table,
-        dag=dag,
+    return _report_shell(
+        focal_run,
+        corpus,
+        **common,
         attribution=attribution,
         degenerate_estimate=None,
-        summary_decision_type=decision_type,
-        decision_type_intervention_kind=intervention_kind,
-        target_arm=_first_arm(corpus, decision_type),
-        bootstrap=bootstrap,
-        seed=seed,
-        run_path=run_path,
-        corpus_dir=corpus_dir,
+        target_arm=first_observed_arm(corpus, decision_type),
     )
