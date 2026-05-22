@@ -78,9 +78,7 @@ def _final_model_arm(run: dict[str, object]) -> str:
 
 
 def _showcase_gate(failure_modes: Counter[str], by_model: Counter[str]) -> bool:
-    failures = sum(
-        count for mode, count in failure_modes.items() if mode != "pass"
-    )
+    failures = sum(count for mode, count in failure_modes.items() if mode != "pass")
     if failures == 0:
         return False
     if failure_modes["format_failure"] > failures / 2:
@@ -107,8 +105,7 @@ def analyze(run_dir: Path) -> dict[str, object]:
         md = run["outcome"]["metadata"]
         if "public_pass" not in md or "hidden_pass" not in md:
             raise SystemExit(
-                f"{path.name}: missing public_pass/hidden_pass in metadata "
-                "(is this a v0 trace?)"
+                f"{path.name}: missing public_pass/hidden_pass in metadata (is this a v0 trace?)"
             )
         cells[(md["public_pass"], md["hidden_pass"])] += 1
         fixtures[md["fixture_id"]] += 1
@@ -171,11 +168,7 @@ def render(report: dict[str, object]) -> str:
     if extraction_failures:
         extraction_lines = _count_table(
             "Extraction failures",
-            {
-                key: value
-                for key, value in extraction_failures.items()
-                if key != "total"
-            },
+            {key: value for key, value in extraction_failures.items() if key != "total"},
         )
         extraction_lines.insert(
             1,

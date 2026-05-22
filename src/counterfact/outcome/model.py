@@ -26,6 +26,7 @@ from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyp
 
 from counterfact.errors import InsufficientOutcomeSupportError, UnsupportedOutcomeError
 from counterfact.outcome.binary import binary_outcome_value
+from counterfact.outcome.features import decision_feature_values
 from counterfact.schema import Run
 
 
@@ -68,37 +69,31 @@ def _assert_binary(runs: list[Run]) -> None:
             )
 
 
-def _intervenable_feature_keys(run: Run) -> list[str]:
-    """Return the one-hot `decision_type::action` keys present in `run`.
-
-    Delegates to `taxonomy.extract_features` so feature-key naming has a
-    single source of truth shared with the rest of the library.
-    """
-    from counterfact.taxonomy import extract_features
-
-    keys: list[str] = []
+def _intervenable_decisions(run: Run) -> list[tuple[str, str]]:
+    """Yield feature-family/value pairs for intervenable decisions."""
+    out: list[tuple[str, str]] = []
     for step in run.steps:
         for d in step.decisions:
-            feats = extract_features(d, run)
-            key = feats.get("feature_key")
-            if key is not None:
-                keys.append(key)
-    return keys
+            out.extend(decision_feature_values(d))
+    return out
 
 
 def _featurize(runs: list[Run]) -> tuple[np.ndarray, np.ndarray, list[str], dict[str, int]]:
     """Walk each run once, building feature names and per-run rows together."""
-    per_run_keys: list[list[str]] = [_intervenable_feature_keys(r) for r in runs]
+    per_run_pairs: list[list[tuple[str, str]]] = [_intervenable_decisions(r) for r in runs]
     seen: set[str] = set()
-    for keys in per_run_keys:
-        seen.update(keys)
+    for pairs in per_run_pairs:
+        for family, value in pairs:
+            seen.add(f"{family}::{value}")
     names = sorted(seen)
     index = {n: i for i, n in enumerate(names)}
 
     X = np.zeros((len(runs), len(names)), dtype=float)
-    for i, keys in enumerate(per_run_keys):
-        for key in keys:
-            X[i, index[key]] = 1.0
+    for i, pairs in enumerate(per_run_pairs):
+        for family, value in pairs:
+            key = f"{family}::{value}"
+            if key in index:
+                X[i, index[key]] = 1.0
     y = np.array([1 if binary_outcome_value(r) else 0 for r in runs], dtype=int)
     return X, y, names, index
 

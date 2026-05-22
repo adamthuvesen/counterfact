@@ -110,10 +110,7 @@ def _defines_symbol(source: str, expected: _ExpectedSymbol) -> bool:
     except SyntaxError:
         return False
     node_type = ast.ClassDef if expected.kind == "class" else ast.FunctionDef
-    return any(
-        isinstance(node, node_type) and node.name == expected.name
-        for node in module.body
-    )
+    return any(isinstance(node, node_type) and node.name == expected.name for node in module.body)
 
 
 def _first_public_symbol(source: str) -> _ExpectedSymbol | None:
@@ -184,9 +181,7 @@ def _model_observation_content(
     }
 
 
-def _charge(
-    budget: BudgetTracker, cost_usd: float, ledger_path: Path | None
-) -> None:
+def _charge(budget: BudgetTracker, cost_usd: float, ledger_path: Path | None) -> None:
     """Record `cost_usd` to the resume ledger, then add it to the live budget.
 
     The ledger entry is written *before* `budget.add` so a `BudgetExceeded`
@@ -320,9 +315,7 @@ def run_one_trace(
     src_text = src_path.read_text()
     if hidden:
         assert fixture.public_tests_relpath is not None
-        test_chars = len(
-            (sandbox / "tests_public" / fixture.public_tests_relpath).read_text()
-        )
+        test_chars = len((sandbox / "tests_public" / fixture.public_tests_relpath).read_text())
     else:
         assert fixture.test_relpath is not None
         test_chars = len((sandbox / "tests" / fixture.test_relpath).read_text())
@@ -452,9 +445,7 @@ def run_one_trace(
                 ],
             )
         )
-        return _finalize_run(
-            run_index, fixture, steps, sandbox, sandbox_root, public_pass=True
-        )
+        return _finalize_run(run_index, fixture, steps, sandbox, sandbox_root, public_pass=True)
 
     if attempts_remaining <= 0:
         # no_retry was chosen; we ran the one allotted attempt and it failed
@@ -470,9 +461,7 @@ def run_one_trace(
                 ],
             )
         )
-        return _finalize_run(
-            run_index, fixture, steps, sandbox, sandbox_root, public_pass=False
-        )
+        return _finalize_run(run_index, fixture, steps, sandbox, sandbox_root, public_pass=False)
 
     # ----- Step 5: model_call retry, with failure context (D18) -----
     retry_prompt = build_fix_prompt(fixture, sandbox) + _RETRY_PROMPT_SUFFIX.format(
@@ -553,9 +542,7 @@ def run_one_trace(
             ],
         )
     )
-    return _finalize_run(
-        run_index, fixture, steps, sandbox, sandbox_root, public_pass=passed2
-    )
+    return _finalize_run(run_index, fixture, steps, sandbox, sandbox_root, public_pass=passed2)
 
 
 def _finalize_run(
@@ -587,9 +574,7 @@ def _finalize_run(
             ),
         )
 
-    eval_workspace = build_hidden_eval_workspace(
-        fixture, sandbox, sandbox_root / "_hidden_eval"
-    )
+    eval_workspace = build_hidden_eval_workspace(fixture, sandbox, sandbox_root / "_hidden_eval")
     hidden_pass, _ = run_pytest_hidden(eval_workspace)
     return Run(
         schema_version="0.1.0",

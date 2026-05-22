@@ -146,8 +146,7 @@ def check_credentials(
             continue  # unknown provider — let it surface its own error at call time
         if not any(env.get(name) for name in candidates):
             missing.append(
-                f"  - role={role!r} (model={model!r}) needs one of: "
-                + " | ".join(candidates)
+                f"  - role={role!r} (model={model!r}) needs one of: " + " | ".join(candidates)
             )
     if not missing:
         return None
@@ -159,7 +158,7 @@ def check_credentials(
         "Set the variable(s) before running, e.g.:",
         "  export ANTHROPIC_API_KEY='your-key-here'",
         "If you use 1Password:",
-        '  export ANTHROPIC_API_KEY="$(op read \'op://<vault>/<item>/credential\')"',
+        "  export ANTHROPIC_API_KEY=\"$(op read 'op://<vault>/<item>/credential')\"",
     ]
     return "\n".join(lines)
 
@@ -266,12 +265,36 @@ def _completed_spend(output_dir: Path) -> float:
     """Sum cost observations from already-written traces."""
     spent = 0.0
     for path in output_dir.glob("real-*.json"):
-        run = json.loads(path.read_text())
+        try:
+            run = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise BudgetLedgerError(
+                f"cannot read completed trace spend from {path}: {exc}"
+            ) from exc
+        if not isinstance(run, dict):
+            raise BudgetLedgerError(
+                f"cannot read completed trace spend from {path}: expected JSON object"
+            )
         for step in run.get("steps", []):
+            if not isinstance(step, dict):
+                raise BudgetLedgerError(
+                    f"cannot read completed trace spend from {path}: step is not an object"
+                )
             for obs in step.get("observations", []) or []:
-                cost = obs.get("content", {}).get("cost_usd")
+                if not isinstance(obs, dict):
+                    raise BudgetLedgerError(
+                        f"cannot read completed trace spend from {path}: "
+                        "observation is not an object"
+                    )
+                content = obs.get("content", {})
+                if not isinstance(content, dict):
+                    raise BudgetLedgerError(
+                        f"cannot read completed trace spend from {path}: "
+                        "observation content is not an object"
+                    )
+                cost = content.get("cost_usd")
                 if cost is not None:
-                    spent += float(cost)
+                    spent += _spend_value(cost, source=f"{path}: observation cost_usd")
     return spent
 
 
@@ -303,6 +326,18 @@ def _ledger_spend(ledger_path: Path) -> float:
     except FileNotFoundError:
         return 0.0
     return spent
+
+
+def _spend_value(value: object, *, source: str) -> float:
+    try:
+        cost = float(value)
+    except (TypeError, ValueError) as exc:
+        raise BudgetLedgerError(f"{source} is not a number: {value!r}") from exc
+    if not math.isfinite(cost):
+        raise BudgetLedgerError(f"{source} is not finite: {value!r}")
+    if cost < 0:
+        raise BudgetLedgerError(f"{source} is negative: {value!r}")
+    return cost
 
 
 def _fixture_for_index(index: int, fixtures: tuple[FixtureSpec, ...]) -> FixtureSpec:
@@ -337,8 +372,7 @@ def resolve_fixtures(
     if fixture_set:
         if fixture_set not in _FIXTURE_SETS:
             raise ValueError(
-                f"unknown fixture-set {fixture_set!r}; "
-                f"choices: {sorted(_FIXTURE_SETS)}"
+                f"unknown fixture-set {fixture_set!r}; choices: {sorted(_FIXTURE_SETS)}"
             )
         return _FIXTURE_SETS[fixture_set]
     return FIXTURES
@@ -430,9 +464,7 @@ def run_real_corpus(
     with contextlib.ExitStack() as stack:
         if sandbox_root is None:
             sandbox = Path(
-                stack.enter_context(
-                    tempfile.TemporaryDirectory(prefix="counterfact-real-")
-                )
+                stack.enter_context(tempfile.TemporaryDirectory(prefix="counterfact-real-"))
             )
         else:
             sandbox = sandbox_root
@@ -457,9 +489,7 @@ def run_real_corpus(
                 ledger_path.unlink(missing_ok=True)
                 written += 1
                 with progress_path.open("a") as f:
-                    f.write(
-                        json.dumps({"index": i, "fixture": fixture.fixture_id}) + "\n"
-                    )
+                    f.write(json.dumps({"index": i, "fixture": fixture.fixture_id}) + "\n")
         except BudgetExceeded as exc:
             print(
                 f"Budget cap {int(exc.halt_fraction * 100)}% reached: "

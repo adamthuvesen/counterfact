@@ -14,8 +14,7 @@ class BudgetExceeded(Exception):
         self.cap = cap
         self.halt_fraction = halt_fraction
         super().__init__(
-            f"Budget cap {int(halt_fraction * 100)}% reached: "
-            f"${spent:.4f} of ${cap:.2f}"
+            f"Budget cap {int(halt_fraction * 100)}% reached: ${spent:.4f} of ${cap:.2f}"
         )
 
 

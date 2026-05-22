@@ -46,9 +46,7 @@ def _sigmoid(x: float) -> float:
 
 
 def _p_success(tool: str, model: str, retry: str) -> float:
-    return _sigmoid(
-        _INTERCEPT + _TOOL_LOGITS[tool] + _MODEL_LOGITS[model] + _RETRY_LOGITS[retry]
-    )
+    return _sigmoid(_INTERCEPT + _TOOL_LOGITS[tool] + _MODEL_LOGITS[model] + _RETRY_LOGITS[retry])
 
 
 def _marginal_p_success(model: str) -> float:
@@ -75,8 +73,7 @@ def _confounded_p_tool_given_model(tool: str, model: str) -> float:
     conditional propensities and uniform P(tool))."""
     p_t = 1.0 / len(TOOL_CHOICE_ARMS)
     p_m = sum(
-        _p_model_given_tool(model, t) * (1.0 / len(TOOL_CHOICE_ARMS))
-        for t in TOOL_CHOICE_ARMS
+        _p_model_given_tool(model, t) * (1.0 / len(TOOL_CHOICE_ARMS)) for t in TOOL_CHOICE_ARMS
     )
     return _p_model_given_tool(model, tool) * p_t / p_m
 
@@ -99,13 +96,11 @@ def _confounded_naive_p_success(model: str) -> float:
 # Confounded showcase constants. The outcome equation is unchanged in
 # confounded mode, so the do-calculus arm gap equals HEADLINE_TRUE_EFFECT.
 # The naive arm gap differs because tool is a confounder for model -> outcome.
-CONFOUNDED_NAIVE_HEADLINE: float = (
-    _confounded_naive_p_success("sonnet") - _confounded_naive_p_success("haiku")
-)
+CONFOUNDED_NAIVE_HEADLINE: float = _confounded_naive_p_success(
+    "sonnet"
+) - _confounded_naive_p_success("haiku")
 CONFOUNDED_DO_HEADLINE: float = HEADLINE_TRUE_EFFECT
-CONFOUNDED_NAIVE_VS_CAUSAL_GAP: float = (
-    CONFOUNDED_NAIVE_HEADLINE - CONFOUNDED_DO_HEADLINE
-)
+CONFOUNDED_NAIVE_VS_CAUSAL_GAP: float = CONFOUNDED_NAIVE_HEADLINE - CONFOUNDED_DO_HEADLINE
 
 
 @dataclass
@@ -146,8 +141,7 @@ class SyntheticSCM:
             model, p_model = self._confounded_model_choice(tool)
             model_policy = "confounded_by_tool"
             model_policy_params: dict = {
-                f"p_sonnet_given_{t}": _P_SONNET_GIVEN_TOOL[t]
-                for t in TOOL_CHOICE_ARMS
+                f"p_sonnet_given_{t}": _P_SONNET_GIVEN_TOOL[t] for t in TOOL_CHOICE_ARMS
             }
             model_context_features: dict = {"tool_chosen": tool}
         else:
