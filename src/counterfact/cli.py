@@ -20,14 +20,13 @@ from counterfact.schema import Decision, Run, Step
 _DEFAULT_DEMO_RUNS_DIR = Path("bench/real/smoke_mixed_outcome")
 
 
-def _load_trace_dir(path: Path) -> list[Run]:
+def _load_trace_dir(path: Path, *, command: str) -> list[Run] | None:
     if not path.exists():
         return []
-    return [
-        Run.model_validate_json(p.read_text())
-        for p in sorted(path.glob("*.json"))
-        if not p.name.endswith("receipt.json")
-    ]
+    if not path.is_dir():
+        print(f"counterfact {command}: trace directory not found: {path}", file=sys.stderr)
+        return None
+    return _load_corpus_dir(path, command=command)
 
 
 def _load_run_file(path: Path, *, command: str) -> Run | None:
@@ -36,7 +35,7 @@ def _load_run_file(path: Path, *, command: str) -> Run | None:
         return None
     try:
         return Run.model_validate_json(path.read_text())
-    except (ValidationError, ValueError) as exc:
+    except (OSError, ValidationError, ValueError) as exc:
         print(f"counterfact {command}: failed to parse {path}: {exc}", file=sys.stderr)
         return None
 
@@ -51,7 +50,7 @@ def _load_corpus_dir(path: Path, *, command: str) -> list[Run] | None:
             continue
         try:
             corpus.append(Run.model_validate_json(trace_path.read_text()))
-        except (ValidationError, ValueError) as exc:
+        except (OSError, ValidationError, ValueError) as exc:
             print(
                 f"counterfact {command}: failed to parse {trace_path}: {exc}",
                 file=sys.stderr,
@@ -307,7 +306,9 @@ def _demo(args: argparse.Namespace) -> int:
             source = f"synthetic SCM (confounded, n={args.synthetic_n}, seed={args.seed})"
         else:
             runs_dir, source = _demo_runs_dir(args.runs_dir)
-            runs = _load_trace_dir(runs_dir)
+            runs = _load_trace_dir(runs_dir, command="demo")
+            if runs is None:
+                return 2
             if not runs:
                 if not args.synthetic_fallback:
                     print(
@@ -623,6 +624,7 @@ def _intervene_cli(args: argparse.Namespace) -> int:
                 model=model,
                 step=step.step_index,
                 intervention={intervention_kind: target_value},
+                decision_id=decision.decision_id if args.decision_id is not None else None,
             )
     except InvalidInterventionError as exc:
         print(f"counterfact intervene: {exc}", file=sys.stderr)
