@@ -83,7 +83,7 @@ def test_intervene__decision_id_targets_decision_inside_multi_decision_step(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     runs_dir = tmp_path / "runs"
-    focal = _write_synthetic_corpus(runs_dir)
+    focal = write_synthetic_corpus(runs_dir, n=80)[0]
     decision_id = _move_termination_into_model_step(focal)
 
     rc = main(

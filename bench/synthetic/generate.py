@@ -21,9 +21,7 @@ def generate_traces(n: int, seed: int = 42, confound: bool = False) -> Iterator[
         yield scm.sample_run(i)
 
 
-def generate_corpus(
-    n: int, seed: int, output_dir: str | Path, confound: bool = False
-) -> Path:
+def generate_corpus(n: int, seed: int, output_dir: str | Path, confound: bool = False) -> Path:
     """Write `n` traces to `output_dir` as `syn-<i>.json` files. Returns the dir."""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)

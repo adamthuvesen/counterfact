@@ -267,7 +267,7 @@ def test_intervene_missing_train_n_raises_clear_error(
     # Stub the g-formula adjust so we exercise the post-adjust power branch
     # directly. (Real adjust would crash on train_X=None; that is a separate
     # invariant violation, not what this test covers.)
-    def _fake_adjust(model, decision_type, target_action):  # type: ignore[no-untyped-def]
+    def _fake_adjust(model, feature_family, intervention_kind, target_action):  # type: ignore[no-untyped-def]
         return DistributionSummary(
             point=0.6,
             ci_low=0.2,

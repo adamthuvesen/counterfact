@@ -182,6 +182,7 @@ Prefer `--decision-id` for precise targeting. `--step <n>` is accepted only when
 Useful trace-level questions:
 
 - wrong model choice: `--set model_choice=large`
+- logged temperature choice: `--set temperature=0.7` when model-call traces include `metadata.model_config.temperature`
 - bad tool choice: `--set tool_choice=run_tests`
 - missed retry: `--set retry_policy=retry_once`
 - stopped too early: inspect the termination decision in `counterfact explain`

@@ -113,7 +113,7 @@ CELLS = [
         "if real_corpus:\n"
         "    table = pass_rate_by_arm(real_corpus, 'model_call')\n"
         "    print('--- naive marginal estimator (pass_rate_by_arm) ---')\n"
-        "    print(f'{\"arm\":<8}  {\"n\":>4}  {\"pass\":>4}  {\"rate\":>6}  {\"95% CI\":>16}')\n"
+        '    print(f\'{"arm":<8}  {"n":>4}  {"pass":>4}  {"rate":>6}  {"95% CI":>16}\')\n'
         "    for row in table.rows:\n"
         "        ci = f'[{row.ci_low:.2f}, {row.ci_high:.2f}]'\n"
         "        print(f'{row.arm:<8}  {row.n:>4}  {row.pass_count:>4}  {row.pass_rate:>6.2f}  {ci:>16}')\n"
@@ -279,9 +279,7 @@ CELLS = [
         "All three paths populate `next_step` — even `identified`, where the action is `none` if the CI "
         "is already tight."
     ),
-    _md(
-        "### 3a. *identified* — `tool_choice` with randomized support"
-    ),
+    _md("### 3a. *identified* — `tool_choice` with randomized support"),
     _code(
         "identified = intervene(dag=synth_dag, model=synth_model, step=1, intervention={'tool_choice': 'run_tests'})\n\n"
         "print(f'identifiability : {identified.identifiability.value}')\n"
@@ -296,9 +294,7 @@ CELLS = [
         "    print(f'  - {a}')\n"
         "assert identified.identifiability == IdentifiabilityStatus.IDENTIFIED"
     ),
-    _md(
-        "### 3b. *bounded* — `memory_content` requires back-door adjustment"
-    ),
+    _md("### 3b. *bounded* — `memory_content` requires back-door adjustment"),
     _code(
         "mem_run = Run(\n"
         "    schema_version='0.1.0',\n"
@@ -366,7 +362,7 @@ CELLS = [
         "attribution = attribute_failure(dag=build_dag(case), model=synth_model)\n"
         "top5 = attribution.top_k(5)\n\n"
         "print(f'\\nfailure attribution for {case.run_id}:')\n"
-        "print(f'{\"rank\":>4}  {\"decision_id\":<22}  {\"type\":<12}  {\"action\":<14}  {\"influence\":>9}  identifiability')\n"
+        'print(f\'{"rank":>4}  {"decision_id":<22}  {"type":<12}  {"action":<14}  {"influence":>9}  identifiability\')\n'
         "print('-' * 88)\n"
         "for i, e in enumerate(top5, start=1):\n"
         "    print(\n"

@@ -268,27 +268,27 @@ def _completed_spend(output_dir: Path) -> float:
         try:
             run = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
-            raise ResumeAccountingError(
+            raise BudgetLedgerError(
                 f"cannot read completed trace spend from {path}: {exc}"
             ) from exc
         if not isinstance(run, dict):
-            raise ResumeAccountingError(
+            raise BudgetLedgerError(
                 f"cannot read completed trace spend from {path}: expected JSON object"
             )
         for step in run.get("steps", []):
             if not isinstance(step, dict):
-                raise ResumeAccountingError(
+                raise BudgetLedgerError(
                     f"cannot read completed trace spend from {path}: step is not an object"
                 )
             for obs in step.get("observations", []) or []:
                 if not isinstance(obs, dict):
-                    raise ResumeAccountingError(
+                    raise BudgetLedgerError(
                         f"cannot read completed trace spend from {path}: "
                         "observation is not an object"
                     )
                 content = obs.get("content", {})
                 if not isinstance(content, dict):
-                    raise ResumeAccountingError(
+                    raise BudgetLedgerError(
                         f"cannot read completed trace spend from {path}: "
                         "observation content is not an object"
                     )
@@ -332,11 +332,11 @@ def _spend_value(value: object, *, source: str) -> float:
     try:
         cost = float(value)
     except (TypeError, ValueError) as exc:
-        raise ResumeAccountingError(f"{source} is not a number: {value!r}") from exc
+        raise BudgetLedgerError(f"{source} is not a number: {value!r}") from exc
     if not math.isfinite(cost):
-        raise ResumeAccountingError(f"{source} is not finite: {value!r}")
+        raise BudgetLedgerError(f"{source} is not finite: {value!r}")
     if cost < 0:
-        raise ResumeAccountingError(f"{source} is negative: {value!r}")
+        raise BudgetLedgerError(f"{source} is negative: {value!r}")
     return cost
 
 

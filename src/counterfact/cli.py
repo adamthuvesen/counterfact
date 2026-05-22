@@ -306,9 +306,10 @@ def _demo(args: argparse.Namespace) -> int:
             source = f"synthetic SCM (confounded, n={args.synthetic_n}, seed={args.seed})"
         else:
             runs_dir, source = _demo_runs_dir(args.runs_dir)
-            runs = _load_trace_dir(runs_dir, command="demo")
-            if runs is None:
+            _runs = _load_trace_dir(runs_dir, command="demo")
+            if _runs is None:
                 return 2
+            runs = _runs
             if not runs:
                 if not args.synthetic_fallback:
                     print(

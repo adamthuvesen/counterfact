@@ -4,17 +4,17 @@ install:
 	uv pip install -e ".[dev]"
 
 lint:
-	ruff check src tests
-	ruff format --check src tests
+	uv run ruff check .
+	uv run ruff format --check .
 
 format:
-	ruff format src tests
+	uv run ruff format .
 
 typecheck:
 	mypy src/counterfact
 
 test:
-	pytest
+	uv run pytest
 
 cov:
 	pytest --cov --cov-report=term-missing
