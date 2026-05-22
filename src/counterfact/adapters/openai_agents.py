@@ -42,13 +42,61 @@ _KNOWN_SPAN_TYPES = _DECISION_SPAN_TYPES | _OBSERVATION_SPAN_TYPES | _CONTAINER_
 
 
 def _span_type(span: dict[str, Any]) -> str:
-    span_data = span.get("span_data") or {}
+    span_data = span.get("span_data")
+    if not isinstance(span_data, dict):
+        raise IngestError(
+            f"span {span.get('id')!r} has invalid span_data; expected object, "
+            f"got {type(span_data).__name__}"
+        )
     stype = span_data.get("type")
     if stype is None:
         raise IngestError(
             f"span {span.get('id')!r} has no span_data.type; cannot route to a decision/observation"
         )
     return str(stype)
+
+
+def _span_id(span: dict[str, Any]) -> str:
+    span_id = span.get("id")
+    if not isinstance(span_id, str) or not span_id:
+        raise IngestError(f"openai-agents span is missing a non-empty string id; got {span_id!r}")
+    return span_id
+
+
+def _parent_id(span: dict[str, Any]) -> str | None:
+    parent = span.get("parent_id")
+    if parent is not None and not isinstance(parent, str):
+        raise IngestError(
+            f"span_id={_span_id(span)!r} has invalid parent_id {parent!r}; expected string or null"
+        )
+    return parent
+
+
+def _spans_from_trace(trace: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_spans = trace.get("spans")
+    if not isinstance(raw_spans, list):
+        raise IngestError(
+            "openai-agents trace field 'spans' must be a JSON array; "
+            f"got {type(raw_spans).__name__}"
+        )
+
+    spans: list[dict[str, Any]] = []
+    for idx, raw_span in enumerate(raw_spans, start=1):
+        if not isinstance(raw_span, dict):
+            raise IngestError(
+                "openai-agents trace field 'spans' must contain JSON objects; "
+                f"span {idx} is {type(raw_span).__name__}"
+            )
+        spans.append(raw_span)
+    return spans
+
+
+def _trace_id(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        raise IngestError(
+            f"openai-agents trace is missing a non-empty string trace_id; got {value!r}"
+        )
+    return value
 
 
 def _validate_span_types(spans: list[dict[str, Any]]) -> None:
@@ -68,17 +116,17 @@ def _topological_order(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
     duplicate_ids: set[str] = set()
     by_parent: dict[str | None, list[dict[str, Any]]] = {}
     for span in spans:
-        span_id = str(span.get("id"))
+        span_id = _span_id(span)
         if span_id in seen_ids:
             duplicate_ids.add(span_id)
         seen_ids.add(span_id)
-        by_parent.setdefault(span.get("parent_id"), []).append(span)
+        by_parent.setdefault(_parent_id(span), []).append(span)
     if duplicate_ids:
         raise IngestError(
             "openai-agents trace has duplicate span id(s): " + ", ".join(sorted(duplicate_ids))
         )
     for siblings in by_parent.values():
-        siblings.sort(key=lambda s: (s.get("started_at") or "", s.get("id") or ""))
+        siblings.sort(key=lambda s: (s.get("started_at") or "", _span_id(s)))
 
     roots = by_parent.get(None, [])
     if len(roots) != 1:
@@ -92,11 +140,11 @@ def _topological_order(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
     while stack:
         span = stack.pop()
         ordered.append(span)
-        children = list(by_parent.get(span["id"], []))
+        children = list(by_parent.get(_span_id(span), []))
         # Reverse so DFS pops in sorted order.
         for child in reversed(children):
             stack.append(child)
-    visited = {str(span.get("id")) for span in ordered}
+    visited = {_span_id(span) for span in ordered}
     unreachable = sorted(seen_ids - visited)
     if unreachable:
         raise IngestError(
@@ -265,18 +313,16 @@ def run_from_trace(trace: dict[str, Any], *, outcome: bool | str | None = None) 
     spans: list[dict[str, Any]] = []
     trace_id: str | None = None
     if "spans" in trace:
-        spans = list(trace["spans"])
-        trace_id = trace.get("trace_id") or trace.get("id")
+        spans = _spans_from_trace(trace)
+        trace_id = _trace_id(trace.get("trace_id") or trace.get("id"))
     elif trace.get("object") == "trace.span":
         # Degenerate single-span export — wrap as a one-span trace.
         spans = [trace]
-        trace_id = trace.get("trace_id")
+        trace_id = _trace_id(trace.get("trace_id"))
     else:
         raise IngestError(
             "openai-agents trace must contain a 'spans' array or be a single 'trace.span' object"
         )
-    if trace_id is None:
-        raise IngestError("openai-agents trace is missing trace_id")
     if not spans:
         raise IngestError(f"openai-agents trace {trace_id!r} has no spans")
 
@@ -287,7 +333,6 @@ def run_from_trace(trace: dict[str, Any], *, outcome: bool | str | None = None) 
     last_decision_step: Step | None = None
     pending_observations: list[Observation] = []
     next_step_index = 0
-    decision_emitted_for: set[str] = set()
 
     for span in ordered:
         if span.get("parent_id") is None:
@@ -304,7 +349,6 @@ def run_from_trace(trace: dict[str, Any], *, outcome: bool | str | None = None) 
             steps.append(step)
             last_decision_step = step
             next_step_index += 1
-            decision_emitted_for.add(span["id"])
             continue
         observation = _observation_from_span(span, run_id=trace_id)
         if observation is not None:
