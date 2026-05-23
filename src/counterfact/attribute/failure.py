@@ -22,10 +22,11 @@ from dataclasses import dataclass
 from pydantic import BaseModel, ConfigDict
 
 from counterfact.dag import DAG
-from counterfact.errors import UnknownDecisionTypeError
 from counterfact.intervene.api import intervene as _intervene
 from counterfact.intervene.estimate import CausalEstimate, IdentifiabilityStatus
-from counterfact.taxonomy import valid_interventions
+from counterfact.outcome.model import OutcomeModel
+from counterfact.taxonomy import attribution_intervention_kind, valid_interventions
+from counterfact.trace_localization import decision_type_repeats_elsewhere
 
 
 class AttributionEntry(BaseModel):
@@ -47,26 +48,6 @@ class FailureAttribution:
         return self.entries[:k]
 
 
-def _intervention_kind_for(decision_type: str) -> str | None:
-    """Pick the canonical intervention kind for this decision type, if any.
-
-    The taxonomy may declare multiple intervention kinds per type; for v0
-    attribution we use the first one whose stance is randomized-support
-    (those are the ones we can actually estimate). Falls back to the first
-    declared kind.
-    """
-    from counterfact.taxonomy import identifiability_stance
-
-    kinds = sorted(valid_interventions(decision_type))
-    for k in kinds:
-        try:
-            if identifiability_stance(decision_type, k) == "requires-randomized-support":
-                return k
-        except UnknownDecisionTypeError:
-            continue
-    return kinds[0] if kinds else None
-
-
 def _combined_identifiability(
     actual: CausalEstimate, counterfactual: CausalEstimate
 ) -> IdentifiabilityStatus:
@@ -78,24 +59,7 @@ def _combined_identifiability(
     return IdentifiabilityStatus.BOUNDED
 
 
-def _decision_type_repeats(run: object, step_index: int, decision_type: str) -> bool:
-    """True iff `decision_type` appears in any *other* step in this run.
-
-    The g-formula in `intervene` treats a (decision_type, action) one-hot as a
-    single feature, so it cannot disambiguate between repeated occurrences in a
-    single trace. Attribution mirrors `intervene`'s honest refusal here rather
-    than catching `InvalidInterventionError` (which could mask unrelated bugs).
-    """
-    steps = getattr(run, "steps", []) or []
-    for s in steps:
-        if s.step_index == step_index:
-            continue
-        if any(d.decision_type == decision_type for d in s.decisions):
-            return True
-    return False
-
-
-def _sibling_actions(model: object, decision_type: str, chosen_action: str) -> list[str]:
+def _sibling_actions(model: OutcomeModel, decision_type: str, chosen_action: str) -> list[str]:
     """Return every observed sibling arm for `decision_type`, in feature-index order.
 
     The caller picks among them. We deliberately do not preselect here —
@@ -113,7 +77,7 @@ def _sibling_actions(model: object, decision_type: str, chosen_action: str) -> l
 def attribute_failure(
     *,
     dag: DAG,
-    model: object,
+    model: OutcomeModel,
     outcome: str = "failed",
 ) -> FailureAttribution:
     """Rank decisions in `dag.run` by their estimated causal influence on the outcome."""
@@ -126,7 +90,7 @@ def attribute_failure(
             kinds = valid_interventions(d.decision_type)
             if not kinds or d.chosen_action is None:
                 continue
-            intervention_kind = _intervention_kind_for(d.decision_type)
+            intervention_kind = attribution_intervention_kind(d.decision_type)
             if intervention_kind is None:
                 continue
             siblings = _sibling_actions(model, d.decision_type, d.chosen_action)
@@ -153,7 +117,7 @@ def attribute_failure(
                     )
                 )
                 continue
-            if _decision_type_repeats(dag.run, step.step_index, d.decision_type):
+            if decision_type_repeats_elsewhere(dag.run, step.step_index, d.decision_type):
                 # The trace has another step of the same decision_type — the
                 # corpus-wide g-formula cannot answer "intervene only here".
                 # Surface as unidentified rather than producing the misleading

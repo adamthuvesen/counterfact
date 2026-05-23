@@ -3,7 +3,10 @@
 from counterfact.taxonomy.types import (
     DECISION_TYPES,
     IdentifiabilityStance,
+    attribution_intervention_kind,
+    default_intervention_kind,
     extract_features,
+    first_observed_arm,
     identifiability_stance,
     is_valid_intervention,
     parent_types,
@@ -13,7 +16,10 @@ from counterfact.taxonomy.types import (
 __all__ = [
     "DECISION_TYPES",
     "IdentifiabilityStance",
+    "attribution_intervention_kind",
+    "default_intervention_kind",
     "extract_features",
+    "first_observed_arm",
     "identifiability_stance",
     "is_valid_intervention",
     "parent_types",

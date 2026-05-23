@@ -45,9 +45,10 @@ from tests.acceptance.demo_notebook_helpers import (
     all_text_outputs,
     execute_demo_notebook,
 )
+from tests.fixtures.corpus_loaders import SMOKE_MIXED_OUTCOME_DIR, load_json_corpus
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-REAL_CORPUS_DIR = REPO_ROOT / "bench" / "real" / "smoke_mixed_outcome"
+REAL_CORPUS_DIR = SMOKE_MIXED_OUTCOME_DIR
 DEMO_NOTEBOOK = REPO_ROOT / "notebooks" / "demo.ipynb"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 SRC_DIR = REPO_ROOT / "src"
@@ -72,7 +73,7 @@ FORBIDDEN_IMPORTS = ("dowhy", "causalml", "pyro", "langchain", "langgraph")
 def _load_real_corpus() -> list[Run]:
     if not REAL_CORPUS_DIR.exists():
         return []
-    return [Run.model_validate_json(p.read_text()) for p in sorted(REAL_CORPUS_DIR.glob("*.json"))]
+    return load_json_corpus(REAL_CORPUS_DIR)
 
 
 @pytest.fixture(scope="module")

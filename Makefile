@@ -11,12 +11,12 @@ format:
 	uv run ruff format .
 
 typecheck:
-	mypy src/counterfact
+	uv run mypy src/counterfact
 
 test:
 	uv run pytest
 
 cov:
-	pytest --cov --cov-report=term-missing
+	uv run pytest --cov --cov-report=term-missing --cov-fail-under=80
 
 ci: lint typecheck cov

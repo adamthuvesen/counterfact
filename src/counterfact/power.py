@@ -18,9 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from counterfact.baselines import pass_rate_by_arm
 from counterfact.schema import Run
-
-# 95% CI z-score, kept as a module constant so tests can refer to it by name.
-_Z_95 = 1.959963984540054
+from counterfact.stats import Z_95
 
 
 class _Strict(BaseModel):
@@ -47,7 +45,7 @@ def _two_arm_ci_width(*, p_a: float, p_b: float, n_a: int, n_b: int) -> float:
     if n_a <= 0 or n_b <= 0:
         return float("inf")
     var = p_a * (1 - p_a) / n_a + p_b * (1 - p_b) / n_b
-    return 2.0 * _Z_95 * math.sqrt(var)
+    return 2.0 * Z_95 * math.sqrt(var)
 
 
 def power_analysis(
@@ -132,7 +130,7 @@ def power_analysis(
         )
 
     # Solve 2·z·√(var_per_n / n) ≤ W  →  n ≥ var_per_n · (2z / W)²
-    n_required = math.ceil(var_per_n * (2.0 * _Z_95 / target_ci_width) ** 2)
+    n_required = math.ceil(var_per_n * (2.0 * Z_95 / target_ci_width) ** 2)
 
     return PowerReport(
         decision_type=decision_type,

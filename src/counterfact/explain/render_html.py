@@ -20,6 +20,7 @@ from counterfact.attribute import AttributionEntry, FailureAttribution
 from counterfact.dag import DAG
 from counterfact.explain._css import CSS, GLOSS
 from counterfact.explain._html import Raw, raw, tag
+from counterfact.explain.render_contract import shows_numeric_attribution, shows_outcome_delta
 from counterfact.explain.report import ExplainReport
 from counterfact.intervene.estimate import (
     CausalEstimate,
@@ -67,7 +68,7 @@ def _render_header(report: ExplainReport, *, generated_at: datetime) -> str:
 
 def _top_entry(attribution: FailureAttribution) -> AttributionEntry | None:
     for entry in attribution.entries:
-        if entry.identifiability != IdentifiabilityStatus.UNIDENTIFIED:
+        if shows_numeric_attribution(entry):
             return entry
     return None
 
@@ -368,11 +369,9 @@ def _render_counterfactual_lookup(report: ExplainReport) -> str:
             f"target={estimate.query.target}",
             f"identifiability={estimate.identifiability.value}",
         ]
-        if (
-            estimate.identifiability != IdentifiabilityStatus.UNIDENTIFIED
-            and estimate.outcome_delta is not None
-        ):
+        if shows_outcome_delta(estimate):
             delta = estimate.outcome_delta
+            assert delta is not None
             parts.append(
                 f"outcome_delta={delta.point:.3f} [{delta.ci_low:.3f}, {delta.ci_high:.3f}]"
             )
@@ -681,10 +680,9 @@ def _render_estimate_card(
     if estimate.reason:
         fields.append(_render_field("reason", estimate.reason, source="reason"))
 
-    # Only render outcome_delta when status is not UNIDENTIFIED AND
-    # outcome_delta is present. Both gates must hold.
-    if status != IdentifiabilityStatus.UNIDENTIFIED and estimate.outcome_delta is not None:
+    if shows_outcome_delta(estimate):
         d = estimate.outcome_delta
+        assert d is not None
         value = f"{d.point:.3f} [{d.ci_low:.3f}, {d.ci_high:.3f}] (n_bootstrap={d.n_bootstrap})"
         fields.append(
             _render_field(
@@ -748,7 +746,7 @@ def _render_attribution_table(attribution: FailureAttribution) -> str:
     )
     rows: list[str] = []
     for rank, entry in enumerate(attribution.entries, start=1):
-        if entry.identifiability == IdentifiabilityStatus.UNIDENTIFIED:
+        if not shows_numeric_attribution(entry):
             influence_cell = tag(
                 "td",
                 {"class": "placeholder"},

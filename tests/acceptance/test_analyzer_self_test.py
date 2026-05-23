@@ -8,35 +8,15 @@ breaks, the rubric or the analyzer is wrong, not the test.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from bench.synthetic import generate_traces
 from counterfact import analyze_corpus
 from counterfact.schema import Run
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SINGLE_CLASS_REFUSAL_DIR = REPO_ROOT / "bench" / "real" / "single_class_refusal"
-SMOKE_MIXED_OUTCOME_DIR = REPO_ROOT / "bench" / "real" / "smoke_mixed_outcome"
-
-
-def _load_single_class_refusal() -> list[Run]:
-    if not SINGLE_CLASS_REFUSAL_DIR.exists():
-        pytest.skip(f"single_class_refusal corpus absent at {SINGLE_CLASS_REFUSAL_DIR}")
-    return [
-        Run.model_validate_json(p.read_text())
-        for p in sorted(SINGLE_CLASS_REFUSAL_DIR.glob("*.json"))
-    ]
-
-
-def _load_smoke_mixed_outcome() -> list[Run]:
-    if not SMOKE_MIXED_OUTCOME_DIR.exists():
-        pytest.skip(f"smoke_mixed_outcome corpus absent at {SMOKE_MIXED_OUTCOME_DIR}")
-    return [
-        Run.model_validate_json(p.read_text())
-        for p in sorted(SMOKE_MIXED_OUTCOME_DIR.glob("*.json"))
-    ]
+from tests.fixtures.corpus_loaders import (
+    load_single_class_refusal as _load_single_class_refusal,
+)
+from tests.fixtures.corpus_loaders import (
+    load_smoke_mixed_outcome as _load_smoke_mixed_outcome,
+)
 
 
 def test_single_class_refusal_anchor_scores_unidentified_only() -> None:

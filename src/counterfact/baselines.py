@@ -9,13 +9,13 @@ Use `intervene` for causal queries.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from counterfact.outcome.binary import binary_outcome_value
 from counterfact.schema import Run
+from counterfact.stats import wilson_ci
 
 
 class _Strict(BaseModel):
@@ -42,17 +42,6 @@ class PassRateTable(_Strict):
 
     decision_type: str
     rows: list[PassRateRow] = Field(default_factory=list)
-
-
-def _wilson_ci(k: int, n: int, z: float = 1.959963984540054) -> tuple[float, float]:
-    """Wilson score interval for a binomial proportion (95% by default)."""
-    if n == 0:
-        return (0.0, 0.0)
-    p_hat = k / n
-    denom = 1.0 + z * z / n
-    center = (p_hat + z * z / (2 * n)) / denom
-    half = (z * math.sqrt(p_hat * (1 - p_hat) / n + z * z / (4 * n * n))) / denom
-    return (max(0.0, center - half), min(1.0, center + half))
 
 
 def pass_rate_by_arm(corpus: Iterable[Run], decision_type: str) -> PassRateTable:
@@ -90,7 +79,7 @@ def pass_rate_by_arm(corpus: Iterable[Run], decision_type: str) -> PassRateTable
     for arm in sorted(bucket_n):
         n = bucket_n[arm]
         k = bucket_pass.get(arm, 0)
-        ci_low, ci_high = _wilson_ci(k, n)
+        ci_low, ci_high = wilson_ci(k, n)
         rows.append(
             PassRateRow(
                 arm=arm,

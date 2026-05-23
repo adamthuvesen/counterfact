@@ -84,10 +84,7 @@ def _approval_error(marker_path: Path, expected: dict[str, object]) -> str | Non
     if not isinstance(receipt, dict):
         return "approval receipt must be a JSON object"
     if receipt.get("schema_version") != APPROVAL_SCHEMA_VERSION:
-        return (
-            "approval receipt schema_version mismatch; expected "
-            f"{APPROVAL_SCHEMA_VERSION}"
-        )
+        return f"approval receipt schema_version mismatch; expected {APPROVAL_SCHEMA_VERSION}"
     approved_at = receipt.get("approved_at")
     if not isinstance(approved_at, str) or not approved_at.strip():
         return "approval receipt must include a non-empty approved_at timestamp"

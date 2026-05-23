@@ -239,7 +239,7 @@ def test_intervene_missing_train_n_raises_clear_error(
     substituting `delta.n_bootstrap` (the old, masking fallback)."""
     import numpy as np
 
-    from counterfact.intervene import api as intervene_api
+    from counterfact.intervene import dispatch as intervene_dispatch
     from counterfact.intervene.estimate import DistributionSummary
     from counterfact.outcome.model import OutcomeModel
 
@@ -275,7 +275,7 @@ def test_intervene_missing_train_n_raises_clear_error(
             n_bootstrap=200,
         )
 
-    monkeypatch.setattr(intervene_api, "_adjust_g_formula", _fake_adjust)
+    monkeypatch.setattr(intervene_dispatch, "_adjust_g_formula", _fake_adjust)
 
     run = Run(
         schema_version="0.1.0",
