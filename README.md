@@ -295,6 +295,8 @@ Do not run real-agent benchmarks as routine validation. `counterfact bench real`
 ## Development
 
 ```bash
+uv sync --extra dev
+uv run pre-commit install
 uv run ruff check .
 uv run pytest
 ```
