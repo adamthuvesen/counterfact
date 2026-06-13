@@ -32,7 +32,7 @@ htmlcov/
 *.local.json
 
 # Claude / agent local state
-.agents/
+# .agents/ is canonical, shipping config (open-skills layout): docs + skills.
 .claude/
 .codex/
 .claude/settings.local.json

@@ -76,4 +76,4 @@ Reading order if you have fifteen minutes and want to evaluate the codebase, not
 
 ---
 
-For the deeper "what to read when working on X" routing map aimed at AI agents, see [`agents/docs/repo-context.md`](../agents/docs/repo-context.md).
+For the deeper "what to read when working on X" routing map aimed at AI agents, see [`.agents/docs/repo-context.md`](../.agents/docs/repo-context.md).
