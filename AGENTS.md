@@ -6,7 +6,7 @@ Repo-local instructions for AI coding agents working in `counterfact`.
 
 ## Working Contract
 
-- Start from repo truth: read `README.md`, `pyproject.toml`, nearby tests, and the module you are touching before inventing patterns. For non-trivial work, also read `agents/docs/repo-context.md`.
+- Start from repo truth: read `README.md`, `pyproject.toml`, nearby tests, and the module you are touching before inventing patterns. For non-trivial work, also read `docs/repo-context.md`.
 - Prefer the smallest coherent change. This repo is intentionally sharp and narrow; do not turn it into a platform.
 - Preserve causal honesty. Never paper over missing support, single-class outcomes, or replay-only interventions with optimistic estimates.
 - Keep public APIs typed, explicit, and inspectable. Favor strict Pydantic schemas and structured result objects over strings that consumers must parse.
@@ -27,7 +27,7 @@ Repo-local instructions for AI coding agents working in `counterfact`.
 - `bench/real/smoke_mixed_outcome/` - committed mixed-outcome real demo corpus with 120 `streaming_watermark_dedupe` traces.
 - `bench/real/single_class_refusal/` - committed 3-trace single-class regression anchor for the honest-refusal branch.
 - `notebooks/demo.ipynb` and `docs/demo-excerpt.md` - naive-vs-honest demo surface. Keep these aligned when demo behavior changes.
-- `agents/docs/repo-context.md` - task routing, sync points, corpus rules, and validation choices for future agents.
+- `docs/repo-context.md` - task routing, sync points, corpus rules, and validation choices for future agents.
 
 ## Local Commands
 
@@ -98,7 +98,7 @@ uv run counterfact bench synthetic --n 500 --seed 42 --output-dir /tmp/counterfa
 - For demo/CLI behavior, update `tests/unit/test_cli_demo.py`, `tests/acceptance/test_demo_executes.py`, and `docs/demo-excerpt.md` if output changes.
 - For benchmark harness behavior, add tests around injected clients or fixture resolution; do not rely on live provider calls.
 - After renames or public API changes, grep the whole repo for old names and update notebooks/docs/tests together.
-- Use `agents/docs/repo-context.md` to choose the narrowest meaningful validation set before falling back to full `uv run pytest`.
+- Use `docs/repo-context.md` to choose the narrowest meaningful validation set before falling back to full `uv run pytest`.
 
 ## Documentation Rules
 

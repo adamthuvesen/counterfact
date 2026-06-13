@@ -6,11 +6,13 @@ Given a decision the agent actually logged, such as a model call, tool call, ret
 
 > If the agent had done X instead of Y, would the task have been more likely to succeed?
 
-Every answer is labelled:
+It exists because naive pass-rate analysis on agent traces is misleading: logged decisions are confounded by upstream choices, so "runs that used model B passed more often" is not the same claim as "switching to model B raises the pass rate." `counterfact` keeps those two statements distinct, and refuses to fabricate the causal one when the data cannot support it.
 
-- `identified` - the trace corpus supports a point estimate under the graph, support, and assumptions.
-- `bounded` - a point estimate is not supported, but sensitivity bounds are available.
-- `unidentified` - the corpus cannot support the counterfactual without more data, stronger assumptions, or replay.
+Every answer carries an identifiability label, and the label is the load-bearing field — not the point estimate:
+
+- `identified` - the corpus supports a point estimate under the graph, support, and assumptions. You get an effect with a bootstrap CI.
+- `bounded` - a point estimate is not supported, but sensitivity bounds are. You get the bounds, or `None` when the data cannot support any.
+- `unidentified` - the corpus cannot answer the question without more data, stronger assumptions, or replay. You get a concrete `next_step` instead of a number.
 
 For the design philosophy and a reading guide through the source, see [`docs/architecture.md`](docs/architecture.md).
 
@@ -30,8 +32,57 @@ install from a checkout.
 
 ## Quickstart
 
-Drop in your agent traces, run diagnose. If you already use the Claude
-Agent SDK, the path is one command:
+The fastest way to see what the library does is the deterministic local demo. It
+needs no traces and no API keys:
+
+```bash
+uv run counterfact demo --confound --synthetic-n 1000 --seed 42
+```
+
+It prints a descriptive pass-rate table, a causal intervention estimate, and the
+contrast between the two. The table says what happened in the logged corpus. The
+intervention estimate asks what the model predicts under a declared decision
+edit. Those are different claims, and the demo shows them disagreeing on purpose.
+
+To run it on your own agent, you need a corpus of traces. Drop them in, then
+diagnose a single run against the corpus:
+
+```bash
+uv run counterfact diagnose corpus/<session-id>.json --runs-dir corpus/
+```
+
+`diagnose` ranks likely load-bearing decisions, shows which counterfactual
+questions the corpus can honestly support, and gives the next data-collection
+step when the answer is `unidentified`. Add `--html report.html` to write a
+self-contained report.
+
+`uv run counterfact demo` without `--confound` reads the committed real demo
+corpus at `bench/real/smoke_mixed_outcome`. If that corpus is missing, the
+command exits instead of quietly switching evidence bases; pass
+`--synthetic-fallback` only when you explicitly want synthetic data.
+
+## Getting traces in
+
+You can capture traces live while your agent runs, or ingest a trace dump after
+the fact. Both paths share one mapping, so `corpus/<id>.json` is byte-equivalent
+whichever way you produced it.
+
+```text
+your agent run ─┬─► live tracer  ─┐
+                │                  ├─► corpus/  ─► counterfact diagnose
+                └─► trace dump  ──►│
+                    ingest <sdk>  ─┘
+```
+
+| Adapter | Source format | Live helper |
+| --- | --- | --- |
+| `claude-agent-sdk` | JSONL of Claude Agent SDK message dicts | `ClaudeAgentTracer` |
+| `openai-agents` | JSON trace export from OpenAI Agents SDK | `CounterfactSpanProcessor` |
+| `generic-jsonl` | any JSONL with a user-supplied mapping | — |
+
+### Claude Agent SDK
+
+Offline ingest:
 
 ```bash
 uv run counterfact ingest claude-agent-sdk traces.jsonl --output-dir corpus/
@@ -39,11 +90,11 @@ uv run counterfact diagnose corpus/<session-id>.json --runs-dir corpus/
 ```
 
 `traces.jsonl` is one session per line, each line either a JSON object
-`{"messages": [...]}` or a JSON array of message dicts. There is no
-mapping file: counterfact reads `session_id`, `ToolUseBlock`,
-`AssistantMessage.model`, and `ResultMessage.is_error` directly.
+`{"messages": [...]}` or a JSON array of message dicts. There is no mapping file:
+counterfact reads `session_id`, `ToolUseBlock`, `AssistantMessage.model`, and
+`ResultMessage.is_error` directly.
 
-For live tracing while your agent runs, wrap the message stream:
+Live tracing wraps the message stream:
 
 ```python
 from pathlib import Path
@@ -56,21 +107,20 @@ async with ClaudeAgentTracer(output_dir=Path("corpus/")) as tracer:
 # corpus/<session_id>.json is written on exit.
 ```
 
-The same offline-vs-live mapping is used for both — byte-equivalent output.
+### OpenAI Agents SDK
 
-If you use the OpenAI Agents SDK instead, the path is symmetric:
+Offline ingest:
 
 ```bash
 uv run counterfact ingest openai-agents trace.json --output-dir corpus/ --outcome pass
 uv run counterfact diagnose corpus/<trace-id>.json --runs-dir corpus/
 ```
 
-`--outcome pass|fail` is required when the trace has neither a root error
-nor a `counterfact.outcome` marker span. counterfact never infers
-pass/fail from "no error" — that would manufacture a confidence the data
-does not support.
+`--outcome pass|fail` is required when the trace has neither a root error nor a
+`counterfact.outcome` marker span. counterfact never infers pass/fail from "no
+error" — that would manufacture a confidence the data does not support.
 
-For live tracing, register the processor:
+Live tracing registers the processor:
 
 ```python
 from agents import add_trace_processor
@@ -83,46 +133,6 @@ add_trace_processor(
     )
 )
 ```
-
-| Adapter | Source format | Live helper |
-| --- | --- | --- |
-| `claude-agent-sdk` | JSONL of Claude Agent SDK message dicts | `ClaudeAgentTracer` |
-| `openai-agents` | JSON trace export from OpenAI Agents SDK | `CounterfactSpanProcessor` |
-| `generic-jsonl` | any JSONL with a user-supplied mapping | — |
-
-The full loop is the same in either direction:
-
-```text
-your agent run ─┬─► live tracer  ─┐
-                │                  ├─► corpus/  ─► counterfact diagnose
-                └─► trace dump  ──►│
-                    ingest <sdk>  ─┘
-```
-
-Live tracing and offline ingest share one mapping, so `corpus/<id>.json` is
-byte-equivalent whether you instrumented the run or imported its dump.
-
-Diagnose a failed trace against its corpus and write a shareable HTML report:
-
-```bash
-uv run counterfact diagnose bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000000.json \
-  --runs-dir bench/real/smoke_mixed_outcome \
-  --html /tmp/counterfact-diagnosis.html
-```
-
-`diagnose` ranks likely load-bearing decisions, shows which counterfactual
-questions the corpus can honestly support, and gives the next data-collection
-step when the answer is `unidentified`.
-
-Run the deterministic local demo:
-
-```bash
-uv run counterfact demo --confound --synthetic-n 1000 --seed 42
-```
-
-It prints a descriptive pass-rate table, a causal intervention estimate, and the contrast between the two. The table says what happened in the logged corpus. The intervention estimate asks what the model predicts under a declared decision edit. Those are different claims.
-
-`uv run counterfact demo` without `--confound` reads the committed real demo corpus at `bench/real/smoke_mixed_outcome`. If that corpus is missing, the command exits instead of quietly switching evidence bases; pass `--synthetic-fallback` only when you explicitly want synthetic data.
 
 ## CLI
 
