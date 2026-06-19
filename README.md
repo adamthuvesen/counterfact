@@ -39,10 +39,26 @@ needs no traces and no API keys:
 uv run counterfact demo --confound --synthetic-n 1000 --seed 42
 ```
 
-It prints a descriptive pass-rate table, a causal intervention estimate, and the
-contrast between the two. The table says what happened in the logged corpus. The
-intervention estimate asks what the model predicts under a declared decision
-edit. Those are different claims, and the demo shows them disagreeing on purpose.
+Expected output:
+
+```text
+counterfact demo: naive vs honest
+data: synthetic SCM (confounded, n=1000, seed=42)
+outcomes: 514 pass / 486 fail
+
+pass_rate_by_arm(model_call)
+arm              n  pass  rate    95% CI
+haiku          581   212 0.365  [0.327, 0.405]
+sonnet         419   302 0.721  [0.676, 0.762]
+
+intervene(model_call -> sonnet)
+identifiability: identified
+outcome_delta: 0.663 [0.617, 0.707]
+next_step: none - CI width 0.090 ≤ 0.10; no further action required.
+naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (do-calculus, g-formula) = +0.251; the marginal table overstates what the corpus supports — see DAG and assumptions.
+```
+
+The table says what happened in the logged corpus. The intervention estimate asks what the model predicts under a declared decision edit. Those are different claims, and the demo shows them disagreeing on purpose.
 
 To run it on your own agent, you need a corpus of traces. Drop them in, then
 diagnose a single run against the corpus:
@@ -56,10 +72,13 @@ questions the corpus can honestly support, and gives the next data-collection
 step when the answer is `unidentified`. Add `--html report.html` to write a
 self-contained report.
 
-`uv run counterfact demo` without `--confound` reads the committed real demo
-corpus at `bench/real/smoke_mixed_outcome`. If that corpus is missing, the
-command exits instead of quietly switching evidence bases; pass
-`--synthetic-fallback` only when you explicitly want synthetic data.
+The public smoke demo uses the committed real corpus:
+
+```bash
+uv run counterfact demo
+```
+
+It reads `bench/real/smoke_mixed_outcome` and makes no provider calls. If that corpus is missing, the command exits instead of quietly switching evidence bases; pass `--synthetic-fallback` only when you explicitly want synthetic data. Treat this as a smoke test, not a general benchmark claim.
 
 ## Getting traces in
 
@@ -172,7 +191,7 @@ uv run counterfact explain bench/real/smoke_mixed_outcome/real-streaming_waterma
   --output report.html
 ```
 
-This writes a self-contained HTML report with a trace timeline, decision cards, the per-trace DAG, support/replay warnings, and ranked causal estimates. Numeric outcome deltas are hidden for `unidentified` estimates.
+This writes a self-contained HTML report and prints the resolved report path, for example `/private/tmp/counterfact-report.html` when `--output /tmp/counterfact-report.html` is used. The report contains a trace timeline, decision cards, the per-trace DAG, support/replay warnings, and ranked causal estimates. Numeric outcome deltas are hidden for `unidentified` estimates.
 
 ### Intervene On A Decision
 

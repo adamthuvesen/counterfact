@@ -20,8 +20,8 @@ sonnet         419   302 0.721  [0.676, 0.762]
 
 intervene(model_call -> sonnet)
 identifiability: identified
-outcome_delta: 0.663 [0.619, 0.704]
-next_step: none - CI width 0.085 ≤ 0.10; no further action required.
+outcome_delta: 0.663 [0.617, 0.707]
+next_step: none - CI width 0.090 ≤ 0.10; no further action required.
 naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (do-calculus, g-formula) = +0.251; the marginal table overstates what the corpus supports — see DAG and assumptions.
 ```
 
