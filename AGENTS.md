@@ -1,117 +1,76 @@
-# AGENTS.md
-
-Repo-local instructions for AI coding agents working in `counterfact`.
+# AGENTS.md — counterfact
 
 `counterfact` is a Python research library for understanding agent decision traces through counterfactual questions: if the agent had called a different model, used a different tool, retried, or stopped later, would it have been more likely to complete the task? Its taste is simple: make causal claims only when the logged data, graph, support, and assumptions can actually support them. A useful `unidentified` result is better than a confident fake counterfactual.
 
-## Working Contract
+User-level guidance (tone, principles, git etiquette, Python defaults) lives in `~/.claude/CLAUDE.md` and `~/dotfiles/agents/AGENTS.md` and is *not* duplicated here. This file is for project-specific facts.
 
-- Start from repo truth: read `README.md`, `pyproject.toml`, nearby tests, and the module you are touching before inventing patterns. For non-trivial work, also read `docs/repo-context.md`.
-- Prefer the smallest coherent change. This repo is intentionally sharp and narrow; do not turn it into a platform.
-- Preserve causal honesty. Never paper over missing support, single-class outcomes, or replay-only interventions with optimistic estimates.
-- Keep public APIs typed, explicit, and inspectable. Favor strict Pydantic schemas and structured result objects over strings that consumers must parse.
-- Do not add backward-compatibility shims, dual paths, or deprecated interfaces unless a concrete caller is named.
-- Do not add new runtime dependencies without asking first. The acceptance gate explicitly rejects broad causal/agent frameworks such as `dowhy`, `causalml`, `pyro`, `langchain`, `langgraph`, and `networkx`.
+## Layout
 
-## Repo Map
+```
+src/counterfact/
+├── schema/      strict trace schema — producer/consumer contract for CounterBench and adapters
+├── dag/         inspectable per-trace graph construction
+├── outcome/     transparent outcome modeling
+├── intervene/   intervention API, identifiability labels, sensitivity/bounds, next_step guidance
+├── attribute/   failure attribution ranking
+├── explain/     per-trace narrative: ExplainReport model + stdlib HTML renderer (`counterfact explain`)
+├── adapters/    SDK adapters and live tracers
+└── baselines.py descriptive baselines such as pass-rate tables
 
-- `src/counterfact/schema/` - strict trace schema. This is the producer/consumer contract for CounterBench and external adapters.
-- `src/counterfact/dag/` - inspectable per-trace graph construction.
-- `src/counterfact/outcome/` - transparent outcome modeling.
-- `src/counterfact/intervene/` - intervention API, identifiability labels, sensitivity/bounds, and structured `next_step` guidance.
-- `src/counterfact/attribute/` - failure attribution ranking.
-- `src/counterfact/explain/` - per-trace narrative surface: `ExplainReport` model and stdlib HTML renderer (`counterfact explain` CLI), grounded in `CausalEstimate` fields with a hard hide-rule for `unidentified`.
-- `src/counterfact/baselines.py` - descriptive baselines such as pass-rate tables.
-- `bench/synthetic/` - deterministic SCM benchmark. Default mode randomizes uniformly; `confound=True` opts into the canonical showcase where `model_choice` is biased by `tool_choice`. Safe for CI and local work.
-- `bench/real/coding_agent/` - real-agent trace harness. Can call external LLMs and spend money; treat it as gated infrastructure.
-- `bench/real/smoke_mixed_outcome/` - committed mixed-outcome real demo corpus with 120 `streaming_watermark_dedupe` traces.
-- `bench/real/single_class_refusal/` - committed 3-trace single-class regression anchor for the honest-refusal branch.
-- `notebooks/demo.ipynb` and `docs/demo-excerpt.md` - naive-vs-honest demo surface. Keep these aligned when demo behavior changes.
-- `docs/repo-context.md` - task routing, sync points, corpus rules, and validation choices for future agents.
-
-## Local Commands
-
-Install:
-
-```bash
-uv pip install -e ".[dev]"
+bench/synthetic/  deterministic SCM benchmark — safe for CI and local work
+bench/real/       real-agent harness (gated, can spend money) + committed demo/anchor corpora
+notebooks/        demo.ipynb (keep aligned with docs/demo-excerpt.md)
+docs/             deeper subsystem docs — see Index
 ```
 
-Main validation:
+## Quickstart
 
 ```bash
-uv run ruff check .
-uv run pytest
+uv pip install -e ".[dev]"   # install
+uv run ruff check .          # lint
+uv run ruff format --check src tests
+uv run mypy src/counterfact  # types
+uv run pytest                # tests (CI gates at --cov-fail-under=80)
+make ci                      # lint + test in one shot
 ```
 
-Makefile equivalents:
-
-```bash
-make lint
-make test
-make ci
-```
-
-Useful local demos:
+Local demos:
 
 ```bash
 uv run counterfact demo --confound --synthetic-n 1000 --seed 42  # canonical showcase
 uv run counterfact demo                                           # real-trace smoke test
-uv run counterfact demo --runs-dir /tmp/missing --synthetic-n 500 --target sonnet
 uv run counterfact bench synthetic --n 500 --seed 42 --output-dir /tmp/counterfact-syn
 ```
+
+## Critical Conventions
+
+- **Causal honesty is the product.** Never paper over missing support, single-class outcomes, or replay-only interventions with optimistic estimates. The full guarantees live in [docs/invariants.md](docs/invariants.md) — read it before touching `intervene/`, `outcome/`, or `explain/`.
+- **Smallest coherent change.** This repo is intentionally sharp and narrow; do not turn it into a platform. No backward-compat shims, dual paths, or deprecated interfaces unless a concrete caller is named.
+- **Public APIs stay typed and inspectable.** Favor strict Pydantic schemas (`extra="forbid"`) and structured result objects over strings consumers must parse. Use explicit domain names: `decision_type`, `chosen_action`, `identifiability`, `outcome_delta`, `next_step`.
+- **No new runtime dependencies without asking.** The acceptance gate rejects broad causal/agent frameworks — `dowhy`, `causalml`, `pyro`, `langchain`, `langgraph`, `networkx`.
+- **`pass_rate_by_arm()` is descriptive, not causal.** Keep that distinction visible in demos, docs, tests, and CLI output.
+- **Never commit secrets, `.env`, provider credentials, AI-attribution lines, or `.counterfact/` artifacts.**
 
 ## Safety Rules For Real-Agent Benchmarks
 
 - `uv run counterfact bench real ...` can make external LLM API calls and incur USD spend. Do not run it casually as a validation step.
-- The harness is intentionally protected by `.counterfact/approved`. Do not create that marker for the user, do not bypass the first-run gate, and do not commit `.counterfact/` artifacts.
+- The harness is protected by `.counterfact/approved`. Do not create that marker for the user, bypass the first-run gate, or commit `.counterfact/` artifacts.
 - If real traces must be generated, ask first and state the exact command, fixture set, output directory, and budget cap.
 - Keep budget behavior conservative. `BudgetTracker` halts at 80% of the cap by design; do not relax that without an explicit requirement.
-- Never commit secrets or provider credentials. Use environment variables loaded from the user's secret manager, not hardcoded values or `.env` files.
 - Treat `bench/real/pilot/`, `bench/real/pilot_*`, `bench/synthetic/_out/`, checkpoints, and ad hoc generated corpora as local artifacts unless the task explicitly says to curate and commit a corpus.
 
-## Causal And Statistical Invariants
+## Read The Docs First
 
-- `CausalEstimate.identifiability` must be one of `identified`, `bounded`, or `unidentified`, and the rest of the object must make that label defensible.
-- Single-class real corpora are not model-fit inputs. Surface the degenerate case as `unidentified` with a concrete `NextStep`.
-- Prediction uncertainty and identifiability uncertainty are different. Do not blur bootstrap CIs, sensitivity bounds, support gaps, and replay requirements.
-- If a query needs a prompt rewrite, hidden state change, or unavailable arm, return an honest replay/support next step rather than an estimated effect.
-- `pass_rate_by_arm()` is descriptive, not causal. Keep that distinction visible in demos, docs, tests, and CLI output.
-- Synthetic SCM tests should remain deterministic by seed and recover the known headline effect within the acceptance tolerance.
+Before editing a subsystem, read the matching `docs/*.md`:
 
-## Python Style
+- **Task routing, sync points, validation ladder** → [repo-context.md](docs/repo-context.md)
+- **Causal/statistical invariants** → [invariants.md](docs/invariants.md)
+- **System architecture** → [architecture.md](docs/architecture.md)
+- **Naive-vs-honest demo surface** → [demo-excerpt.md](docs/demo-excerpt.md) (keep aligned with `notebooks/demo.ipynb`)
+- **Pilot CSV dedupe corpus** → [pilot-csv-dedupe.md](docs/pilot-csv-dedupe.md)
 
-- Python 3.11+; use `from __future__ import annotations` in Python modules.
-- Use `pathlib.Path` for filesystem work.
-- Type public functions, dataclasses, and Pydantic models.
-- Keep Pydantic models strict with `extra="forbid"` unless there is a concrete schema-evolution reason not to.
-- Prefer explicit domain names: `decision_type`, `chosen_action`, `identifiability`, `outcome_delta`, `next_step`.
-- Comments should explain the causal/statistical reason or operational guardrail, not narrate obvious code.
-- Match nearby code before introducing helpers. Avoid single-use abstractions.
-- Keep imports clean and sorted by Ruff.
+[repo-context.md](docs/repo-context.md) owns which tests and corpus checks to run for a given change; pick the narrowest meaningful set there before falling back to full `uv run pytest`. Keep `README.md`, docs, and `notebooks/demo.ipynb` aligned with the real CLI and API, not aspirational features. Do not claim Pearl L3 structural counterfactuals, DAG learning, provider replay guarantees, an observability UI, or calibrated universal success probabilities unless they are actually implemented. If a doc disagrees with code, fix the doc in the same change.
 
-## Testing Expectations
+## Index
 
-- For schema changes, add or update tests under `tests/unit/test_trace_schema.py`.
-- For DAG behavior, update `tests/unit/test_dag.py`.
-- For intervention semantics, update `tests/unit/test_causal_engine.py` and `tests/unit/test_next_step.py` as appropriate.
-- For demo/CLI behavior, update `tests/unit/test_cli_demo.py`, `tests/acceptance/test_demo_executes.py`, and `docs/demo-excerpt.md` if output changes.
-- For benchmark harness behavior, add tests around injected clients or fixture resolution; do not rely on live provider calls.
-- After renames or public API changes, grep the whole repo for old names and update notebooks/docs/tests together.
-- Use `docs/repo-context.md` to choose the narrowest meaningful validation set before falling back to full `uv run pytest`.
-
-## Documentation Rules
-
-- Keep `README.md` aligned with the real CLI and API, not aspirational features.
-- Do not claim `counterfact` supports Pearl L3 structural counterfactuals, DAG learning, provider replay guarantees, an observability UI, or calibrated universal success probabilities unless those are actually implemented.
-- When changing demo behavior, update `docs/demo-excerpt.md` and rebuild or inspect `notebooks/demo.ipynb` when relevant.
-- Write docs in the same voice as the README: concise, honest, a little sharp, and allergic to fake certainty.
-- Do not hard-wrap prose in Markdown just to satisfy Python line length. Keep paragraphs readable as paragraphs; preserve deliberate line breaks in code fences, tables, and lists.
-
-## Git Hygiene
-
-- Check `git status --short --branch` before and after edits.
-- Stage only intended files. Do not use broad `git add .` when generated traces, notebooks, caches, or runtime artifacts may be present.
-- Do not push, create PRs, or merge without explicit user approval in the thread.
-- Do not commit to `main` without explicit permission.
-- Never include AI attribution in commit messages.
+Start in [repo-context.md](docs/repo-context.md) for the task-routing map, then follow the subsystem docs above.
