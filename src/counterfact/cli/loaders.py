@@ -60,6 +60,25 @@ def require_focal_in_corpus(focal: Run, corpus: list[Run], runs_dir: Path, *, co
     return False
 
 
+def load_focal_and_corpus(
+    run_path: Path,
+    runs_dir: Path | None,
+    *,
+    command: str,
+) -> tuple[Run, list[Run], Path] | None:
+    focal = load_run_file(run_path, command=command)
+    if focal is None:
+        return None
+
+    resolved_runs_dir = runs_dir if runs_dir is not None else run_path.parent
+    corpus = load_corpus_dir(resolved_runs_dir, command=command)
+    if corpus is None:
+        return None
+    if not require_focal_in_corpus(focal, corpus, resolved_runs_dir, command=command):
+        return None
+    return focal, corpus, resolved_runs_dir
+
+
 def synthetic_runs(n: int, seed: int, confound: bool = False) -> list[Run]:
     try:
         from bench.synthetic import generate_traces

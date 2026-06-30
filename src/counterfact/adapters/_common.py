@@ -14,7 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from counterfact.schema import Run
+from counterfact.schema import Decision, Observation, Run, Step
 
 
 class IngestReceipt(BaseModel):
@@ -38,6 +38,51 @@ class IngestReceipt(BaseModel):
 
 class IngestError(RuntimeError):
     """Raised when an ingest adapter cannot produce a valid native corpus."""
+
+
+class StepBuilder:
+    """Collect adapter decisions and observations into ordered trace steps."""
+
+    def __init__(self) -> None:
+        self.steps: list[Step] = []
+        self._current_step: Step | None = None
+        self._pending_observations: list[Observation] = []
+        self._next_step_index = 0
+
+    @property
+    def next_step_index(self) -> int:
+        return self._next_step_index
+
+    def add_decision_step(self, decisions: list[Decision]) -> Step:
+        step = Step(
+            step_index=self._next_step_index,
+            decisions=decisions,
+            observations=self._pending_observations,
+        )
+        self._pending_observations = []
+        self.steps.append(step)
+        self._current_step = step
+        self._next_step_index += 1
+        return step
+
+    def add_observation(self, observation: Observation) -> None:
+        if self._current_step is None:
+            self._pending_observations.append(observation)
+        else:
+            self._current_step.observations.append(observation)
+
+    def flush_pending_observations(self) -> Step | None:
+        if not self._pending_observations:
+            return None
+        step = Step(
+            step_index=self._next_step_index,
+            observations=self._pending_observations,
+        )
+        self._pending_observations = []
+        self.steps.append(step)
+        self._current_step = step
+        self._next_step_index += 1
+        return step
 
 
 def strict_bool(value: Any, *, field_name: str) -> bool:
@@ -150,6 +195,7 @@ def read_existing_receipt_count(output_dir: Path) -> int:
 __all__ = [
     "IngestError",
     "IngestReceipt",
+    "StepBuilder",
     "per_decision_randomization_warnings",
     "randomization_warning",
     "read_existing_receipt_count",

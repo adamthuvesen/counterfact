@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from counterfact.errors import DAGCycleError
 from counterfact.schema import Decision, Run
 
+FlatDecision = tuple[int, int, Decision]
+
 
 @dataclass
 class DAG:
@@ -97,6 +99,48 @@ class DAG:
         return order
 
 
+def _flatten_decisions(trace: Run) -> tuple[list[Decision], list[FlatDecision]]:
+    nodes: list[Decision] = []
+    flat: list[FlatDecision] = []
+    for step in trace.steps:
+        for pos, decision in enumerate(step.decisions):
+            flat.append((step.step_index, pos, decision))
+            nodes.append(decision)
+    return nodes, flat
+
+
+def _latest_parent_ids(
+    flat: list[FlatDecision], child_index: int, wanted_types: set[str]
+) -> list[str]:
+    child_step, child_pos, _child = flat[child_index]
+    picked: dict[str, str] = {}
+    for parent_index in range(child_index - 1, -1, -1):
+        parent_step, parent_pos, candidate = flat[parent_index]
+        if candidate.decision_type not in wanted_types or candidate.decision_type in picked:
+            continue
+        # Strict precedence: earlier step OR same step with smaller position.
+        if parent_step < child_step or (parent_step == child_step and parent_pos < child_pos):
+            picked[candidate.decision_type] = candidate.decision_id
+            if len(picked) == len(wanted_types):
+                break
+    return list(picked.values())
+
+
+def _latest_parent_edges(flat: list[FlatDecision]) -> list[tuple[str, str]]:
+    # Avoid a circular import: the taxonomy module imports schema, which in
+    # turn lives below this module's package; deferring keeps the surface tidy.
+    from counterfact.taxonomy import parent_types
+
+    edges: list[tuple[str, str]] = []
+    for index, (_step_index, _pos, decision) in enumerate(flat):
+        wanted = set(parent_types(decision.decision_type))
+        if not wanted:
+            continue
+        for parent_id in _latest_parent_ids(flat, index, wanted):
+            edges.append((parent_id, decision.decision_id))
+    return edges
+
+
 def build_dag(trace: Run) -> DAG:
     """Build a DAG over the decisions in `trace`.
 
@@ -107,36 +151,7 @@ def build_dag(trace: Run) -> DAG:
     Decision-ID uniqueness is enforced by `Run._decision_ids_are_unique` at
     schema-validation time; we trust that invariant here rather than re-check.
     """
-    # Avoid a circular import: the taxonomy module imports schema, which in
-    # turn lives below this module's package; deferring keeps the surface tidy.
-    from counterfact.taxonomy import parent_types
-
-    nodes: list[Decision] = []
-    flat: list[tuple[int, int, Decision]] = []  # (step_index, intra_step_pos, decision)
-    for step in trace.steps:
-        for pos, d in enumerate(step.decisions):
-            flat.append((step.step_index, pos, d))
-            nodes.append(d)
-
-    edges: list[tuple[str, str]] = []
-
-    # For each decision, look back through `flat` and connect the most recent
-    # decision whose type appears in this decision's parent_types.
-    for i, (s_i, p_i, d) in enumerate(flat):
-        wanted = set(parent_types(d.decision_type))
-        if not wanted:
-            continue
-        # Walk backwards, picking the most recent of each parent type.
-        picked: dict[str, str] = {}
-        for j in range(i - 1, -1, -1):
-            s_j, p_j, cand = flat[j]
-            if cand.decision_type in wanted and cand.decision_type not in picked:
-                # require strict precedence: earlier step OR same step with smaller pos
-                if (s_j < s_i) or (s_j == s_i and p_j < p_i):
-                    picked[cand.decision_type] = cand.decision_id
-                    if len(picked) == len(wanted):
-                        break
-        for pid in picked.values():
-            edges.append((pid, d.decision_id))
+    nodes, flat = _flatten_decisions(trace)
+    edges = _latest_parent_edges(flat)
 
     return DAG(nodes=nodes, edges=edges, run=trace)

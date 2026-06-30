@@ -495,48 +495,46 @@ def _layout_positions(
     return positions
 
 
-def _render_dag(dag: DAG, *, focal_decision_id: str | None) -> str:
-    if dag.run is None or not dag.nodes:
-        return tag(
-            "section",
-            {"class": "dag"},
-            raw(tag("h2", None, "Decision DAG")),
-            raw(tag("p", {"class": "placeholder"}, "(empty trace)")),
-        )
-
-    labels = {decision.decision_id: _node_label(decision, dag.run) for decision in dag.nodes}
-    box_w = max(168, max(len(label) for label in labels.values()) * 7 + 16)
-    box_h = 32
-    positions = _layout_positions(dag, x_step=box_w + 32)
-    max_x = max(x for x, _ in positions.values()) + box_w + 24
-    max_y = max(y for _, y in positions.values()) + box_h + 24
-
+def _dag_edge_parts(
+    dag: DAG,
+    positions: dict[str, tuple[int, int]],
+    *,
+    box_w: int,
+    box_h: int,
+) -> list[str]:
     edge_parts: list[str] = []
     for parent_id, child_id in dag.edges:
         if parent_id not in positions or child_id not in positions:
             continue
         px, py = positions[parent_id]
         cx, cy = positions[child_id]
-        x1 = px + box_w
-        y1 = py + box_h // 2
-        x2 = cx
-        y2 = cy + box_h // 2
         edge_parts.append(
             tag(
                 "line",
                 {
                     "class": "edge",
-                    "x1": str(x1),
-                    "y1": str(y1),
-                    "x2": str(x2),
-                    "y2": str(y2),
+                    "x1": str(px + box_w),
+                    "y1": str(py + box_h // 2),
+                    "x2": str(cx),
+                    "y2": str(cy + box_h // 2),
                     "marker-end": "url(#cf-arrow)",
                     "data-parent-id": parent_id,
                     "data-child-id": child_id,
                 },
             )
         )
+    return edge_parts
 
+
+def _dag_node_parts(
+    dag: DAG,
+    labels: dict[str, str],
+    positions: dict[str, tuple[int, int]],
+    *,
+    box_w: int,
+    box_h: int,
+    focal_decision_id: str | None,
+) -> list[str]:
     node_parts: list[str] = []
     for decision in dag.nodes:
         x, y = positions[decision.decision_id]
@@ -568,6 +566,34 @@ def _render_dag(dag: DAG, *, focal_decision_id: str | None) -> str:
                 raw(rect + text + title),
             )
         )
+    return node_parts
+
+
+def _render_dag(dag: DAG, *, focal_decision_id: str | None) -> str:
+    if dag.run is None or not dag.nodes:
+        return tag(
+            "section",
+            {"class": "dag"},
+            raw(tag("h2", None, "Decision DAG")),
+            raw(tag("p", {"class": "placeholder"}, "(empty trace)")),
+        )
+
+    labels = {decision.decision_id: _node_label(decision, dag.run) for decision in dag.nodes}
+    box_w = max(168, max(len(label) for label in labels.values()) * 7 + 16)
+    box_h = 32
+    positions = _layout_positions(dag, x_step=box_w + 32)
+    max_x = max(x for x, _ in positions.values()) + box_w + 24
+    max_y = max(y for _, y in positions.values()) + box_h + 24
+
+    edge_parts = _dag_edge_parts(dag, positions, box_w=box_w, box_h=box_h)
+    node_parts = _dag_node_parts(
+        dag,
+        labels,
+        positions,
+        box_w=box_w,
+        box_h=box_h,
+        focal_decision_id=focal_decision_id,
+    )
 
     defs = (
         '<defs><marker id="cf-arrow" viewBox="0 0 10 10" refX="9" refY="5" '

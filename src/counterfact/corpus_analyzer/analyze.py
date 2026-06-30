@@ -27,6 +27,7 @@ from counterfact.errors import (
 from counterfact.intervene import intervene
 from counterfact.outcome import fit_outcome_model
 from counterfact.outcome.binary import binary_outcome_value
+from counterfact.outcome.model import OutcomeModel
 from counterfact.schema import Run
 from counterfact.taxonomy import DECISION_TYPES, valid_interventions
 
@@ -94,46 +95,38 @@ def _index_single_decision_steps(
     return index
 
 
-def _identifiability_coverage(
-    runs: list[Run], arms: list[ArmSupportRow]
-) -> tuple[IdentifiabilityCoverage, set[str]]:
-    """Probe `intervene` for every (decision_type, intervention_kind, arm) we
-    can target and collect which identifiability labels came back. Also returns
-    the set of decision types that produced at least one `identified` result.
-    """
-    classes = {binary_outcome_value(r) for r in runs}
-    reachable: set[IdentifiabilityName] = set()
-    identified_decision_types: set[str] = set()
+def _unfittable_coverage() -> tuple[IdentifiabilityCoverage, set[str]]:
+    return (
+        IdentifiabilityCoverage(reachable=["unidentified"], unfittable_outcome_model=True),
+        set(),
+    )
 
-    if len(classes) < 2:
-        # Single-class corpus — outcome model can't fit. Only the unidentified
-        # paths (always-replay, degenerate) are reachable through the engine.
-        # We mark that explicitly so the rubric reasoning is honest.
-        return (
-            IdentifiabilityCoverage(reachable=["unidentified"], unfittable_outcome_model=True),
-            identified_decision_types,
-        )
 
+def _fit_probe_model(runs: list[Run]) -> OutcomeModel | None:
     try:
-        model = fit_outcome_model(runs, n_bootstrap=_PROBE_BOOTSTRAP, seed=_PROBE_SEED)
+        return fit_outcome_model(runs, n_bootstrap=_PROBE_BOOTSTRAP, seed=_PROBE_SEED)
     except InsufficientOutcomeSupportError:
-        return (
-            IdentifiabilityCoverage(reachable=["unidentified"], unfittable_outcome_model=True),
-            identified_decision_types,
-        )
+        return None
 
-    # Group arms by decision_type for efficient enumeration.
+
+def _arms_by_decision_type(arms: list[ArmSupportRow]) -> dict[str, list[str]]:
     by_dt: dict[str, list[str]] = {}
     for row in arms:
         by_dt.setdefault(row.decision_type, []).append(row.arm)
+    return by_dt
 
-    # Precompute once: intervention kinds per decision type and a single-step
-    # lookup index. Both were recomputed inside the triple loop before, which
-    # made probing O(decision_types * arms * runs * steps).
-    kinds_by_dt = {dt: _intervention_kinds_for(dt) for dt in by_dt}
-    step_index = _index_single_decision_steps(runs)
 
-    for dt, dt_arms in by_dt.items():
+def _probe_reachable_identifiability(
+    *,
+    model: OutcomeModel,
+    arms_by_dt: dict[str, list[str]],
+    step_index: dict[tuple[str, str], tuple[Run, int]],
+) -> tuple[set[IdentifiabilityName], set[str]]:
+    reachable: set[IdentifiabilityName] = set()
+    identified_decision_types: set[str] = set()
+    kinds_by_dt = {dt: _intervention_kinds_for(dt) for dt in arms_by_dt}
+
+    for dt, dt_arms in arms_by_dt.items():
         for kind in kinds_by_dt[dt]:
             for arm in dt_arms:
                 located = step_index.get((dt, arm))
@@ -153,6 +146,36 @@ def _identifiability_coverage(
                 reachable.add(label)
                 if label == "identified":
                     identified_decision_types.add(dt)
+    return reachable, identified_decision_types
+
+
+def _identifiability_coverage(
+    runs: list[Run], arms: list[ArmSupportRow]
+) -> tuple[IdentifiabilityCoverage, set[str]]:
+    """Probe `intervene` for every (decision_type, intervention_kind, arm) we
+    can target and collect which identifiability labels came back. Also returns
+    the set of decision types that produced at least one `identified` result.
+    """
+    classes = {binary_outcome_value(r) for r in runs}
+
+    if len(classes) < 2:
+        # Single-class corpus — outcome model can't fit. Only the unidentified
+        # paths (always-replay, degenerate) are reachable through the engine.
+        # We mark that explicitly so the rubric reasoning is honest.
+        return _unfittable_coverage()
+
+    model = _fit_probe_model(runs)
+    if model is None:
+        return _unfittable_coverage()
+
+    # Precompute once: intervention kinds per decision type and a single-step
+    # lookup index. Both were recomputed inside the triple loop before, which
+    # made probing O(decision_types * arms * runs * steps).
+    reachable, identified_decision_types = _probe_reachable_identifiability(
+        model=model,
+        arms_by_dt=_arms_by_decision_type(arms),
+        step_index=_index_single_decision_steps(runs),
+    )
 
     # Stable order for the report
     ordered: list[IdentifiabilityName] = [

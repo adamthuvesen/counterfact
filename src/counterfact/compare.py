@@ -57,22 +57,17 @@ def _decision_rows(run: Run) -> dict[tuple[int, str, int], tuple[str, str | None
     return rows
 
 
-def compare_traces(
-    left: Run,
-    right: Run,
-    *,
-    diagnosis: DiagnosisReport | None = None,
-) -> TraceComparison:
+def _decision_diffs(left: Run, right: Run) -> list[DecisionDiff]:
     left_rows = _decision_rows(left)
     right_rows = _decision_rows(right)
-    decision_diffs: list[DecisionDiff] = []
+    diffs: list[DecisionDiff] = []
     for key in sorted(set(left_rows) | set(right_rows)):
         left_decision = left_rows.get(key)
         right_decision = right_rows.get(key)
         if left_decision == right_decision:
             continue
         step, decision_type, _offset = key
-        decision_diffs.append(
+        diffs.append(
             DecisionDiff(
                 step=step,
                 decision_type=decision_type,
@@ -82,10 +77,13 @@ def compare_traces(
                 right_chosen_action=right_decision[1] if right_decision else None,
             )
         )
+    return diffs
 
+
+def _step_diffs(left: Run, right: Run) -> list[StepDiff]:
     left_steps = {step.step_index: step for step in left.steps}
     right_steps = {step.step_index: step for step in right.steps}
-    step_diffs: list[StepDiff] = []
+    diffs: list[StepDiff] = []
     for step_index in sorted(set(left_steps) | set(right_steps)):
         left_step = left_steps.get(step_index)
         right_step = right_steps.get(step_index)
@@ -100,8 +98,16 @@ def compare_traces(
             diff.left_decision_count != diff.right_decision_count
             or diff.left_observation_count != diff.right_observation_count
         ):
-            step_diffs.append(diff)
+            diffs.append(diff)
+    return diffs
 
+
+def compare_traces(
+    left: Run,
+    right: Run,
+    *,
+    diagnosis: DiagnosisReport | None = None,
+) -> TraceComparison:
     return TraceComparison(
         left_run_id=left.run_id,
         right_run_id=right.run_id,
@@ -109,8 +115,8 @@ def compare_traces(
         right_outcome=_outcome_label(right),
         left_step_count=len(left.steps),
         right_step_count=len(right.steps),
-        decision_diffs=decision_diffs,
-        step_diffs=step_diffs,
+        decision_diffs=_decision_diffs(left, right),
+        step_diffs=_step_diffs(left, right),
         diagnosis=diagnosis,
     )
 

@@ -78,6 +78,15 @@ _DEFAULT_INTERVENTION_KIND: dict[str, str] = {
     "retry": "retry_policy",
 }
 
+_ACTION_FEATURE_FIELD: dict[str, str] = {
+    "tool_call": "tool_name",
+    "model_call": "model_name",
+    "retry": "retry_action",
+    "memory_read": "memory_action",
+    "plan_step": "plan_action",
+    "termination": "termination_action",
+}
+
 
 def _ensure_known(decision_type: str) -> None:
     if decision_type not in DECISION_TYPES:
@@ -177,20 +186,7 @@ def extract_features(decision: Decision, run: Run) -> dict[str, Any]:
         "step_index": step_index,
         "feature_key": feature_key,
     }
-
-    if dt == "tool_call":
-        base["tool_name"] = chosen or "<none>"
-    elif dt == "model_call":
-        base["model_name"] = chosen or "<none>"
-    elif dt == "retry":
-        base["retry_action"] = chosen or "<none>"
-    elif dt == "memory_read":
-        base["memory_action"] = chosen or "<none>"
-    elif dt == "plan_step":
-        base["plan_action"] = chosen or "<none>"
-    elif dt == "termination":
-        base["termination_action"] = chosen or "<none>"
-
+    base[_ACTION_FEATURE_FIELD[dt]] = chosen or "<none>"
     return base
 
 

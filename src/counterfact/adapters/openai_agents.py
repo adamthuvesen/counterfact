@@ -22,11 +22,12 @@ from pydantic import ValidationError
 from counterfact.adapters._common import (
     IngestError,
     IngestReceipt,
+    StepBuilder,
     randomization_warning,
     strict_bool,
     write_corpus,
 )
-from counterfact.schema import Decision, Metadata, Observation, Outcome, Run, Step
+from counterfact.schema import Decision, Metadata, Observation, Outcome, Run
 from counterfact.schema.models import SCHEMA_VERSION
 
 SOURCE_FORMAT = "openai-agents"
@@ -329,10 +330,7 @@ def run_from_trace(trace: dict[str, Any], *, outcome: bool | str | None = None) 
     _validate_span_types(spans)
     ordered = _topological_order(spans)
 
-    steps: list[Step] = []
-    last_decision_step: Step | None = None
-    pending_observations: list[Observation] = []
-    next_step_index = 0
+    steps = StepBuilder()
 
     for span in ordered:
         if span.get("parent_id") is None:
@@ -340,33 +338,15 @@ def run_from_trace(trace: dict[str, Any], *, outcome: bool | str | None = None) 
             continue
         decision = _decision_from_span(span, run_id=trace_id)
         if decision is not None:
-            step = Step(
-                step_index=next_step_index,
-                decisions=[decision],
-                observations=pending_observations,
-            )
-            pending_observations = []
-            steps.append(step)
-            last_decision_step = step
-            next_step_index += 1
+            steps.add_decision_step([decision])
             continue
         observation = _observation_from_span(span, run_id=trace_id)
         if observation is not None:
-            if last_decision_step is not None:
-                last_decision_step.observations.append(observation)
-            else:
-                pending_observations.append(observation)
+            steps.add_observation(observation)
             continue
         # Container spans (agent, response) — nothing to emit.
 
-    if pending_observations:
-        steps.append(
-            Step(
-                step_index=next_step_index,
-                observations=pending_observations,
-            )
-        )
-        next_step_index += 1
+    steps.flush_pending_observations()
 
     resolved_outcome = _outcome_for_trace(spans, override=outcome)
 
@@ -379,7 +359,7 @@ def run_from_trace(trace: dict[str, Any], *, outcome: bool | str | None = None) 
     return Run(
         schema_version=SCHEMA_VERSION,
         run_id=str(trace_id),
-        steps=steps,
+        steps=steps.steps,
         outcome=resolved_outcome,
         metadata=Metadata(agent_name="openai-agents-sdk", extra=metadata_extra),
     )
