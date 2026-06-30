@@ -5,28 +5,34 @@ import sys
 from pathlib import Path
 
 from counterfact.cli import formatters, loaders
+from counterfact.explain import ExplainReport
 
-load_run_file = loaders.load_run_file
-load_corpus_dir = loaders.load_corpus_dir
-require_focal_in_corpus = loaders.require_focal_in_corpus
+load_focal_and_corpus = loaders.load_focal_and_corpus
 format_diagnosis = formatters.format_diagnosis
+
+
+def _write_html_report(path: Path, report: ExplainReport) -> bool:
+    from counterfact.explain import render_html
+
+    try:
+        path.write_text(render_html(report))
+    except OSError as exc:
+        print(
+            f"counterfact diagnose: failed to write HTML {path}: {exc}",
+            file=sys.stderr,
+        )
+        return False
+    return True
 
 
 def run(args: argparse.Namespace) -> int:
     from counterfact.diagnose import build_diagnosis_pair
-    from counterfact.explain import render_html
 
     run_path: Path = args.run_json
-    focal = load_run_file(run_path, command="diagnose")
-    if focal is None:
+    loaded = load_focal_and_corpus(run_path, args.runs_dir, command="diagnose")
+    if loaded is None:
         return 2
-
-    runs_dir: Path = args.runs_dir if args.runs_dir is not None else run_path.parent
-    corpus = load_corpus_dir(runs_dir, command="diagnose")
-    if corpus is None:
-        return 2
-    if not require_focal_in_corpus(focal, corpus, runs_dir, command="diagnose"):
-        return 2
+    focal, corpus, runs_dir = loaded
 
     try:
         report, html_report = build_diagnosis_pair(
@@ -44,13 +50,7 @@ def run(args: argparse.Namespace) -> int:
         return 2
 
     if args.html is not None:
-        try:
-            args.html.write_text(render_html(html_report))
-        except OSError as exc:
-            print(
-                f"counterfact diagnose: failed to write HTML {args.html}: {exc}",
-                file=sys.stderr,
-            )
+        if not _write_html_report(args.html, html_report):
             return 2
         if args.json:
             print(str(args.html.resolve()), file=sys.stderr)

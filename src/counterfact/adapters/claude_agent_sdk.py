@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from counterfact.adapters._common import (
     IngestError,
     IngestReceipt,
+    StepBuilder,
     randomization_warning,
     strict_bool,
     write_corpus,
@@ -269,12 +270,8 @@ def run_from_messages(messages: list[dict[str, Any]]) -> Run:
 
     result_msg = _result_message(messages)
     run_id = _session_id(messages)
-    steps: list[Step] = []
-    pending_pre_assistant_observations: list[Observation] = []
+    steps = StepBuilder()
     obs_counter = 0
-
-    current_step: Step | None = None
-    next_step_index = 0
 
     for idx, msg in enumerate(messages):
         mtype = _message_type(msg)
@@ -287,49 +284,26 @@ def run_from_messages(messages: list[dict[str, Any]]) -> Run:
         if mtype == "SystemMessage":
             obs = _system_observation(msg, obs_counter, run_id)
             obs_counter += 1
-            if current_step is None:
-                pending_pre_assistant_observations.append(obs)
-            else:
-                current_step.observations.append(obs)
+            steps.add_observation(obs)
             continue
         if mtype == "AssistantMessage":
-            decisions = _assistant_decisions(msg, run_id=run_id, msg_index=idx)
-            step = Step(
-                step_index=next_step_index,
-                decisions=decisions,
-                observations=(pending_pre_assistant_observations if next_step_index == 0 else []),
-            )
-            pending_pre_assistant_observations = []
-            steps.append(step)
-            current_step = step
-            next_step_index += 1
+            steps.add_decision_step(_assistant_decisions(msg, run_id=run_id, msg_index=idx))
             continue
         if mtype == "UserMessage":
             obs = _user_observation(msg, obs_counter, run_id)
             obs_counter += 1
-            if current_step is None:
-                pending_pre_assistant_observations.append(obs)
-            else:
-                current_step.observations.append(obs)
+            steps.add_observation(obs)
             continue
         # Defensive: should be unreachable due to the up-front type check.
         raise IngestError(f"record {idx}: unhandled message type {mtype!r}")
 
-    if pending_pre_assistant_observations:
-        # No assistant turn ever fired. Park the observations on a synthetic step 0.
-        steps.append(
-            Step(
-                step_index=next_step_index,
-                observations=pending_pre_assistant_observations,
-            )
-        )
-        next_step_index += 1
+    steps.flush_pending_observations()
 
     if result_msg is None:
         raise IngestError(
             "claude-agent-sdk message stream has no ResultMessage; cannot derive Outcome"
         )
-    steps.append(_terminal_step(result_msg, run_id=run_id, step_index=next_step_index))
+    steps.steps.append(_terminal_step(result_msg, run_id=run_id, step_index=steps.next_step_index))
 
     metadata_extra: dict[str, Any] = {"source_format": SOURCE_FORMAT}
     if result_msg is not None:
@@ -341,7 +315,7 @@ def run_from_messages(messages: list[dict[str, Any]]) -> Run:
     return Run(
         schema_version=SCHEMA_VERSION,
         run_id=run_id,
-        steps=steps,
+        steps=steps.steps,
         outcome=_outcome(result_msg),
         metadata=Metadata(agent_name="claude-agent-sdk", extra=metadata_extra),
     )

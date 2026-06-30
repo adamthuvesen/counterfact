@@ -6,6 +6,9 @@ import sys
 from counterfact.cli import formatters, helpers, loaders
 from counterfact.cli.demo_showcase import maybe_print_contrast, resolve_demo_target
 from counterfact.intervene.degenerate import degenerate_estimate, outcome_classes
+from counterfact.intervene.estimate import CausalEstimate
+from counterfact.outcome.model import OutcomeModel
+from counterfact.schema import Run
 
 load_trace_dir = loaders.load_trace_dir
 demo_runs_dir = loaders.demo_runs_dir
@@ -16,35 +19,77 @@ first_step_for_decision_type = helpers.first_step_for_decision_type
 format_pass_rate_table = formatters.format_pass_rate_table
 
 
-def run(args: argparse.Namespace) -> int:
-    from counterfact import fit_outcome_model, intervene, pass_rate_by_arm
-    from counterfact.dag import build_dag
-    from counterfact.outcome.binary import binary_outcome_value
-
+def _load_demo_runs(args: argparse.Namespace) -> tuple[list[Run], str] | None:
     try:
         if args.confound:
             runs = synthetic_runs(n=args.synthetic_n, seed=args.seed, confound=True)
             source = f"synthetic SCM (confounded, n={args.synthetic_n}, seed={args.seed})"
-        else:
-            runs_dir, source = demo_runs_dir(args.runs_dir)
-            _runs = load_trace_dir(runs_dir, command="demo")
-            if _runs is None:
-                return 2
-            runs = _runs
-            if not runs:
-                if not args.synthetic_fallback:
-                    print(
-                        "counterfact demo: no real traces found at "
-                        f"{runs_dir}; pass --confound for the synthetic showcase or "
-                        "--synthetic-fallback to opt into synthetic data.",
-                        file=sys.stderr,
-                    )
-                    return 2
-                runs = synthetic_runs(n=args.synthetic_n, seed=args.seed)
-                source = f"synthetic SCM (n={args.synthetic_n}, seed={args.seed})"
+            return runs, source
+
+        runs_dir, source = demo_runs_dir(args.runs_dir)
+        loaded_runs = load_trace_dir(runs_dir, command="demo")
+        if loaded_runs is None:
+            return None
+        if loaded_runs:
+            return loaded_runs, source
+        if not args.synthetic_fallback:
+            print(
+                "counterfact demo: no real traces found at "
+                f"{runs_dir}; pass --confound for the synthetic showcase or "
+                "--synthetic-fallback to opt into synthetic data.",
+                file=sys.stderr,
+            )
+            return None
+        runs = synthetic_runs(n=args.synthetic_n, seed=args.seed)
+        source = f"synthetic SCM (n={args.synthetic_n}, seed={args.seed})"
+        return runs, source
     except ImportError as exc:
         print(f"counterfact demo: {exc}", file=sys.stderr)
+        return None
+
+
+def _demo_estimate(
+    *,
+    args: argparse.Namespace,
+    runs: list[Run],
+    decision_type: str,
+    intervention_kind: str,
+    target: str,
+) -> tuple[CausalEstimate, OutcomeModel | None]:
+    from counterfact import fit_outcome_model, intervene
+    from counterfact.dag import build_dag
+
+    if len(outcome_classes(runs)) == 1:
+        return (
+            degenerate_estimate(
+                runs,
+                decision_type=decision_type,
+                intervention_kind=intervention_kind,
+                target=target,
+            ),
+            None,
+        )
+
+    run, step = first_step_for_decision_type(runs, decision_type)
+    model = fit_outcome_model(runs, n_bootstrap=args.bootstrap, seed=args.seed)
+    estimate = intervene(
+        dag=build_dag(run),
+        model=model,
+        step=step,
+        intervention={intervention_kind: target},
+    )
+    return estimate, model
+
+
+def run(args: argparse.Namespace) -> int:
+    from counterfact import intervene, pass_rate_by_arm
+    from counterfact.dag import build_dag
+    from counterfact.outcome.binary import binary_outcome_value
+
+    loaded = _load_demo_runs(args)
+    if loaded is None:
         return 2
+    runs, source = loaded
 
     decision_type = args.decision_type
     ik = intervention_kind(decision_type)
@@ -60,23 +105,13 @@ def run(args: argparse.Namespace) -> int:
     print("\n".join(format_pass_rate_table(runs, decision_type)))
     print()
 
-    model = None
-    if len(outcome_classes(runs)) == 1:
-        estimate = degenerate_estimate(
-            runs,
-            decision_type=decision_type,
-            intervention_kind=ik,
-            target=target,
-        )
-    else:
-        run, step = first_step_for_decision_type(runs, decision_type)
-        model = fit_outcome_model(runs, n_bootstrap=args.bootstrap, seed=args.seed)
-        estimate = intervene(
-            dag=build_dag(run),
-            model=model,
-            step=step,
-            intervention={ik: target},
-        )
+    estimate, model = _demo_estimate(
+        args=args,
+        runs=runs,
+        decision_type=decision_type,
+        intervention_kind=ik,
+        target=target,
+    )
 
     print(f"intervene({decision_type} -> {target})")
     print(f"identifiability: {estimate.identifiability.value}")

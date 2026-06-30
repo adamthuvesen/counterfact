@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from counterfact.corpus_analyzer import CorpusReadinessReport
+from counterfact.corpus_analyzer import CorpusReadinessReport, RubricCriterion
 from counterfact.diagnose import DiagnosisReport
 from counterfact.intervene.estimate import CausalEstimate
 from counterfact.schema import Decision, Run, Step
@@ -61,10 +61,65 @@ def format_pass_rate_table(runs: list[Run], decision_type: str) -> list[str]:
     return lines
 
 
+def _arm_support_lines(report: CorpusReadinessReport) -> list[str]:
+    if not report.arm_support:
+        return ["arm_support: (no observed arms on randomized decision types)"]
+
+    lines = ["arm_support:", "  decision_type    arm                  n  pass  rate"]
+    for row in report.arm_support:
+        lines.append(
+            f"  {row.decision_type:<14} {row.arm:<18} {row.n:>4} {row.pass_count:>5} "
+            f"{row.pass_rate:>5.3f}"
+        )
+    return lines
+
+
+def _guidance_for_criterion(criterion: RubricCriterion) -> list[str]:
+    if criterion.passed:
+        return []
+    if criterion.name == "outcome_balance" or "unfittable" in criterion.reason:
+        return [
+            "  - outcome model is unfittable for counterfactual support "
+            "without mixed pass/fail outcomes; collect mixed-outcome traces."
+        ]
+    if criterion.name == "model_arm_outcome_mix":
+        lines = [
+            "  - collect model_call support with both small and large arms "
+            "and mixed outcomes per arm."
+        ]
+        from counterfact.intervene.suggest import suggest_harness_command
+
+        suggestion = suggest_harness_command(
+            decision_type="model_call",
+            intervention_kind="model_choice",
+            action="broaden_arm_support",
+            arm_name="large",
+        )
+        if suggestion:
+            lines.append(f"    suggested_command: {suggestion}")
+        return lines
+    if criterion.name == "arm_support":
+        return [
+            "  - broaden randomized arm support for the decision type named "
+            "in the failed criterion."
+        ]
+    if criterion.name == "identifiability_coverage":
+        return [
+            "  - add support for at least one identifiable decision type "
+            "before relying on diagnose/intervene output."
+        ]
+    return []
+
+
+def _next_collection_guidance(report: CorpusReadinessReport) -> list[str]:
+    lines = ["next_collection_guidance:"]
+    for criterion in report.criteria:
+        lines.extend(_guidance_for_criterion(criterion))
+    return lines
+
+
 def format_report(report: CorpusReadinessReport, runs_dir: Path) -> str:
     """Plain-text rendering of a CorpusReadinessReport. Stable enough to grep."""
-    from counterfact.intervene.suggest import suggest_harness_command
-
     lines: list[str] = [
         f"counterfact analyze corpus support-readiness: {runs_dir}",
         f"n_traces: {report.n_traces}",
@@ -74,16 +129,7 @@ def format_report(report: CorpusReadinessReport, runs_dir: Path) -> str:
             f"pass_rate={report.outcome_balance.pass_rate:.3f}"
         ),
     ]
-    if report.arm_support:
-        lines.append("arm_support:")
-        lines.append("  decision_type    arm                  n  pass  rate")
-        for row in report.arm_support:
-            lines.append(
-                f"  {row.decision_type:<14} {row.arm:<18} {row.n:>4} {row.pass_count:>5} "
-                f"{row.pass_rate:>5.3f}"
-            )
-    else:
-        lines.append("arm_support: (no observed arms on randomized decision types)")
+    lines.extend(_arm_support_lines(report))
     cov = report.identifiability_coverage
     reachable_str = ",".join(cov.reachable) if cov.reachable else "(none)"
     lines.append(
@@ -100,38 +146,7 @@ def format_report(report: CorpusReadinessReport, runs_dir: Path) -> str:
             "use diagnose/intervene for trace-level causal questions."
         )
     else:
-        lines.append("next_collection_guidance:")
-        for c in report.criteria:
-            if c.passed:
-                continue
-            if c.name == "outcome_balance" or "unfittable" in c.reason:
-                lines.append(
-                    "  - outcome model is unfittable for counterfactual support "
-                    "without mixed pass/fail outcomes; collect mixed-outcome traces."
-                )
-            elif c.name == "model_arm_outcome_mix":
-                lines.append(
-                    "  - collect model_call support with both small and large arms "
-                    "and mixed outcomes per arm."
-                )
-                suggestion = suggest_harness_command(
-                    decision_type="model_call",
-                    intervention_kind="model_choice",
-                    action="broaden_arm_support",
-                    arm_name="large",
-                )
-                if suggestion:
-                    lines.append(f"    suggested_command: {suggestion}")
-            elif c.name == "arm_support":
-                lines.append(
-                    "  - broaden randomized arm support for the decision type named "
-                    "in the failed criterion."
-                )
-            elif c.name == "identifiability_coverage":
-                lines.append(
-                    "  - add support for at least one identifiable decision type "
-                    "before relying on diagnose/intervene output."
-                )
+        lines.extend(_next_collection_guidance(report))
     return "\n".join(lines)
 
 
