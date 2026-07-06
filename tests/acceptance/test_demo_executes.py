@@ -1,4 +1,4 @@
-"""Demo notebook acceptance tests (tasks §13).
+"""Demo notebook acceptance tests.
 
 Covers the demo-spec scenarios that don't require the real-agent corpus or
 the hand-labeled root cause:
@@ -8,8 +8,8 @@ the hand-labeled root cause:
 * Real-trace section yields a mix of identified, bounded, unidentified.
 * Attribution section renders top_k(5) with identifiability labels.
 
-The hand-labeled root cause comparison (`top_1 matches the label`) lands once
-§14.1 clears.
+The hand-labeled root cause comparison lives in
+`tests/acceptance/test_top1_attribution.py`.
 """
 
 from __future__ import annotations
@@ -28,9 +28,7 @@ def executed_notebook(tmp_path_factory: pytest.TempPathFactory) -> dict:
 
 def test_demo__clean_kernel_execution_succeeds(executed_notebook: dict) -> None:
     """Every code cell ran cleanly and the headline `identified` cell
-    actually produced its expected stdout. The previous version only checked
-    that *some* code cell existed, which the fixture itself already
-    guarantees — that gave nbconvert a free pass even if no cell printed.
+    actually produced its expected stdout.
     """
     code_cells = [c for c in executed_notebook["cells"] if c.get("cell_type") == "code"]
     assert code_cells, "executed notebook contains no code cells"
@@ -78,10 +76,10 @@ def test_demo__at_least_one_identified_result_is_rendered(executed_notebook: dic
 def test_demo__at_least_one_bounded_result_is_rendered(executed_notebook: dict) -> None:
     """WHEN the notebook's real-trace section is executed
     THEN at least one cell output displays a CausalEstimate with identifiability='bounded'
-    and a non-null bounds.e_value."""
+    and the no-support bounded path's null bounds."""
     text = all_text_outputs(executed_notebook)
     assert "identifiability : bounded" in text
-    assert "E-value" in text
+    assert "bounds          : none" in text
 
 
 def test_demo__at_least_one_unidentified_result_is_rendered_with_structured_next_step(

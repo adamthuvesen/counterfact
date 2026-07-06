@@ -15,7 +15,7 @@ them post-hoc and the demo points at one as its evidence base.
 
 ## Output directories
 
-- **`smoke_mixed_outcome/`** — the promoted real-trace demo corpus. 120
+- **`smoke_mixed_outcome/`** - the promoted real-trace demo corpus. 120
   `streaming_watermark_dedupe` traces from `stateful_calibration`, generated
   with `--model-epsilon 1.0 --tool-epsilon 0.0 --retry-epsilon 0.0` after the
   hidden suite was tightened to catch non-late duplicate watermark advancement.
@@ -24,18 +24,18 @@ them post-hoc and the demo points at one as its evidence base.
   `unidentified` reachable). The showcase analyzer reports 64
   hidden-semantic failures, zero format failures, and hidden-semantic failures
   in both model arms.
-- **`single_class_refusal/`** — the single-class regression anchor. 3 csv_dedupe
+- **`single_class_refusal/`** - the single-class regression anchor. 3 csv_dedupe
   traces (a trimmed subset of the original 30-trace `csv_dedupe` pilot)
   kept committed as a regression anchor for the analyzer (it must never
   promote) and as evidence that the demo's "honest refusal" branch still
   lands when handed a degenerate corpus. Never modified.
-- **`pilot_<YYYY-MM-DD>/`** — where dated pilots should write. Pilots
+- **`pilot_<YYYY-MM-DD>/`** - where dated pilots should write. Pilots
   are exploratory; they may or may not clear the analyzer. They are not
   committed unless they pass the promotion gate.
 
 ## Promotion convention
 
-The promotion path is deliberately human-gated:
+Promotion is a human decision:
 
 1. Run a pilot to a fresh `pilot_<YYYY-MM-DD>/` directory, preferably
    using `--fixture-set broad_calibration --model-epsilon 1.0` for broad
@@ -55,8 +55,8 @@ without an explicit human action.
 
 ## Showcase-quality pilots
 
-Promotion and showcase quality are related but not identical. A corpus can pass
-`counterfact analyze corpus` while still be a weak showcase if most failures
+Promotion and showcase quality are related, but a corpus can pass
+`counterfact analyze corpus` and still be a weak showcase if most failures
 come from patch-format problems. For stateful calibration, run the streaming
 fixture set and inspect `bench.real.analyze_pilot` failure modes:
 
@@ -88,6 +88,5 @@ rather than missing patches or harness failures.
 
 Auto-promotion on `promote: True` would silently turn the analyzer's verdict
 into committed history. If we later loosen the rubric or fix a bug in the
-analyzer, a previously-promoted corpus would still carry the `smoke_mixed_outcome`
-name without re-evaluation. Keeping the rename a human action means the
-corpus name is always "this is the corpus a human signed off on."
+analyzer, an already-promoted corpus would still carry the `smoke_mixed_outcome`
+name without re-evaluation. Keeping the rename a human action means the corpus name reads as "this is the corpus a human signed off on."

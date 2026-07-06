@@ -1,6 +1,6 @@
 # Demo Excerpt: Naive vs Causal
 
-The canonical `counterfact` demo is the **confounded synthetic showcase** —
+The canonical `counterfact` demo is the **confounded synthetic showcase**:
 a deterministic, no-spend corpus where the descriptive `pass_rate_by_arm`
 baseline overstates what the data supports and the engine's g-formula
 adjustment recovers the true do-calculus arm gap. The synthetic SCM is the
@@ -29,7 +29,7 @@ naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (do-calculus, g
 
 The naive `pass_rate_by_arm` table reports a **+0.356** arm gap between
 sonnet and haiku. The engine's g-formula adjustment, working off the same
-corpus, reports a **+0.251** causal arm gap — and that number matches the
+corpus, reports a **+0.251** causal arm gap. That number matches the
 SCM's known do-calculus headline (`HEADLINE_TRUE_EFFECT ≈ 0.233`) within the
 project's `±0.05` recovery tolerance. The marginal table is descriptive and
 limited; it does not, by itself, license the causal claim because
@@ -45,13 +45,7 @@ causal estimate disagree, the disagreement is the diagnostic.
 
 ## The real-trace smoke test
 
-Without `--confound`, `counterfact demo` runs the same flow against the
-committed real corpus, `bench/real/smoke_mixed_outcome/` (120
-`streaming_watermark_dedupe` traces with mixed pass/fail outcomes in both model
-arms). It is intentionally small — a smoke test that the engine works on
-real-agent traces, not the statistical headline. The failures are hidden
-stateful-semantic misses, not patch-format misses, and the report is honest
-about the remaining CI width.
+Without `--confound`, `counterfact demo` runs the same flow against the committed real corpus, `bench/real/smoke_mixed_outcome/` (120 `streaming_watermark_dedupe` traces with mixed pass/fail outcomes in both model arms). It is a smoke test that the engine works on real-agent traces, rather than a statistical headline. The failures are hidden stateful-semantic misses rather than patch-format misses, and the report is honest about the remaining CI width.
 
 | arm | n | pass | pass rate | 95% CI |
 | --- | ---: | ---: | ---: | --- |

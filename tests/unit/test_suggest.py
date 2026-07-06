@@ -131,4 +131,4 @@ def test_increase_n_command_floors_at_minimum() -> None:
         estimated_required_n=5,
     )
     assert cmd is not None
-    assert "--n 30" in cmd  # _MIN_BENCH_N floor
+    assert "--n 30" in cmd

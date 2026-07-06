@@ -1,7 +1,7 @@
-"""§14 acceptance: hand-labeled root cause is the top-1 attribution.
+"""Acceptance test: hand-labeled root cause is the top-1 attribution.
 
 The labels file at `bench/real/coding_agent/labels.json` is filled in by the
-human (§14.1 HUMAN GATE). Once at least one label is present and the smoke_mixed_outcome
+human. Once at least one label is present and the smoke_mixed_outcome
 corpus exists, this test:
 
 * loads each label entry,
@@ -10,8 +10,7 @@ corpus exists, this test:
 * calls `attribute_failure(dag, model)` on the labeled run,
 * asserts `top_k(1)[0].decision_id == label.root_cause_decision_id`.
 
-The test SKIPS (not fails) when labels is empty or smoke_mixed_outcome is absent — that
-state is the §14.1 gate sitting open, not a regression.
+The test SKIPS (not fails) when labels is empty or smoke_mixed_outcome is absent.
 """
 
 from __future__ import annotations
@@ -47,7 +46,7 @@ def labels() -> list[dict]:
     items = _load_labels()
     if not items:
         pytest.skip(
-            "§14.1 HUMAN GATE open: no entries in labels.json. "
+            "human labeling gate open: no entries in labels.json. "
             "Add at least one label to enable this acceptance test."
         )
     return items

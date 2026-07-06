@@ -8,7 +8,7 @@ Given a decision the agent actually logged, such as a model call, tool call, ret
 
 It exists because naive pass-rate analysis on agent traces is misleading: logged decisions are confounded by upstream choices, so "runs that used model B passed more often" is not the same claim as "switching to model B raises the pass rate." `counterfact` keeps those two statements distinct, and refuses to fabricate the causal one when the data cannot support it.
 
-Every answer carries an identifiability label, and the label is the load-bearing field — not the point estimate:
+Every answer carries an identifiability label. Read that label before you read the point estimate:
 
 - `identified` - the corpus supports a point estimate under the graph, support, and assumptions. You get an effect with a bootstrap CI.
 - `bounded` - a point estimate is not supported, but sensitivity bounds are. You get the bounds, or `None` when the data cannot support any.
@@ -32,8 +32,7 @@ install from a checkout.
 
 ## Quickstart
 
-The fastest way to see what the library does is the deterministic local demo. It
-needs no traces and no API keys:
+The fastest way to see the library at work is the deterministic local demo. It needs no traces and no API keys:
 
 ```bash
 uv run counterfact demo --confound --synthetic-n 1000 --seed 42
@@ -60,8 +59,7 @@ naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (do-calculus, g
 
 The table says what happened in the logged corpus. The intervention estimate asks what the model predicts under a declared decision edit. Those are different claims, and the demo shows them disagreeing on purpose.
 
-To run it on your own agent, you need a corpus of traces. Drop them in, then
-diagnose a single run against the corpus:
+To run `counterfact` on your own agent, you need a corpus of traces. Drop them in, then diagnose one run against the corpus:
 
 ```bash
 uv run counterfact diagnose corpus/<session-id>.json --runs-dir corpus/
@@ -78,7 +76,7 @@ The public smoke demo uses the committed real corpus:
 uv run counterfact demo
 ```
 
-It reads `bench/real/smoke_mixed_outcome` and makes no provider calls. If that corpus is missing, the command exits instead of quietly switching evidence bases; pass `--synthetic-fallback` only when you explicitly want synthetic data. Treat this as a smoke test, not a general benchmark claim.
+It reads `bench/real/smoke_mixed_outcome` and makes no provider calls. If that corpus is missing, the command exits instead of quietly switching evidence bases. Pass `--synthetic-fallback` only when you explicitly want synthetic data. Treat this as a smoke test, not a general benchmark claim.
 
 ## Getting traces in
 
@@ -97,7 +95,7 @@ your agent run ─┬─► live tracer  ─┐
 | --- | --- | --- |
 | `claude-agent-sdk` | JSONL of Claude Agent SDK message dicts | `ClaudeAgentTracer` |
 | `openai-agents` | JSON trace export from OpenAI Agents SDK | `CounterfactSpanProcessor` |
-| `generic-jsonl` | any JSONL with a user-supplied mapping | — |
+| `generic-jsonl` | any JSONL with a user-supplied mapping | none |
 
 ### Claude Agent SDK
 
@@ -137,7 +135,7 @@ uv run counterfact diagnose corpus/<trace-id>.json --runs-dir corpus/
 
 `--outcome pass|fail` is required when the trace has neither a root error nor a
 `counterfact.outcome` marker span. counterfact never infers pass/fail from "no
-error" — that would manufacture a confidence the data does not support.
+error". That would manufacture a confidence the data does not support.
 
 Live tracing registers the processor:
 
@@ -268,7 +266,7 @@ uv run counterfact export-runs bench/real/smoke_mixed_outcome \
 This writes a RunRecord-shaped parquet (one row per run; columns for agent
 identity, outcome, cost, tokens, provenance) plus a receipt documenting how
 each field was derived. The output is consumable by any downstream tool that
-reads RunRecord-style parquet — population-level benchmark audits, dashboards,
+reads RunRecord-style parquet: population-level benchmark audits, dashboards,
 or your own analysis. `counterfact` itself does not render verdicts at the
 population level; the export is the boundary.
 

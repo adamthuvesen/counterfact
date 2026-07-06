@@ -1,7 +1,7 @@
 """Tests for the real-agent side of corpus-harness spec.
 
 These tests mock the LLM client — no external API calls. The real-LLM smoke
-corpus is a HUMAN GATE (§12.3) and is not exercised here.
+corpus is human-approved and is not exercised here.
 """
 
 from __future__ import annotations
@@ -192,8 +192,8 @@ def test_outcome_is_pytest_exit_code(tmp_path: Path) -> None:
 def test_agent_logs_per_decision_policy_params_with_resolved_config(
     tmp_path: Path,
 ) -> None:
-    """D20: when AgentRunConfig sets per-decision greedy/epsilon, every randomized
-    decision logs the *resolved* values it actually used — making the trace
+    """When AgentRunConfig sets per-decision greedy/epsilon, every randomized
+    decision logs the resolved values it actually used, making the trace
     self-describing about its experimental condition."""
     fixture = EASY_FIXTURES[0]
 
@@ -236,7 +236,7 @@ def test_agent_logs_per_decision_policy_params_with_resolved_config(
 def test_agent_logs_retry_policy_on_every_trace_even_when_first_attempt_passes(
     tmp_path: Path,
 ) -> None:
-    """D18: retry_policy is decided UPFRONT. Even when the first attempt passes
+    """retry_policy is decided upfront. Even when the first attempt passes
     and no retry happens, the trace must log a retry decision."""
     fixture = EASY_FIXTURES[0]
 
@@ -269,7 +269,7 @@ def test_agent_logs_retry_policy_on_every_trace_even_when_first_attempt_passes(
     assert rd.policy == "epsilon_greedy"
     assert rd.chosen_action in {"no_retry", "retry_once"}
     assert rd.propensity is not None
-    # The retry decision is sequenced BEFORE any model_call (D18 ordering).
+    # The retry decision is sequenced before any model_call.
     decision_types_in_order: list[str] = [d.decision_type for s in run.steps for d in s.decisions]
     first_retry = decision_types_in_order.index("retry")
     first_model = decision_types_in_order.index("model_call")
@@ -279,7 +279,7 @@ def test_agent_logs_retry_policy_on_every_trace_even_when_first_attempt_passes(
 
 
 def test_agent_retry_branch_includes_failure_context_in_prompt(tmp_path: Path) -> None:
-    """D18: when the retry branch fires, the second model_call's prompt must
+    """When the retry branch fires, the second model_call's prompt must
     include the failing test output (not just the same prompt as attempt 1)."""
     fixture = EASY_FIXTURES[0]
 

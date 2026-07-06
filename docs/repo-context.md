@@ -4,7 +4,7 @@ This file is the deeper routing map for agents. `AGENTS.md` stays short; this fi
 
 ## Product Posture
 
-`counterfact` should make agent decision traces understandable through honest counterfactual questions: if a logged decision had been different, would the run have been more likely to complete the task? A descriptive pass-rate table can be decisive-looking and still not support a causal claim. Every change should preserve the distinction between observed associations, model predictions under declared interventions, support gaps, sensitivity bounds, and replay requirements.
+`counterfact` should make agent decision traces understandable through honest counterfactual questions: if a logged decision had been different, would the run have been more likely to complete the task? A descriptive pass-rate table can look decisive while still failing to support a causal claim. Every change should preserve the distinction between observed associations, model predictions under declared interventions, support gaps, sensitivity bounds, and replay requirements.
 
 ## Start Here By Task
 
@@ -35,7 +35,7 @@ This file is the deeper routing map for agents. `AGENTS.md` stays short; this fi
 - Do not create `.counterfact/approved`, bypass the approval receipt, relax budget halting, or commit secrets.
 - Ad hoc pilots belong in dated `bench/real/pilot_*` directories and are local artifacts unless the user explicitly asks to curate and commit a corpus.
 - Promotion is human-gated. The analyzer reports; it does not rename directories. Use `bench/real/README.md` and `bench/real/coding_agent/fixtures/README.md` for the full promotion convention.
-- Showcase quality is not just sample size. The key failure quality signal is runnable hidden-semantic failure, not extraction failure or unparseable patches.
+- Showcase quality depends on the failure mode as well as sample size. The strongest signal is runnable hidden-semantic failure rather than extraction failure or unparseable patches.
 
 ## Validation Ladder
 

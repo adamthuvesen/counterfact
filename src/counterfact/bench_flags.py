@@ -1,8 +1,8 @@
-"""Bench harness flag defaults shared by CLI argparse and suggest."""
+"""Bench harness constants shared by CLI argparse and next-step suggestions."""
 
 from __future__ import annotations
 
-RANDOMIZATION_EPSILON = 0.5
+SUGGESTED_RANDOMIZATION_EPSILON = 0.5
 MIN_BENCH_N = 30
 SUGGESTED_FIXTURE_SET = "broad_calibration"
 

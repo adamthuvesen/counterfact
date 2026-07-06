@@ -298,8 +298,7 @@ def _score_model_arm_outcome_mix(
         )
 
     model_arms = [row for row in arms if row.decision_type == "model_call"]
-    # No model_call decisions at all: criterion does not apply (consistent with
-    # the old "no recognized arms" branch).
+    # No model_call decisions at all: this criterion does not apply.
     if not model_arms:
         return RubricCriterion(
             name="model_arm_outcome_mix",

@@ -47,9 +47,9 @@ _VALID_INTERVENTIONS: dict[str, frozenset[str]] = {
 }
 
 # Per (decision_type, intervention_kind) identifiability stance. Stances drive
-# the dispatch in `intervene` (§8): randomized-support paths to back-door
-# adjustment, back-door-adjustment paths to bounded estimates, always-replay
-# paths to `unidentified` with `next_step="replay"`.
+# the dispatch in `intervene`: randomized-support paths to identified estimates,
+# back-door-adjustment paths to bounded estimates, and always-replay paths to
+# `unidentified` with `next_step="replay"`.
 _IDENTIFIABILITY_STANCE: dict[tuple[str, str], IdentifiabilityStance] = {
     ("model_call", "model_choice"): "requires-randomized-support",
     ("model_call", "temperature"): "requires-randomized-support",
