@@ -1,4 +1,4 @@
-# streaming_watermark_dedupe pilot — n=120
+# streaming_watermark_dedupe pilot - n=120
 Cost: $1.6807  (0.0140 / trace)
 Fixtures: {'streaming_watermark_dedupe': 120}
 

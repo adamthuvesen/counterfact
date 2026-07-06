@@ -1,6 +1,6 @@
-# AGENTS.md — counterfact
+# AGENTS.md - counterfact
 
-`counterfact` is a Python research library for understanding agent decision traces through counterfactual questions: if the agent had called a different model, used a different tool, retried, or stopped later, would it have been more likely to complete the task? Its taste is simple: make causal claims only when the logged data, graph, support, and assumptions can actually support them. A useful `unidentified` result is better than a confident fake counterfactual.
+`counterfact` is a Python research library for understanding agent decision traces through counterfactual questions: if the agent had called a different model, used a different tool, retried, or stopped later, would it have been more likely to complete the task? Make causal claims only when the logged data, graph, support, and assumptions can support them. A useful `unidentified` result is better than a confident fake counterfactual.
 
 User-level guidance (tone, principles, git etiquette, Python defaults) lives in `~/.claude/CLAUDE.md` and `~/dotfiles/agents/AGENTS.md` and is *not* duplicated here. This file is for project-specific facts.
 
@@ -8,7 +8,7 @@ User-level guidance (tone, principles, git etiquette, Python defaults) lives in 
 
 ```
 src/counterfact/
-├── schema/      strict trace schema — producer/consumer contract for CounterBench and adapters
+├── schema/      strict trace schema, the producer/consumer contract for CounterBench and adapters
 ├── dag/         inspectable per-trace graph construction
 ├── outcome/     transparent outcome modeling
 ├── intervene/   intervention API, identifiability labels, sensitivity/bounds, next_step guidance
@@ -17,10 +17,10 @@ src/counterfact/
 ├── adapters/    SDK adapters and live tracers
 └── baselines.py descriptive baselines such as pass-rate tables
 
-bench/synthetic/  deterministic SCM benchmark — safe for CI and local work
+bench/synthetic/  deterministic SCM benchmark, safe for CI and local work
 bench/real/       real-agent harness (gated, can spend money) + committed demo/anchor corpora
 notebooks/        demo.ipynb (keep aligned with docs/demo-excerpt.md)
-docs/             deeper subsystem docs — see Index
+docs/             deeper subsystem docs, see Index
 ```
 
 ## Quickstart
@@ -44,10 +44,10 @@ uv run counterfact bench synthetic --n 500 --seed 42 --output-dir /tmp/counterfa
 
 ## Critical Conventions
 
-- **Causal honesty is the product.** Never paper over missing support, single-class outcomes, or replay-only interventions with optimistic estimates. The full guarantees live in [docs/invariants.md](docs/invariants.md) — read it before touching `intervene/`, `outcome/`, or `explain/`.
-- **Smallest coherent change.** This repo is intentionally sharp and narrow; do not turn it into a platform. No backward-compat shims, dual paths, or deprecated interfaces unless a concrete caller is named.
+- **Causal honesty is the product.** Never paper over missing support, single-class outcomes, or replay-only interventions with optimistic estimates. The full guarantees live in [docs/invariants.md](docs/invariants.md). Read it before touching `intervene/`, `outcome/`, or `explain/`.
+- **Smallest coherent change.** Keep this repo sharp and narrow. Do not turn it into a platform. No backward-compat shims, dual paths, or deprecated interfaces unless a concrete caller is named.
 - **Public APIs stay typed and inspectable.** Favor strict Pydantic schemas (`extra="forbid"`) and structured result objects over strings consumers must parse. Use explicit domain names: `decision_type`, `chosen_action`, `identifiability`, `outcome_delta`, `next_step`.
-- **No new runtime dependencies without asking.** The acceptance gate rejects broad causal/agent frameworks — `dowhy`, `causalml`, `pyro`, `langchain`, `langgraph`, `networkx`.
+- **No new runtime dependencies without asking.** The acceptance gate rejects broad causal/agent frameworks: `dowhy`, `causalml`, `pyro`, `langchain`, `langgraph`, `networkx`.
 - **`pass_rate_by_arm()` is descriptive, not causal.** Keep that distinction visible in demos, docs, tests, and CLI output.
 - **Never commit secrets, `.env`, provider credentials, AI-attribution lines, or `.counterfact/` artifacts.**
 

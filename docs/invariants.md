@@ -1,7 +1,6 @@
-# Causal And Statistical Invariants
+# Causal and Statistical Invariants
 
-These are the honesty guarantees `counterfact` is built to defend. A change that
-weakens any of them is a regression even if the tests pass.
+These are the honesty guarantees `counterfact` defends. A change that weakens any of them is a regression even if the tests pass.
 
 - `CausalEstimate.identifiability` must be one of `identified`, `bounded`, or `unidentified`, and the rest of the object must make that label defensible.
 - Single-class real corpora are not model-fit inputs. Surface the degenerate case as `unidentified` with a concrete `NextStep`.
