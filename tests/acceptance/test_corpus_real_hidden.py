@@ -1085,13 +1085,13 @@ def test_retry_prompt_tail_comes_from_public_not_hidden(tmp_path: Path) -> None:
     assert "nfc_rule" not in retry_prompt
 
 
-# --- Phase E: v0 backward compat -------------------------------------------
+# --- Phase E: single-suite fixture layout ----------------------------------
 
 
 def test_v0_fixture_outcome_unchanged(tmp_path: Path) -> None:
     """Req: Hidden-fixture traces use a distinct verifier label
     Req: MODIFIED Real-agent family generates traces from a coding-agent loop
-    WHEN a v0 (single-tests-dir) fixture run completes
+    WHEN a single-suite fixture run completes
     THEN Outcome.verifier='pytest' and metadata has only fixture_id
          (no public_pass / hidden_pass / generalization_gap keys)."""
     from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
@@ -1126,7 +1126,7 @@ def test_v0_fixture_outcome_unchanged(tmp_path: Path) -> None:
     assert run.outcome.value is True
     assert run.outcome.verifier == "pytest"
     assert run.outcome.metadata == {"fixture_id": fixture.fixture_id}
-    # Specifically, none of the hidden-fixture metadata keys leaked into v0.
+    # Hidden-fixture metadata must not leak into single-suite fixture runs.
     for forbidden in ("public_pass", "hidden_pass", "generalization_gap"):
         assert forbidden not in run.outcome.metadata
 
@@ -1376,10 +1376,10 @@ def test_stateful_calibration_fixture_set_resolves_to_semantic_fixtures() -> Non
     assert ids == ["streaming_watermark_dedupe"]
 
 
-def test_hidden_v1_fixture_set_stays_csv_dedupe_only() -> None:
+def test_hidden_v1_fixture_set_resolves_to_csv_dedupe() -> None:
     """Req: hard hidden fixture set is selectable
     WHEN fixture_set='hidden_v1' is resolved
-    THEN it remains the historical csv_dedupe calibration set."""
+    THEN it resolves to csv_dedupe."""
     from bench.real.coding_agent.runner import resolve_fixtures
 
     fixtures = resolve_fixtures(fixture_set="hidden_v1")

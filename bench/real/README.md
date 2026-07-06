@@ -88,6 +88,6 @@ rather than missing patches or harness failures.
 
 Auto-promotion on `promote: True` would silently turn the analyzer's verdict
 into committed history. If we later loosen the rubric or fix a bug in the
-analyzer, a previously-promoted corpus would still carry the `smoke_mixed_outcome`
+analyzer, an already-promoted corpus would still carry the `smoke_mixed_outcome`
 name without re-evaluation. Keeping the rename a human action means the
 corpus name is always "this is the corpus a human signed off on."

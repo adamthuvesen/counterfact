@@ -1,13 +1,13 @@
 """Coding-agent loop for the real-agent corpus.
 
-The loop is small and inspectable. Per design.md D16/D18, the agent decides
-its retry budget *upfront* (after inspect_file, before the first model call)
+The loop is small and inspectable. The agent decides its retry budget upfront
+(after inspect_file, before the first model call)
 so that `retry_policy` is logged on every trace — not just the ones whose
 first attempt fails. When the retry branch does fire, the second model call's
 prompt includes the failing test output, so the retry is informed rather than
 a blind coin flip.
 
-Randomized decision types (per the v0 commitment in design.md D5/D9):
+Randomized decision types:
 * `model_call.model_choice` — which model role (small/large) drafts the patch
 * `tool_call.tool_choice`   — which tool comes first (run_tests vs inspect_file)
 * `retry.retry_policy`      — attempt budget: no_retry (1 attempt) or retry_once (2)
@@ -238,15 +238,14 @@ class AgentRunConfig:
     used for a decision are logged in that decision's `policy_params` so traces
     are self-describing.
 
-    `epsilon` is the legacy fallback used when *_epsilon fields are at their
-    default; setting `epsilon` propagates to all three. Per-decision fields
-    take precedence when explicitly set to a non-default value.
+    `epsilon` supplies the default value for any per-decision epsilon left
+    unset. Per-decision fields take precedence when explicitly set.
     """
 
     epsilon: float = 0.2
     max_steps: int = DEFAULT_MAX_STEPS
     seed: int = 0
-    # Per-decision policy knobs (D20)
+    # Per-decision policy knobs.
     tool_greedy: str = "inspect_file"
     tool_epsilon: float | None = None
     model_greedy: str = "large"
@@ -347,7 +346,7 @@ def run_one_trace(
     )
     step_index += 1
 
-    # ----- Step 2: retry_policy decided UPFRONT (D18) -----
+    # ----- Step 2: retry_policy decided upfront -----
     retry_action, retry_prop = eg_retry.choose(RETRY_ARMS, greedy=config.retry_greedy)
     attempts_remaining = 1 + (1 if retry_action == "retry_once" else 0)
     steps.append(
@@ -463,7 +462,7 @@ def run_one_trace(
         )
         return _finalize_run(run_index, fixture, steps, sandbox, sandbox_root, public_pass=False)
 
-    # ----- Step 5: model_call retry, with failure context (D18) -----
+    # ----- Step 5: model_call retry, with failure context -----
     retry_prompt = build_fix_prompt(fixture, sandbox) + _RETRY_PROMPT_SUFFIX.format(
         test_output=tail[-1000:]
     )

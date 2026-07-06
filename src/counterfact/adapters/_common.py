@@ -21,8 +21,7 @@ class IngestReceipt(BaseModel):
     """Per-corpus receipt written alongside generated trace files.
 
     Adapters that do not consume an explicit user-supplied mapping file emit
-    `mapping_file=""`; the field is preserved for shape-compatibility with the
-    historical `generic-jsonl` receipt.
+    `mapping_file=""` so every ingest receipt has the same shape.
     """
 
     model_config = ConfigDict(extra="forbid")

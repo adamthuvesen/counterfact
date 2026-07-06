@@ -2,8 +2,7 @@
 
 Maps an OpenAI Agents SDK trace export — a JSON document with a flat array
 of `Span.export()` dicts plus a top-level `trace_id` — onto the native `Run`
-schema. Mapping is documented in design D4 of the `add-agent-sdk-adapters`
-change.
+schema.
 
 Inputs are JSON-serialized dicts. This module never imports the
 `openai-agents` SDK itself; the live processor at
@@ -258,7 +257,7 @@ def _root_span(spans: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _outcome_for_trace(spans: list[dict[str, Any]], *, override: bool | str | None) -> Outcome:
-    """Resolve outcome per design D4.
+    """Resolve the binary outcome for an OpenAI Agents trace.
 
     Order: explicit override → marker span → root error → raise.
     """

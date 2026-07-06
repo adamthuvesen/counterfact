@@ -6,9 +6,9 @@ identifiability stance. `intervene` dispatches on that stance:
 * `requires-randomized-support`: g-formula via the fitted outcome model —
   set the targeted feature to 1 in every training row, zero out sibling-arm
   features, predict, average. Returns `identified` with point + bootstrap CI.
-* `requires-back-door-adjustment`: returns `bounded` with sentinel bounds —
-  the back-door adjustment set is named in `assumptions`. The full numerical
-  bound lands alongside §9 sensitivity work.
+* `requires-back-door-adjustment`: returns `bounded` and names the adjustment
+  set. When observed support is missing, `bounds` is `None` and `next_step`
+  explains how to broaden support.
 * `always-replay`: returns `unidentified` with `next_step="replay"`.
 
 The CausalEstimate result object is the public contract; full schema lives in

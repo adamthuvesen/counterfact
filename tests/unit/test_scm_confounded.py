@@ -1,13 +1,13 @@
-"""Unit tests for the synthetic SCM's confounded mode (tasks §2).
+"""Unit tests for the synthetic SCM's confounded mode.
 
 These tests cover three things:
 
-1. Default mode is bit-for-bit unchanged (regression guard for the new flag).
+1. Default mode is deterministic and unchanged.
 2. Confounded mode logs the right policy/propensity/context metadata.
 3. The exposed analytic constants satisfy the relationships the showcase
    relies on — `CONFOUNDED_DO_HEADLINE == HEADLINE_TRUE_EFFECT` (the outcome
    equation is unchanged in confounded mode) and the naive-vs-causal gap is
-   at least the rhetorical threshold of `0.05`.
+   large enough to make the demo contrast visible.
 """
 
 from __future__ import annotations
@@ -105,10 +105,10 @@ def test_confounded_does_not_alter_outcome_equation() -> None:
 
 
 def test_confounded_constants_satisfy_relationships() -> None:
-    # Do-calculus headline equals the original true effect (outcome equation
-    # unchanged in confounded mode).
+    # Do-calculus headline equals the true effect because the outcome equation
+    # is unchanged in confounded mode.
     assert abs(CONFOUNDED_DO_HEADLINE - HEADLINE_TRUE_EFFECT) < 1e-9
-    # Naive-vs-causal gap meets the rhetorical threshold.
+    # Naive-vs-causal gap is large enough to make the demo contrast visible.
     assert abs(CONFOUNDED_NAIVE_VS_CAUSAL_GAP) >= 0.05
     # Sanity: naive headline differs from the do-calculus headline by exactly
     # the gap.

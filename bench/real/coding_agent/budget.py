@@ -1,4 +1,4 @@
-"""USD budget tracker with 80% halt threshold (design.md D11, D17)."""
+"""USD budget tracker with an 80% halt threshold."""
 
 from __future__ import annotations
 

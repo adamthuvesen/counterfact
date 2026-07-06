@@ -35,7 +35,7 @@ def test_synthetic__known_true_effect_is_accessible() -> None:
     THEN the true effect of the headline intervention is exposed as a constant."""
     assert isinstance(HEADLINE_TRUE_EFFECT, float)
     assert -1.0 < HEADLINE_TRUE_EFFECT < 1.0
-    # design.md D9 says model_choice is the headline; sonnet > haiku gives positive effect.
+    # The headline intervention is model_choice; sonnet should beat haiku.
     assert HEADLINE_TRUE_EFFECT > 0
 
 

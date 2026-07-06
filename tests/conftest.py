@@ -3,9 +3,8 @@
 These factory functions are imported directly by test modules instead of being
 exposed as `pytest.fixture`s because call sites pass varied `n` and `seed`
 combinations and several need both the in-memory `Run` list and the on-disk
-JSON layout. Keeping them as plain functions preserves the original call-site
-ergonomics while removing the duplicated bodies that previously lived in
-six test files.
+JSON layout. Keeping them as plain functions lets tests choose their own
+corpus size, seed, and on-disk layout.
 """
 
 from __future__ import annotations

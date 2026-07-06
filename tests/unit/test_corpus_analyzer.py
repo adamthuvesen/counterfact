@@ -187,7 +187,7 @@ def test_passing_criteria_reasons_end_with_ok() -> None:
             assert c.reason.endswith(": ok"), (c.name, c.reason)
 
 
-def test_custom_thresholds_can_reject_a_previously_promoted_corpus() -> None:
+def test_custom_thresholds_can_reject_a_promoted_corpus() -> None:
     runs = [Run.model_validate(t) for t in generate_traces(n=120, seed=3)]
     default_report = analyze(runs)
     assert default_report.promote is True

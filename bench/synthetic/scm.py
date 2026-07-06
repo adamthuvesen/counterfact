@@ -10,7 +10,7 @@ The outcome is binary success, drawn from a logistic of the per-arm log-odds.
 The headline intervention is `model_choice = sonnet` versus `model_choice = haiku`
 on the marginal probability of success: the true effect is exposed as
 `HEADLINE_TRUE_EFFECT` so the SCM-recovery acceptance test can compare against
-ground truth (design.md D9, D10).
+ground truth.
 """
 
 from __future__ import annotations

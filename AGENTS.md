@@ -67,7 +67,6 @@ Before editing a subsystem, read the matching `docs/*.md`:
 - **Causal/statistical invariants** → [invariants.md](docs/invariants.md)
 - **System architecture** → [architecture.md](docs/architecture.md)
 - **Naive-vs-honest demo surface** → [demo-excerpt.md](docs/demo-excerpt.md) (keep aligned with `notebooks/demo.ipynb`)
-- **Pilot CSV dedupe corpus** → [pilot-csv-dedupe.md](docs/pilot-csv-dedupe.md)
 
 [repo-context.md](docs/repo-context.md) owns which tests and corpus checks to run for a given change; pick the narrowest meaningful set there before falling back to full `uv run pytest`. Keep `README.md`, docs, and `notebooks/demo.ipynb` aligned with the real CLI and API, not aspirational features. Do not claim Pearl L3 structural counterfactuals, DAG learning, provider replay guarantees, an observability UI, or calibrated universal success probabilities unless they are actually implemented. If a doc disagrees with code, fix the doc in the same change.
 

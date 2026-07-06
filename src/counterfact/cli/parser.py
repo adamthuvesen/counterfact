@@ -5,6 +5,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from counterfact.bench_flags import (
+    FIXTURE_SET_CHOICES,
+    MODEL_GREEDY_CHOICES,
+    RETRY_GREEDY_CHOICES,
+)
 from counterfact.cli import argparse_types
 from counterfact.cli.commands import (
     analyze_corpus,
@@ -314,7 +319,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--model-greedy",
         type=str,
         default="large",
-        choices=["small", "large"],
+        choices=MODEL_GREEDY_CHOICES,
         help="Greedy arm for model_choice (default: large)",
     )
     real.add_argument(
@@ -327,7 +332,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--retry-greedy",
         type=str,
         default="retry_once",
-        choices=["no_retry", "retry_once"],
+        choices=RETRY_GREEDY_CHOICES,
         help="Greedy arm for retry_policy (default: retry_once)",
     )
     real.add_argument(
@@ -349,20 +354,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--fixture-set",
         type=str,
         default=None,
-        choices=[
-            "v0",
-            "easy",
-            "hidden_v1",
-            "hard_hidden_v1",
-            "broad_calibration",
-            "very_hard_hidden_v1",
-            "stateful_calibration",
-        ],
+        choices=FIXTURE_SET_CHOICES,
         help=(
             "Named fixture-set shortcut. Use 'broad_calibration' for broad "
             "date/rate-limit/version calibration, or 'stateful_calibration' "
-            "for the streaming watermark fixture. Other choices are legacy "
-            "harness fixtures kept for tests and historical calibration."
+            "for the streaming watermark fixture."
         ),
     )
     real.set_defaults(func=bench_real.run)

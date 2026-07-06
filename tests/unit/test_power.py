@@ -186,8 +186,7 @@ def test_three_arm_corpus_uses_corpus_wide_arm_fractions() -> None:
     assert rep_three.estimated_required_n is not None
     assert rep_two.estimated_required_n is not None
     # In a 3-arm corpus the focal pair only owns 2/3 of the corpus, so
-    # var_per_n is larger and required_n exceeds the 2-arm calculation that
-    # the old denominator would have matched.
+    # var_per_n is larger and required_n exceeds the 2-arm calculation.
     assert rep_three.estimated_required_n > rep_two.estimated_required_n
     assert rep_three.current_n == 3 * n_per_arm
     assert rep_two.current_n == 2 * n_per_arm
@@ -197,7 +196,7 @@ def test_two_arm_corpus_unchanged_by_corpus_wide_denominator() -> None:
     """Per spec scenario: 2-arm corpus is unaffected — f_a + f_b == 1.0.
 
     For a balanced 2-arm corpus, n_total == n_a + n_b, so the corpus-wide
-    denominator is identical to the previous (n_a + n_b) version.
+    denominator is identical to the focal-pair denominator.
     """
     corpus = _balanced_corpus(n_per_arm=30, p_a=0.4, p_b=0.6)
     rep = power_analysis(

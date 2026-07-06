@@ -195,7 +195,7 @@ def handle_back_door_bounded(ctx: InterveneContext) -> CausalEstimate:
         "arm_name": ctx.decision_type,
         "missing_strata": [
             "back-door adjustment requires randomized support over "
-            f"{ctx.decision_type} jointly with its parents; v0 returns a bound."
+            f"{ctx.decision_type} jointly with its parents; no numeric bound is available."
         ],
         "observed_arms": arm_rows_as_payload(observed_rows),
         "missing_arms": missing_arms_for(
@@ -224,7 +224,7 @@ def handle_back_door_bounded(ctx: InterveneContext) -> CausalEstimate:
             human_text=(
                 f"{ctx.decision_type} would identify under back-door adjustment if "
                 "the corpus had randomized joint support over its parents; "
-                "v0 ships the E-value bound instead."
+                "broaden arm support before estimating a point effect."
             ),
         ),
     )

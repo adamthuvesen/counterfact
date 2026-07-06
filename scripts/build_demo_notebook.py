@@ -1,8 +1,7 @@
 """Build notebooks/demo.ipynb from a list of cells.
 
-The notebook is the demo's headline artifact and is part of the v0 ship gate
-(§15.5: naive-vs-honest contrast must be rendered). Running this script
-deterministically rebuilds the notebook so the source-of-truth is one Python
+The notebook is the demo's headline artifact. Running this script
+deterministically rebuilds the notebook so the source of truth is one Python
 file rather than diff-hostile JSON.
 
 Run from the repo root:
@@ -274,7 +273,7 @@ CELLS = [
         "| label          | shape                                                                         |\n"
         "|----------------|-------------------------------------------------------------------------------|\n"
         "| `identified`   | `outcome_delta` (point + bootstrap CI), `bounds.e_value`, `adjustment_set`    |\n"
-        "| `bounded`      | `bounds.e_value`, named adjustment strategy in `assumptions`, no point claim  |\n"
+        "| `bounded`      | `bounds` when supported; otherwise `None`, with support guidance             |\n"
         "| `unidentified` | `reason`, structured `next_step`, no point claim                              |\n\n"
         "All three paths populate `next_step` — even `identified`, where the action is `none` if the CI "
         "is already tight."
@@ -312,7 +311,10 @@ CELLS = [
         "    intervention={'memory_content': 'all'},\n"
         ")\n\n"
         "print(f'identifiability : {bounded.identifiability.value}')\n"
-        "print(f'E-value         : {bounded.bounds.e_value:.3f}  ({bounded.bounds.technique})')\n"
+        "if bounded.bounds is None:\n"
+        "    print('bounds          : none (no observed back-door support)')\n"
+        "else:\n"
+        "    print(f'bounds          : E-value {bounded.bounds.e_value:.3f}  ({bounded.bounds.technique})')\n"
         "print(f'next_step       : {bounded.next_step.action}')\n"
         "print(f'                  {bounded.next_step.human_text}')\n"
         "print()\n"
@@ -320,7 +322,7 @@ CELLS = [
         "for a in bounded.assumptions:\n"
         "    print(f'  - {a}')\n"
         "assert bounded.identifiability == IdentifiabilityStatus.BOUNDED\n"
-        "assert bounded.bounds is not None"
+        "assert bounded.bounds is None"
     ),
     _md(
         "### 3c. *unidentified* — `prompt_content` is replay-only\n\n"
@@ -376,7 +378,7 @@ CELLS = [
         "Take a query whose CI is too wide (or whose honest verdict is `unidentified` for a non-replay "
         "reason). `power_analysis` answers the binomial-Wald question: at the current per-arm pass rates "
         "and arm fractions, what `n` would shrink the 95% CI on the marginal effect to `target_ci_width`?\n\n"
-        "Scope is deliberately narrow per design.md D2 — this is not effect-size-aware power analysis. "
+        "Scope is deliberately narrow: this is not effect-size-aware power analysis. "
         "It's the *one* helper the demo's closing paragraph needs to answer 'why don't you just collect "
         "more data?'"
     ),

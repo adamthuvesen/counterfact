@@ -183,9 +183,8 @@ def test_degenerate_outcome_classes_rejects_non_binary_outcomes() -> None:
 def test_degenerate_estimate_uses_none_step_not_negative_sentinel() -> None:
     """Single-class degenerate corpora produce CausalEstimate.query.step=None.
 
-    The previous code used -1 as a "no step" sentinel, which forced consumers
-    to know the magic value. None is self-documenting and aligned with the
-    Optional[int] type on InterventionQuery.step.
+    None is the explicit "no focal step" value and aligns with the Optional[int]
+    type on InterventionQuery.step.
     """
     from counterfact.intervene.degenerate import degenerate_estimate
 
@@ -249,8 +248,8 @@ def test_intervene_missing_train_n_raises_clear_error(
     boot_coefs = np.zeros((50, 1), dtype=float)
     boot_intercepts = np.linspace(-8.0, 8.0, 50)
 
-    # Model with train_n=0 and train_X=None: a malformed outcome model that
-    # the old fallback would have happily papered over by reading n_bootstrap.
+    # Model with train_n=0 and train_X=None: a malformed outcome model must fail
+    # loudly instead of substituting bootstrap draw count for corpus size.
     bad_model = OutcomeModel(
         feature_names=["tool_call::run_tests"],
         coefficients=np.zeros(1),

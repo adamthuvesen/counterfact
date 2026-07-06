@@ -1,4 +1,4 @@
-"""ε-greedy randomization with logged propensities (design.md D8, D16)."""
+"""Epsilon-greedy randomization with logged propensities."""
 
 from __future__ import annotations
 

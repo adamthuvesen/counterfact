@@ -5,7 +5,7 @@ where running the bench harness with different flags would produce the missing
 data, this module composes the exact `uv run counterfact bench …` invocation.
 
 Kept out of `intervene/api.py` so the engine doesn't import the CLI module.
-Flag defaults live in `counterfact.cli.bench_flags`; `tests/unit/test_suggest.py`
+Bench command constants live in `counterfact.bench_flags`; `tests/unit/test_suggest.py`
 parses every returned command through `build_parser()` to keep CLI and suggest
 in lockstep.
 """
@@ -15,9 +15,9 @@ from __future__ import annotations
 from counterfact.bench_flags import (
     MIN_BENCH_N,
     MODEL_GREEDY_CHOICES,
-    RANDOMIZATION_EPSILON,
     RETRY_GREEDY_CHOICES,
     SUGGESTED_FIXTURE_SET,
+    SUGGESTED_RANDOMIZATION_EPSILON,
 )
 
 # Canonical arm sets per (decision_type, intervention_kind), pulled from the
@@ -41,7 +41,7 @@ def _model_flags(arm_name: str | None) -> list[str]:
         "--model-greedy",
         arm,
         "--model-epsilon",
-        f"{RANDOMIZATION_EPSILON}",
+        f"{SUGGESTED_RANDOMIZATION_EPSILON}",
     ]
 
 
@@ -51,7 +51,7 @@ def _retry_flags(arm_name: str | None) -> list[str]:
         "--retry-greedy",
         arm,
         "--retry-epsilon",
-        f"{RANDOMIZATION_EPSILON}",
+        f"{SUGGESTED_RANDOMIZATION_EPSILON}",
     ]
 
 
@@ -61,7 +61,7 @@ def _tool_flags(arm_name: str | None) -> list[str]:
         "--tool-greedy",
         arm,
         "--tool-epsilon",
-        f"{RANDOMIZATION_EPSILON}",
+        f"{SUGGESTED_RANDOMIZATION_EPSILON}",
     ]
 
 

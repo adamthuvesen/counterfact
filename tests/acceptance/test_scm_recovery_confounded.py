@@ -1,4 +1,4 @@
-"""Confounded-SCM engine recovery acceptance test (tasks §3).
+"""Confounded-SCM engine recovery acceptance test.
 
 The confounded SCM biases `model_choice` by the run's earlier `tool_choice`,
 creating a textbook back-door confounding scenario where the naive marginal

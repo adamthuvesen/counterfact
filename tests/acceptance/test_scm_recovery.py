@@ -1,11 +1,11 @@
-"""SCM-recovery acceptance test (tasks §7).
+"""SCM-recovery acceptance test.
 
 Generates a synthetic corpus with a known headline-intervention effect E,
 fits the outcome model, and asserts the recovered estimate matches E within
-the design.md D10 tolerance of 0.05.
+the project tolerance of 0.05.
 
-If this test fails, the autonomous loop MUST STOP — failure here means the
-entire causal pipeline is broken (design.md Risks/Trade-offs row 4).
+If this test fails, the causal pipeline is not recovering the known synthetic
+truth and downstream causal claims are suspect.
 """
 
 from __future__ import annotations

@@ -17,17 +17,17 @@ FIXTURES_ROOT = Path(__file__).resolve().parent / "fixtures"
 class FixtureSpec:
     """A single coding-agent fixture.
 
-    v0 fixtures use a single `tests/` directory; hidden-test fixtures (per the
-    `hidden-test-fixtures` change) split into `tests_public/` and
-    `tests_hidden/` and add a `spec.md`. The two layouts are distinguished by
-    whether `public_tests_relpath` and `hidden_tests_relpath` are set.
+    Single-suite fixtures use a `tests/` directory. Hidden-test fixtures split
+    feedback into `tests_public/` and `tests_hidden/` and add a `spec.md`.
+    The layouts are distinguished by whether `public_tests_relpath` and
+    `hidden_tests_relpath` are set.
     """
 
     fixture_id: str
     source_relpath: str  # path of the source file under <fixture>/src/
-    # `test_relpath` is set for v0 fixtures (single `tests/` layout) and is
+    # `test_relpath` is set for single-suite fixtures (`tests/` layout) and is
     # `None` for hidden-test fixtures, which split into `tests_public/` and
-    # `tests_hidden/`. `None` (not "") is the canonical "no v0 test" signal.
+    # `tests_hidden/`. `None` (not "") is the canonical "no single-suite test" signal.
     test_relpath: str | None = None
     public_tests_relpath: str | None = None  # under <fixture>/tests_public/
     hidden_tests_relpath: str | None = None  # under <fixture>/tests_hidden/
@@ -60,7 +60,7 @@ class FixtureSpec:
 
 
 def is_hidden_fixture(fixture: FixtureSpec) -> bool:
-    """A fixture is hidden iff it has no v0 `tests/` path and declares both
+    """A fixture is hidden iff it has no `tests/` path and declares both
     public and hidden test paths."""
     return (
         fixture.test_relpath is None
@@ -69,11 +69,9 @@ def is_hidden_fixture(fixture: FixtureSpec) -> bool:
     )
 
 
-# The original three fixtures are easy bugs that capable LLMs one-shot every
-# time (see design.md D19 + the post-mortem on the v0 200-trace corpus). They
-# are kept for harness-integration testing but excluded from the demo's causal
-# corpus by virtue of living in `EASY_FIXTURES`. The harder set in `FIXTURES`
-# is what `counterfact bench real` exercises.
+# Easy fixtures are kept for harness-integration tests and excluded from the
+# demo's causal corpus by virtue of living in `EASY_FIXTURES`. The harder set
+# in `FIXTURES` is what `counterfact bench real` exercises by default.
 EASY_FIXTURES: tuple[FixtureSpec, ...] = (
     FixtureSpec("string-utils", "normalize.py", "test_normalize.py"),
     FixtureSpec("date-utils", "parse.py", "test_parse.py"),
@@ -86,9 +84,9 @@ FIXTURES: tuple[FixtureSpec, ...] = (
     FixtureSpec("agg-with-groups", "agg.py", "test_agg.py"),
 )
 
-# Hidden-test fixtures (per the `hidden-test-fixtures` change). The agent sees
-# `src/`, `tests_public/`, and `spec.md`; `Outcome` is determined by
-# `tests_hidden/`, which is never copied into the agent's sandbox.
+# Hidden-test fixtures. The agent sees `src/`, `tests_public/`, and `spec.md`;
+# `Outcome` is determined by `tests_hidden/`, which is never copied into the
+# agent's sandbox.
 HIDDEN_FIXTURES: tuple[FixtureSpec, ...] = (
     FixtureSpec(
         "csv_dedupe",
@@ -233,8 +231,8 @@ def run_pytest_hidden(eval_workspace: Path, *, timeout_s: int = 30) -> tuple[boo
 def snapshot_fixture(fixture: FixtureSpec, dest_root: Path) -> Path:
     """Copy a fixture into a sandbox so the agent can edit without dirtying source.
 
-    For hidden-test fixtures, `tests_hidden/` is excluded — the agent must not
-    see hidden tests, by structural guarantee (per design.md D2).
+    For hidden-test fixtures, `tests_hidden/` is excluded so the agent cannot
+    see hidden tests.
     """
     dest = dest_root / fixture.fixture_id
     if dest.exists():

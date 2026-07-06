@@ -1,8 +1,7 @@
 """Claude Agent SDK → counterfact native Run adapter.
 
 Maps the message-stream shape emitted by `claude_agent_sdk.query()` onto the
-native `Run` schema. The mapping is documented in design D3 and D7 of the
-`add-agent-sdk-adapters` change.
+native `Run` schema.
 
 Inputs are JSON-serialized dicts — this module never imports `claude_agent_sdk`
 itself. The live tracing wrapper at `counterfact.tracing.ClaudeAgentTracer`
@@ -251,8 +250,8 @@ def _outcome(result: dict[str, Any] | None) -> Outcome:
 def run_from_messages(messages: list[dict[str, Any]]) -> Run:
     """Convert a list of Claude Agent SDK message dicts into a native Run.
 
-    Per design D7, each AssistantMessage starts a new step. Following
-    UserMessages carrying tool_use_result attach as observations to the
+    Each AssistantMessage starts a new step. Following UserMessages carrying
+    tool_use_result attach as observations to the
     SAME step as the tool call. SystemMessages before the first assistant
     turn land on step 0. The final ResultMessage owns its own terminal
     step.
