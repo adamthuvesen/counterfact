@@ -1,5 +1,7 @@
 # counterfact
 
+![License](https://img.shields.io/github/license/adamthuvesen/counterfact) ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+
 `counterfact` is a small research library for understanding agent decision traces through counterfactual questions.
 
 Given a decision the agent actually logged, such as a model call, tool call, retry, or stop decision, it asks:
