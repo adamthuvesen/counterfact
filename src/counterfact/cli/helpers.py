@@ -7,7 +7,6 @@ import sys
 
 from counterfact.intervene.estimate import CausalEstimate
 from counterfact.schema import Decision, Run, Step
-from counterfact.taxonomy import default_intervention_kind, first_observed_arm
 
 
 def first_step_for_decision_type(runs: list[Run], decision_type: str) -> tuple[Run, int]:
@@ -18,17 +17,6 @@ def first_step_for_decision_type(runs: list[Run], decision_type: str) -> tuple[R
             if step.decisions[0].decision_type == decision_type:
                 return run, step.step_index
     raise ValueError(f"no single-decision step found for {decision_type!r}")
-
-
-def first_arm(runs: list[Run], decision_type: str) -> str:
-    arm = first_observed_arm(runs, decision_type)
-    if arm is None:
-        raise ValueError(f"no chosen_action found for {decision_type!r}")
-    return arm
-
-
-def intervention_kind(decision_type: str) -> str:
-    return default_intervention_kind(decision_type)
 
 
 def decision_by_id(run: Run, decision_id: str) -> tuple[Step, Decision] | None:

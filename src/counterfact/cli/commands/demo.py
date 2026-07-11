@@ -3,20 +3,16 @@ from __future__ import annotations
 import argparse
 import sys
 
-from counterfact.cli import formatters, helpers, loaders
-from counterfact.cli.demo_showcase import maybe_print_contrast, resolve_demo_target
+import counterfact.cli as cli_module
+from counterfact.cli.constants import DEMO_CONTRAST_TEMPLATE
+from counterfact.cli.formatters import format_pass_rate_table
+from counterfact.cli.helpers import first_step_for_decision_type
+from counterfact.cli.loaders import demo_runs_dir, load_trace_dir, synthetic_runs
 from counterfact.intervene.degenerate import degenerate_estimate, outcome_classes
 from counterfact.intervene.estimate import CausalEstimate
 from counterfact.outcome.model import OutcomeModel
 from counterfact.schema import Run
-
-load_trace_dir = loaders.load_trace_dir
-demo_runs_dir = loaders.demo_runs_dir
-synthetic_runs = loaders.synthetic_runs
-intervention_kind = helpers.intervention_kind
-first_arm = helpers.first_arm
-first_step_for_decision_type = helpers.first_step_for_decision_type
-format_pass_rate_table = formatters.format_pass_rate_table
+from counterfact.taxonomy import default_intervention_kind, first_observed_arm
 
 
 def _load_demo_runs(args: argparse.Namespace) -> tuple[list[Run], str] | None:
@@ -46,6 +42,17 @@ def _load_demo_runs(args: argparse.Namespace) -> tuple[list[Run], str] | None:
     except ImportError as exc:
         print(f"counterfact demo: {exc}", file=sys.stderr)
         return None
+
+
+def _resolve_demo_target(args: argparse.Namespace, runs: list[Run], decision_type: str) -> str:
+    if args.target is not None:
+        return str(args.target)
+    if args.confound and decision_type == "model_call":
+        return "sonnet"
+    arm = first_observed_arm(runs, decision_type)
+    if arm is None:
+        raise ValueError(f"no chosen_action found for {decision_type!r}")
+    return arm
 
 
 def _demo_estimate(
@@ -81,9 +88,49 @@ def _demo_estimate(
     return estimate, model
 
 
-def run(args: argparse.Namespace) -> int:
+def _print_contrast(
+    *,
+    args: argparse.Namespace,
+    decision_type: str,
+    estimate: CausalEstimate,
+    model: OutcomeModel | None,
+    runs: list[Run],
+    target: str,
+    intervention_kind: str,
+) -> None:
+    """Print the naive-vs-causal gap when the confounded showcase can compute one."""
     from counterfact import intervene, pass_rate_by_arm
     from counterfact.dag import build_dag
+
+    if (
+        not args.confound
+        or decision_type != "model_call"
+        or estimate.outcome_delta is None
+        or model is None
+    ):
+        return
+    table = pass_rate_by_arm(runs, decision_type)
+    rates = {row.arm: row.pass_rate for row in table.rows}
+    sibling = "haiku" if target == "sonnet" else "sonnet"
+    if target not in rates or sibling not in rates:
+        return
+    run_for_intervene, step = first_step_for_decision_type(runs, decision_type)
+    sibling_estimate = intervene(
+        dag=build_dag(run_for_intervene),
+        model=model,
+        step=step,
+        intervention={intervention_kind: sibling},
+    )
+    if sibling_estimate.outcome_delta is None:
+        return
+    naive_gap = rates[target] - rates[sibling]
+    causal_gap = estimate.outcome_delta.point - sibling_estimate.outcome_delta.point
+    threshold = getattr(cli_module, "_DEMO_CONTRAST_THRESHOLD", cli_module.DEMO_CONTRAST_THRESHOLD)
+    if abs(naive_gap - causal_gap) >= threshold:
+        print(DEMO_CONTRAST_TEMPLATE.format(naive=naive_gap, causal=causal_gap))
+
+
+def run(args: argparse.Namespace) -> int:
     from counterfact.outcome.binary import binary_outcome_value
 
     loaded = _load_demo_runs(args)
@@ -92,10 +139,8 @@ def run(args: argparse.Namespace) -> int:
     runs, source = loaded
 
     decision_type = args.decision_type
-    ik = intervention_kind(decision_type)
-    target = resolve_demo_target(
-        args=args, runs=runs, decision_type=decision_type, first_arm_fn=first_arm
-    )
+    intervention_kind = default_intervention_kind(decision_type)
+    target = _resolve_demo_target(args, runs, decision_type)
 
     pass_count = sum(1 for run in runs if binary_outcome_value(run))
     print("counterfact demo: naive vs honest")
@@ -109,7 +154,7 @@ def run(args: argparse.Namespace) -> int:
         args=args,
         runs=runs,
         decision_type=decision_type,
-        intervention_kind=ik,
+        intervention_kind=intervention_kind,
         target=target,
     )
 
@@ -127,17 +172,13 @@ def run(args: argparse.Namespace) -> int:
     if suggested:
         print(f"suggested_command: {suggested}")
 
-    maybe_print_contrast(
+    _print_contrast(
         args=args,
         decision_type=decision_type,
         estimate=estimate,
         model=model,
         runs=runs,
         target=target,
-        intervention_kind=ik,
-        first_step_fn=first_step_for_decision_type,
-        intervene_fn=intervene,
-        build_dag_fn=build_dag,
-        pass_rate_by_arm_fn=pass_rate_by_arm,
+        intervention_kind=intervention_kind,
     )
     return 0
