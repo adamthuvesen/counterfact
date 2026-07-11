@@ -6,9 +6,6 @@ import argparse
 
 from counterfact.cli.constants import DEMO_CONTRAST_THRESHOLD
 
-# Tests monkeypatch this name on the cli module.
-_DEMO_CONTRAST_THRESHOLD = DEMO_CONTRAST_THRESHOLD
-
 
 def build_parser() -> argparse.ArgumentParser:
     from counterfact.cli.parser import build_parser as _build_parser

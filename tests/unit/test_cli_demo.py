@@ -146,9 +146,10 @@ def test_demo__confound_suppresses_contrast_line_when_gap_below_threshold(
     contrast line is suppressed — the demo never asserts a contrast the
     sample does not show."""
     import counterfact.cli as cli
+    import counterfact.cli.commands.demo as demo_module
 
     # Push the threshold above any measurable gap so the contrast can never fire.
-    monkeypatch.setattr(cli, "_DEMO_CONTRAST_THRESHOLD", 10.0)
+    monkeypatch.setattr(demo_module, "DEMO_CONTRAST_THRESHOLD", 10.0)
 
     rc = cli.main(
         [

@@ -3,8 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-import counterfact.cli as cli_module
-from counterfact.cli.constants import DEMO_CONTRAST_TEMPLATE
+from counterfact.cli.constants import DEMO_CONTRAST_TEMPLATE, DEMO_CONTRAST_THRESHOLD
 from counterfact.cli.formatters import format_pass_rate_table
 from counterfact.cli.helpers import first_step_for_decision_type
 from counterfact.cli.loaders import demo_runs_dir, load_trace_dir, synthetic_runs
@@ -125,8 +124,7 @@ def _print_contrast(
         return
     naive_gap = rates[target] - rates[sibling]
     causal_gap = estimate.outcome_delta.point - sibling_estimate.outcome_delta.point
-    threshold = getattr(cli_module, "_DEMO_CONTRAST_THRESHOLD", cli_module.DEMO_CONTRAST_THRESHOLD)
-    if abs(naive_gap - causal_gap) >= threshold:
+    if abs(naive_gap - causal_gap) >= DEMO_CONTRAST_THRESHOLD:
         print(DEMO_CONTRAST_TEMPLATE.format(naive=naive_gap, causal=causal_gap))
 
 

@@ -63,5 +63,5 @@ def degenerate_estimate(
             "estimating decision-level effects on the real corpus."
         ),
         arm_name_for_suggestion=str(target) if target is not None else None,
-        extra_payload={"arm_name": "outcome"},
+        payload_arm_name="outcome",
     )

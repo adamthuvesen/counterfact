@@ -130,7 +130,7 @@ def build_broaden_arm_support_estimate(
         "broaden_arm_support"
     ),
     arm_name_for_suggestion: str | None = None,
-    extra_payload: dict[str, Any] | None = None,
+    payload_arm_name: str | None = None,
 ) -> CausalEstimate:
     """Build a `broaden_arm_support` (or related) next-step estimate."""
     observed_payload = arm_rows_as_payload(observed_rows)
@@ -141,13 +141,11 @@ def build_broaden_arm_support_estimate(
         arm_name=arm_name_for_suggestion,
     )
     payload: dict[str, Any] = {
-        "arm_name": query.decision_type,
+        "arm_name": payload_arm_name if payload_arm_name is not None else query.decision_type,
         "missing_strata": missing_strata,
         "observed_arms": observed_payload,
         "missing_arms": missing_arms,
     }
-    if extra_payload:
-        payload.update(extra_payload)
     if suggestion is not None:
         payload["suggested_command"] = suggestion
     return CausalEstimate(

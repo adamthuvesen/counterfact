@@ -180,12 +180,8 @@ def test_degenerate_outcome_classes_rejects_non_binary_outcomes() -> None:
         outcome_classes([run])
 
 
-def test_degenerate_estimate_uses_none_step_not_negative_sentinel() -> None:
-    """Single-class degenerate corpora produce CausalEstimate.query.step=None.
-
-    None is the explicit "no focal step" value and aligns with the Optional[int]
-    type on InterventionQuery.step.
-    """
+def test_degenerate_estimate_preserves_single_class_refusal_contract() -> None:
+    """Single-class corpora produce the complete structured refusal."""
     from counterfact.intervene.degenerate import degenerate_estimate
 
     runs = [
@@ -216,6 +212,42 @@ def test_degenerate_estimate_uses_none_step_not_negative_sentinel() -> None:
     )
     assert est.query.step is None
     assert est.identifiability == IdentifiabilityStatus.UNIDENTIFIED
+    assert est.reason == (
+        "real corpus is causally degenerate: every trace has Outcome.value=False; "
+        "no outcome variation exists for an outcome model or back-door adjustment to leverage"
+    )
+    assert est.warnings == [
+        "fit_outcome_model is intentionally skipped for single-class real corpora"
+    ]
+    assert est.next_step.action == "broaden_arm_support"
+    assert est.next_step.human_text == (
+        "Collect or construct traces with both pass and fail outcomes before "
+        "estimating decision-level effects on the real corpus."
+    )
+
+    payload = est.next_step.payload
+    assert set(payload) == {
+        "arm_name",
+        "missing_strata",
+        "observed_arms",
+        "missing_arms",
+        "suggested_command",
+    }
+    assert payload["arm_name"] == "outcome"
+    assert payload["missing_strata"] == ["Outcome.value=True"]
+    assert payload["missing_arms"] == ["small", "large"]
+    assert payload["suggested_command"] == (
+        "uv run counterfact bench real --n 30 --fixture-set broad_calibration "
+        "--model-greedy large --model-epsilon 0.5"
+    )
+    assert len(payload["observed_arms"]) == 1
+    observed_arm = payload["observed_arms"][0]
+    assert observed_arm["arm"] == "haiku"
+    assert observed_arm["n"] == 3
+    assert observed_arm["pass_count"] == 0
+    assert observed_arm["pass_rate"] == 0.0
+    assert observed_arm["ci_low"] == pytest.approx(0.0, abs=1e-12)
+    assert observed_arm["ci_high"] == pytest.approx(0.5614970317550454)
 
 
 def test_intervene_query_step_accepts_none() -> None:
