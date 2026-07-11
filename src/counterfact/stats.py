@@ -8,10 +8,11 @@ import math
 Z_95: float = 1.959963984540054
 
 
-def wilson_ci(k: int, n: int, *, z: float = Z_95) -> tuple[float, float]:
-    """Wilson score interval for a binomial proportion (95% by default)."""
+def wilson_ci(k: int, n: int) -> tuple[float, float]:
+    """Wilson score interval for a binomial proportion (95%)."""
     if n == 0:
         return (0.0, 0.0)
+    z = Z_95
     p_hat = k / n
     denom = 1.0 + z * z / n
     center = (p_hat + z * z / (2 * n)) / denom

@@ -16,7 +16,7 @@ from counterfact.intervene.suggest import known_arms, suggest_harness_command
 from counterfact.outcome.model import OutcomeModel
 from counterfact.stats import Z_95, wilson_ci
 
-_IDENTIFIED_TIGHT_CI_WIDTH = 0.10
+IDENTIFIED_TIGHT_CI_WIDTH = 0.10
 
 
 def arm_table_from_model(model: OutcomeModel, feature_family: str) -> list[PassRateRow]:
@@ -114,8 +114,6 @@ def replay_inputs_for(decision_type: str, intervention_kind: str) -> list[str]:
 REPLAY_NOTE = (
     "v0 does not ship replay infrastructure; this next step is upstream of the bench harness."
 )
-
-IDENTIFIED_TIGHT_CI_WIDTH = _IDENTIFIED_TIGHT_CI_WIDTH
 
 
 def build_broaden_arm_support_estimate(

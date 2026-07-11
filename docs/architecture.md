@@ -60,7 +60,7 @@ Reading order if you have fifteen minutes and want to evaluate the codebase inst
 2. **`src/counterfact/taxonomy/types.py`** - the decision-type taxonomy. This drives DAG edges and marks some interventions as valid and others as structurally unanswerable.
 3. **`src/counterfact/dag/graph.py`** - how a single trace becomes an inspectable graph. The graph is built from logged structure, not learned.
 4. **`src/counterfact/outcome/model.py`** - featurization and the bootstrap fit. Notice the single-class refusal path.
-5. **`src/counterfact/intervene/api.py`** - thin `intervene()` entry; **`intervene/dispatch.py`** - stance handlers; **`stats.py`** - shared Wilson/z helpers; **`trace_localization.py`** - duplicate-step honesty; **`cli/`** - decomposed CLI package (`commands/`, `parser.py`, `demo_showcase.py`).
+5. **`src/counterfact/intervene/api.py`** - thin `intervene()` entry; **`intervene/dispatch.py`** - stance handlers; **`stats.py`** - shared Wilson/z helpers; **`trace_localization.py`** - duplicate-step honesty; **`cli/`** - decomposed CLI package (`commands/`, `parser.py`).
 6. **`src/counterfact/intervene/estimate.py`** - the `CausalEstimate` and `NextStep` schemas. The output shape is the contract with every downstream consumer.
 7. **`src/counterfact/attribute/failure.py`** - per-decision attribution ranking that powers `counterfact diagnose`.
 8. **`tests/acceptance/test_scm_recovery.py`** - the canonical "we recover the synthetic ground truth within tolerance" test. This is the proof the engine is doing what it claims.
