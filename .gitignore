@@ -37,9 +37,6 @@ htmlcov/
 .codex/
 .claude/settings.local.json
 .claude/projects/
-.claude/commands/opsx/
-.claude/skills/openspec-*/
-openspec/
 worktrees/
 
 # Data + experiment outputs
