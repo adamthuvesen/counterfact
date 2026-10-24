@@ -9,6 +9,7 @@ from counterfact.cli.constants import BENCH_UNAVAILABLE_MESSAGE
 
 def run(args: argparse.Namespace) -> int:
     try:
+        from bench.synthetic.policy_suite import run_policy_suite
         from bench.synthetic.suite import run_suite, to_markdown, write_outputs
     except ImportError:
         print(BENCH_UNAVAILABLE_MESSAGE, file=sys.stderr)
@@ -19,11 +20,18 @@ def run(args: argparse.Namespace) -> int:
     except KeyError as exc:
         print(f"counterfact bench suite: {exc.args[0]}", file=sys.stderr)
         return 2
+    # A --scenario filter narrows the run to those single-decision scenarios.
+    policies = [] if args.scenario else run_policy_suite(args.seeds, workers=args.workers)
     command = "uv run counterfact " + shlex.join(sys.argv[1:])
     if args.markdown is None:
-        print(to_markdown(summaries, seeds=args.seeds, command=command), end="")
+        print(to_markdown(summaries, policies, seeds=args.seeds, command=command), end="")
     write_outputs(
-        summaries, seeds=args.seeds, command=command, markdown=args.markdown, json_path=args.json
+        summaries,
+        policies,
+        seeds=args.seeds,
+        command=command,
+        markdown=args.markdown,
+        json_path=args.json,
     )
     for path in (args.markdown, args.json):
         if path is not None:
