@@ -304,3 +304,13 @@ def test_controlled_decisions_are_ordered_by_step_index_not_list_position() -> N
     refused = evaluate_policy(split, policy)
     assert refused.identifiability == IdentifiabilityStatus.UNIDENTIFIED
     assert "cannot be ordered" in (refused.reason or "")
+
+
+def test_policy_that_never_acts_on_the_corpus_is_unidentified(sequential_runs: list[Run]) -> None:
+    estimate = evaluate_policy(
+        sequential_runs,
+        Policy(name="memory", rules=[{"decision_type": "memory_read", "action": "all"}]),
+    )
+
+    assert estimate.identifiability == IdentifiabilityStatus.UNIDENTIFIED
+    assert "no run contains" in (estimate.reason or "")
