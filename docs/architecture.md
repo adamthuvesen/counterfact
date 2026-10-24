@@ -1,6 +1,6 @@
 # Architecture
 
-A five-minute orientation for someone evaluating this codebase. The README covers what `counterfact` does and how to drive it; this document explains why it is shaped the way it is and where to read first.
+A five-minute orientation for someone evaluating this codebase. The README covers what `counterfact` does, and `docs/usage.md` covers how to drive it. This document explains why it is shaped the way it is and where to read first.
 
 ## 1. Why this exists
 
@@ -10,11 +10,7 @@ Naive pass-rate analysis on agent traces is misleading because logged decisions 
 
 ## 2. The insight
 
-Identifiability-first design. Every causal answer carries a label. That label is the load-bearing field.
-
-- `identified` - every analyzed run logs the propensity of its chosen arm, and both contrasted arms had positive probability on every run. You get a cross-fitted AIPW contrast with a 95% influence-function CI.
-- `bounded` - both arms have support, but the corpus does not log randomized assignment. A point estimate would need a no-unmeasured-confounding assumption that the traces cannot support. You get Manski no-assumption bounds, and `None` when the data cannot support any.
-- `unidentified` - the question is structurally unanswerable from this corpus. You get a `next_step` describing what would need to change, such as more data, a randomized arm, or a replay of the original prompt.
+Identifiability comes first. Every causal answer carries a label (`identified`, `bounded`, or `unidentified`), and the label is the field that matters most. The README defines the labels, and [report §2](report.md#2-identification-as-a-data-check) gives the exact rules.
 
 The product stance is short: an honest `unidentified` beats a confident wrong number. The CLI, the HTML report, the attribution ranker, and the demos refuse to render numeric effects when the underlying estimate is unidentified.
 
@@ -65,20 +61,20 @@ Reading order if you have fifteen minutes and want to evaluate the codebase inst
 2. **`src/counterfact/taxonomy/types.py`** - the decision-type taxonomy. This drives DAG edges and marks some interventions as valid and others as structurally unanswerable.
 3. **`src/counterfact/dag/graph.py`** - how a single trace becomes an inspectable graph. The graph is built from logged structure, not learned.
 4. **`src/counterfact/outcome/model.py`** - featurization and corpus validation. Notice the single-class refusal path.
-5. **`src/counterfact/intervene/api.py`** - thin `intervene()` entry; **`intervene/dispatch.py`** - stance handlers; **`intervene/estimators.py`** - randomization check, AIPW, Manski bounds; **`stats.py`** - shared Wilson/z helpers; **`trace_localization.py`** - duplicate-step honesty; **`cli/`** - decomposed CLI package (`commands/`, `parser.py`).
+5. **`src/counterfact/intervene/`** - `api.py` is the `intervene()` entry point, `dispatch.py` routes each question by decision type, and `estimators.py` holds the randomization check, AIPW, and Manski bounds.
 6. **`src/counterfact/intervene/estimate.py`** - the `CausalEstimate` and `NextStep` schemas. The output shape is the contract with every downstream consumer.
 7. **`src/counterfact/policy/evaluate.py`** - off-policy evaluation of whole agent policies over decision sequences: identification per controlled decision, then cross-fitted sequential doubly robust estimation.
 8. **`src/counterfact/attribute/failure.py`** - per-decision attribution ranking that powers `counterfact diagnose`.
-9. **`tests/acceptance/test_scm_recovery.py`** - the canonical "we recover the synthetic ground truth within tolerance" test. This is the proof the engine is doing what it claims.
+9. **`bench/synthetic/scenarios.py`** and **`bench/synthetic/suite.py`** - the benchmark that scores the engine against causal models with exact true effects.
 
 ## 6. Why bench/ is separate
 
 `bench/` contains two things that do not belong in the published library.
 
 - `bench/synthetic/` - a deterministic structural causal model that generates traces with known ground-truth effects. `tests/acceptance/test_scm_recovery.py` runs against it to check that the engine recovers the truth within tolerance.
-- `bench/real/` - a real coding-agent harness that calls actual LLMs (via `litellm`) on fixture coding tasks and writes counterfact-shaped traces. It costs money to run, requires a `.counterfact/approved` marker, and halts at 80% of its budget cap.
+- `bench/real/` - a real coding-agent harness that calls actual LLMs (via `litellm`) on fixture coding tasks and writes counterfact-shaped traces. It costs money to run, requires a `.counterfact/approved` approval receipt, and halts at 80% of its budget cap.
 
-`bench/` is excluded from the installable wheel. `pip install counterfact` gives you the library only. A dev install (`pip install -e ".[dev,bench]"`) gets you the harness as well. This separation keeps the published package small and dep-light while the harness stays available for development and benchmarking.
+The wheel ships only `src/counterfact`, which keeps the package small. The harness needs a checkout and the `bench` extra (`uv sync --extra dev --extra bench`).
 
 ---
 
