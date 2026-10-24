@@ -57,6 +57,3 @@ bench/real/runs_pilot_*/
 bench/real/pilot_*/
 bench/real/_archive/
 bench/synthetic/_out/
-
-# uv
-uv.lock
