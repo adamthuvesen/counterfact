@@ -12,8 +12,8 @@ It exists because naive pass-rate analysis on agent traces is misleading: logged
 
 Every answer carries an identifiability label. Read that label before you read the point estimate:
 
-- `identified` - the corpus supports a point estimate under the graph, support, and assumptions. You get an effect with a bootstrap CI.
-- `bounded` - a point estimate is not supported, but sensitivity bounds are. You get the bounds, or `None` when the data cannot support any.
+- `identified` - the corpus logs randomized assignment (propensities) with positive probability for both arms. You get a cross-fitted AIPW contrast with a 95% CI, plus g-formula and IPW cross-checks.
+- `bounded` - both arms have support, but the corpus does not log randomization, so a point estimate would assume no unmeasured confounding. You get Manski no-assumption bounds, or `None` when the data cannot support any.
 - `unidentified` - the corpus cannot answer the question without more data, stronger assumptions, or replay. You get a concrete `next_step` instead of a number.
 
 For the design philosophy and a reading guide through the source, see [`docs/architecture.md`](docs/architecture.md).
@@ -52,14 +52,18 @@ arm              n  pass  rate    95% CI
 haiku          581   212 0.365  [0.327, 0.405]
 sonnet         419   302 0.721  [0.676, 0.762]
 
-intervene(model_call -> sonnet)
+intervene(model_call: haiku -> sonnet)
 identifiability: identified
-outcome_delta: 0.663 [0.617, 0.707]
-next_step: none - CI width 0.090 ≤ 0.10; no further action required.
-naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (do-calculus, g-formula) = +0.251; the marginal table overstates what the corpus supports — see DAG and assumptions.
+outcome_delta: +0.255 [+0.179, +0.330]  (AIPW, cross-fit)
+cross-check: g-formula +0.251, IPW +0.251; min propensity 0.20/0.20
+next_step: increase_n - CI width 0.150 > 0.10; ~1351 traces would tighten it.
+suggested_command: uv run counterfact bench real --n 1351 --fixture-set broad_calibration
+naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (AIPW) = +0.255; the marginal table overstates what the corpus supports — see DAG and assumptions.
 ```
 
-The table says what happened in the logged corpus. The intervention estimate asks what the model predicts under a declared decision edit. Those are different claims, and the demo shows them disagreeing on purpose.
+The table says what happened in the logged corpus. The intervention estimate is the contrast `E[Y | do(sonnet)] - E[Y | do(haiku)]`. It uses the logged propensities and adjusts only for decisions made before `model_call`. Those are different claims, and the demo shows them disagreeing on purpose. The truth under the synthetic SCM is +0.233.
+
+Identification is checked against the data, not declared. Remove the confounder and the logged propensities from the same corpus, and `intervene` returns `bounded` with Manski bounds of [-0.36, +0.64] instead of a confident wrong number. `tests/acceptance/test_scm_recovery_confounded.py` pins that behavior.
 
 To run `counterfact` on your own agent, you need a corpus of traces. Drop them in, then diagnose one run against the corpus:
 
@@ -198,9 +202,11 @@ This writes a self-contained HTML report and prints the resolved report path, fo
 ```bash
 uv run counterfact intervene bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000000.json \
   --runs-dir bench/real/smoke_mixed_outcome \
-  --decision-id <decision-id> \
-  --set model_choice=large
+  --decision-id d-000000-model-1 \
+  --set model_choice=small
 ```
+
+This trace chose `large`, so the answer is the contrast `E[Y | do(small)] - E[Y | do(large)]`. On the committed corpus it is `identified` at -0.656 [-0.792, -0.519], with g-formula and IPW cross-checks. Pass `--baseline <arm>` to contrast against an arm other than the logged one.
 
 Decision IDs are listed in the trace timeline rendered by `counterfact explain`.
 
@@ -210,8 +216,8 @@ Prefer `--decision-id` for precise targeting. `--step <n>` is accepted only when
 
 Useful trace-level questions:
 
-- wrong model choice: `--set model_choice=large`
-- logged temperature choice: `--set temperature=0.7` when model-call traces include `metadata.model_config.temperature`
+- wrong model choice: `--set model_choice=small`
+- logged temperature choice: `--set temperature=0.7`. Temperature is logged as metadata, not as a randomized arm, so this returns `bounded` with Manski bounds
 - bad tool choice: `--set tool_choice=run_tests`
 - missed retry: `--set retry_policy=retry_once`
 - stopped too early: inspect the termination decision in `counterfact explain`
@@ -290,7 +296,7 @@ from counterfact.schema import Run
 runs = [Run.model_validate(trace) for trace in generate_traces(n=500, seed=42)]
 
 table = pass_rate_by_arm(runs, "model_call")
-model = fit_outcome_model(runs, n_bootstrap=200, seed=42)
+model = fit_outcome_model(runs, seed=42)
 dag = build_dag(runs[0])
 
 estimate = intervene(
@@ -298,6 +304,7 @@ estimate = intervene(
     model=model,
     step=2,
     intervention={"model_choice": "sonnet"},
+    baseline="haiku",
 )
 
 print(table)
@@ -311,8 +318,8 @@ print(estimate.next_step)
 - `Run`: one agent trace with steps, decisions, observations, and a final outcome.
 - `Decision`: a logged choice such as `model_call`, `tool_call`, `retry`, `plan_step`, `memory_read`, or `termination`.
 - `build_dag()`: builds an inspectable per-trace graph from logged structure. The graph is not learned from data.
-- `fit_outcome_model()`: fits a transparent binary outcome model over a corpus. Single-class corpora return `unidentified` instead of pretending to fit.
-- `intervene()`: estimates a proposed decision edit and returns a structured `CausalEstimate`.
+- `fit_outcome_model()`: validates a corpus and fits a transparent binary outcome model over it. Single-class corpora return `unidentified` instead of pretending to fit.
+- `intervene()`: estimates `E[Y | do(target)] - E[Y | do(baseline)]` for one decision and returns a structured `CausalEstimate`. The baseline defaults to the arm the trace chose.
 - `pass_rate_by_arm()`: descriptive baseline, not a causal claim.
 
 ## Real-Agent Trace Corpora
