@@ -211,15 +211,11 @@ def test_degenerate_estimate_preserves_single_class_refusal_contract() -> None:
         "missing_strata",
         "observed_arms",
         "missing_arms",
-        "suggested_command",
     }
     assert payload["arm_name"] == "outcome"
     assert payload["missing_strata"] == ["Outcome.value=True"]
     assert payload["missing_arms"] == ["small", "large"]
-    assert payload["suggested_command"] == (
-        "uv run counterfact bench real --n 30 --fixture-set broad_calibration "
-        "--model-greedy large --model-epsilon 0.5"
-    )
+    # Stub traces did not come from `bench real`, so no harness command is suggested.
     assert len(payload["observed_arms"]) == 1
     observed_arm = payload["observed_arms"][0]
     assert observed_arm["arm"] == "haiku"
@@ -384,13 +380,11 @@ def test_intervene__increase_n_uses_training_trace_count(
     assert est.next_step.payload["current_n"] == len(small_corpus)
 
 
-def test_intervene__increase_n_power_method_two_arm_matches_power_analysis(
-    small_corpus: list[Run], fitted: object, not_run_tests_run: Run
+def test_intervene__increase_n_projection_reaches_the_target_width(
+    fitted: object, not_run_tests_run: Run
 ) -> None:
-    """Two-arm corpus: power_method=binomial_wald_two_arm, agrees with
-    counterfact.power_analysis to within ±1 trace."""
-    from counterfact import power_analysis
-
+    """The suggested n comes from scaling the AIPW CI. Collecting that many
+    traces from the same process must actually bring the CI near the target."""
     est = intervene(
         dag=_dag(not_run_tests_run),
         model=fitted,
@@ -398,33 +392,22 @@ def test_intervene__increase_n_power_method_two_arm_matches_power_analysis(
         intervention={"tool_choice": "run_tests"},
     )
     payload = est.next_step.payload
-    assert payload["power_method"] == "binomial_wald_two_arm"
-    arm_breakdown = payload["arm_breakdown"]
-    assert isinstance(arm_breakdown, list)
-    assert all({"arm", "n", "pass_count", "pass_rate"} <= set(r) for r in arm_breakdown)
-    # Two arms must be present for the synthetic SCM (run_tests + at least one other)
-    assert len({r["arm"] for r in arm_breakdown}) >= 2
+    assert payload["power_method"] == "aipw_influence_scaling"
+    required = payload["estimated_required_n"]
 
-    # Cross-check against power_analysis on the same corpus.
-    target_arm = "run_tests"
-    other_arm = est.query.baseline
-    pr = power_analysis(
-        small_corpus,
-        decision_type="tool_call",
-        arms=(target_arm, other_arm),
-        target_ci_width=0.10,
+    bigger = [Run.model_validate(t) for t in generate_traces(n=required, seed=2)]
+    focal = next(r for r in bigger if r.steps[1].decisions[0].chosen_action != "run_tests")
+    rerun = intervene(
+        dag=_dag(focal),
+        model=fit_outcome_model(bigger, seed=2),
+        step=1,
+        intervention={"tool_choice": "run_tests"},
+        baseline=est.query.baseline,
     )
-    assert pr.estimated_required_n is not None
-    # The engine works off the model's one-hot per-trace view; power_analysis
-    # works off per-decision counts. They diverge by O(1%) on multi-decision
-    # corpora — a small relative tolerance is the right contract.
-    rel_diff = abs(payload["estimated_required_n"] - pr.estimated_required_n) / max(
-        pr.estimated_required_n, 1
-    )
-    assert rel_diff < 0.05, (
-        f"engine n={payload['estimated_required_n']} vs "
-        f"power_analysis n={pr.estimated_required_n}: rel_diff={rel_diff:.3f}"
-    )
+    assert rerun.outcome_delta is not None
+    width = rerun.outcome_delta.ci_high - rerun.outcome_delta.ci_low
+    # The projection is a scaling estimate, so allow sampling slack around 0.10.
+    assert width < payload["target_ci_width"] * 1.15
 
 
 def test_intervene__multi_decision_step_raises_clear_error(fitted: object) -> None:

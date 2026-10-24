@@ -13,6 +13,7 @@ from typing import Any
 
 from counterfact.baselines import pass_rate_by_arm
 from counterfact.intervene.estimate import CausalEstimate, InterventionQuery
+from counterfact.intervene.suggest import fit_suggestion_to_corpus
 from counterfact.intervene.support import build_broaden_arm_support_estimate, missing_arms_for
 from counterfact.outcome.binary import binary_outcome_value
 from counterfact.schema import Run
@@ -42,7 +43,7 @@ def degenerate_estimate(
     table = pass_rate_by_arm(runs, decision_type)
     observed_arm_names = [row.arm for row in table.rows]
 
-    return build_broaden_arm_support_estimate(
+    estimate = build_broaden_arm_support_estimate(
         InterventionQuery(
             decision_type=decision_type,
             intervention_kind=intervention_kind,
@@ -65,3 +66,4 @@ def degenerate_estimate(
         arm_name_for_suggestion=str(target) if target is not None else None,
         payload_arm_name="outcome",
     )
+    return fit_suggestion_to_corpus(estimate, runs)
