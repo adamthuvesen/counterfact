@@ -1176,3 +1176,100 @@ def test_analyze_pilot_counts_public_failure(tmp_path: Path) -> None:
 
     report = analyze(tmp_path)
     assert report["failure_modes"]["public_failure"] == 1
+
+
+def test_routed_trial_logs_both_designs_and_runs_end_to_end(tmp_path: Path) -> None:
+    """With fixture routing on, one approved command writes runs from both
+    logged designs, each with a propensity that matches its design."""
+    output = tmp_path / "out"
+    marker = tmp_path / ".counterfact" / "approved"
+    fixture_ids = (EASY_FIXTURES[0].fixture_id, EASY_FIXTURES[1].fixture_id)
+    route = {fixture_ids[0]: 0.9, fixture_ids[1]: 0.1}
+    config = AgentRunConfig(model_route_by_fixture=route)
+    _write_approval(
+        marker, n=24, budget_cap_usd=5.0, output_dir=output, config=config, fixture_ids=fixture_ids
+    )
+
+    class _NullLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text="(no patch)", cost_usd=0.0)
+
+    rc = run_real_corpus(
+        n=24,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        config=config,
+        llm_client_factory=lambda: _NullLLM(),
+        marker_path=marker,
+        fixture_ids=fixture_ids,
+    )
+
+    assert rc == 0
+    designs = set()
+    for path in output.glob("real-*.json"):
+        run = Run.model_validate_json(path.read_text())
+        first = next(d for s in run.steps for d in s.decisions if d.decision_type == "model_call")
+        p_large = first.policy_params["p_large"]
+        expected_p = 0.5 if first.policy == "trial" else route[run.outcome.metadata["fixture_id"]]
+        assert p_large == expected_p
+        assert first.propensity == pytest.approx(
+            p_large if first.chosen_action == "large" else 1 - p_large
+        )
+        designs.add(first.policy)
+    assert designs == {"trial", "fixture_router"}
+    receipt = approval_receipt_template(
+        n=24,
+        budget_cap_usd=5.0,
+        output_dir=output,
+        fixtures=resolve_fixtures(fixture_ids, None),
+        config=config,
+        role_to_model=ROLE_TO_MODEL,
+    )
+    assert receipt["config"]["model_route_by_fixture"] == dict(sorted(route.items()))
+
+
+def test_unrouted_receipt_has_no_route_key() -> None:
+    receipt = approval_receipt_template(
+        n=1,
+        budget_cap_usd=1.0,
+        output_dir=Path("x"),
+        fixtures=resolve_fixtures(None, None),
+        config=AgentRunConfig(),
+        role_to_model=ROLE_TO_MODEL,
+    )
+    assert "model_route_by_fixture" not in receipt["config"]
+
+
+@pytest.mark.parametrize(
+    ("route", "message"),
+    [
+        ({"date-utils": 0.5}, "exactly the run's fixtures"),
+        ({"string-utils": 1.0, "date-utils": 0.5}, "strictly between 0 and 1"),
+    ],
+)
+def test_bad_route_is_rejected_before_any_api_call(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], route: dict[str, float], message: str
+) -> None:
+    class _ExplodingLLM:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            raise AssertionError("LLM was invoked despite an invalid route")
+
+    rc = run_real_corpus(
+        n=1,
+        budget_cap_usd=1.0,
+        output_dir=tmp_path / "out",
+        config=AgentRunConfig(model_route_by_fixture=route),
+        llm_client_factory=lambda: _ExplodingLLM(),
+        marker_path=tmp_path / "approved",
+        fixture_ids=("string-utils", "date-utils"),
+    )
+
+    assert rc == 2
+    assert message in capsys.readouterr().err
+
+
+def test_route_flag_rejects_a_repeated_fixture() -> None:
+    from counterfact.cli.commands.bench_real import _parse_route
+
+    with pytest.raises(ValueError, match="appears twice"):
+        _parse_route("date-utils=0.2,date-utils=0.9")

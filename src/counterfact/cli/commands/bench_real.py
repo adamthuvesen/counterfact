@@ -14,6 +14,11 @@ def run(args: argparse.Namespace) -> int:
         print(BENCH_UNAVAILABLE_MESSAGE, file=sys.stderr)
         return 2
 
+    try:
+        route = _parse_route(args.model_route_by_fixture)
+    except ValueError as exc:
+        print(f"counterfact bench real: {exc}", file=sys.stderr)
+        return 2
     config = AgentRunConfig(
         seed=args.seed,
         epsilon=args.epsilon,
@@ -23,6 +28,7 @@ def run(args: argparse.Namespace) -> int:
         model_epsilon=args.model_epsilon,
         retry_greedy=args.retry_greedy,
         retry_epsilon=args.retry_epsilon,
+        model_route_by_fixture=route,
     )
     fixture_ids = (
         tuple(s.strip() for s in args.fixtures.split(",") if s.strip()) if args.fixtures else None
@@ -35,3 +41,20 @@ def run(args: argparse.Namespace) -> int:
         fixture_ids=fixture_ids,
         fixture_set=args.fixture_set,
     )
+
+
+def _parse_route(raw: str | None) -> dict[str, float] | None:
+    if raw is None:
+        return None
+    route: dict[str, float] = {}
+    for pair in (p.strip() for p in raw.split(",") if p.strip()):
+        fixture_id, sep, value = pair.partition("=")
+        if not sep:
+            raise ValueError(f"--model-route-by-fixture: expected fixture_id=P, got {pair!r}")
+        if fixture_id.strip() in route:
+            raise ValueError(f"--model-route-by-fixture: {fixture_id.strip()!r} appears twice")
+        try:
+            route[fixture_id.strip()] = float(value)
+        except ValueError:
+            raise ValueError(f"--model-route-by-fixture: {value!r} is not a probability") from None
+    return route

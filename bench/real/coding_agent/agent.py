@@ -46,6 +46,11 @@ DEFAULT_MAX_STEPS = 8
 TOOL_ARMS: list[str] = ["inspect_file", "run_tests"]
 MODEL_ARMS: list[str] = ["small", "large"]
 RETRY_ARMS: list[str] = ["no_retry", "retry_once"]
+# With fixture routing on, each run is randomized into one of two logged
+# designs: a 50/50 trial that serves as ground truth, or the fixture router
+# whose propensities depend on the task. One approved command yields both.
+TRIAL_SHARE = 0.5
+TRIAL_P_LARGE = 0.5
 
 _FIX_PROMPT = """\
 You are a small coding agent. The repository under {root} contains a Python
@@ -252,6 +257,8 @@ class AgentRunConfig:
     model_epsilon: float | None = None
     retry_greedy: str = "retry_once"
     retry_epsilon: float | None = None
+    # fixture_id -> P(large) under the fixture router; None keeps ε-greedy.
+    model_route_by_fixture: dict[str, float] | None = None
 
     def resolved_tool_epsilon(self) -> float:
         return self.epsilon if self.tool_epsilon is None else self.tool_epsilon
@@ -261,6 +268,23 @@ class AgentRunConfig:
 
     def resolved_retry_epsilon(self) -> float:
         return self.epsilon if self.retry_epsilon is None else self.retry_epsilon
+
+
+def routed_model_choice(
+    p_large_routed: float, rng: random.Random
+) -> tuple[str, float, str, dict[str, object]]:
+    """Draw the design, then the model; return (action, propensity, policy, params).
+
+    The logged propensity is conditional on the logged design, which is itself
+    randomized, so each design's runs form a valid corpus on their own.
+    """
+    if rng.random() < TRIAL_SHARE:
+        design, p_large = "trial", TRIAL_P_LARGE
+    else:
+        design, p_large = "fixture_router", p_large_routed
+    action = "large" if rng.random() < p_large else "small"
+    propensity = p_large if action == "large" else 1.0 - p_large
+    return action, propensity, design, {"p_large": p_large}
 
 
 def run_one_trace(
@@ -369,7 +393,16 @@ def run_one_trace(
     step_index += 1
 
     # ----- Step 3: model_call (ε-greedy on model_choice) -----
-    model_action, model_prop = eg_model.choose(MODEL_ARMS, greedy=config.model_greedy)
+    if config.model_route_by_fixture is None:
+        model_action, model_prop = eg_model.choose(MODEL_ARMS, greedy=config.model_greedy)
+        model_policy = "epsilon_greedy"
+        model_params: dict[str, object] = {"epsilon": model_eps, "greedy": config.model_greedy}
+    else:
+        # A separate stream keeps every ε-greedy draw identical to unrouted runs.
+        design_rng = random.Random(f"design:{config.seed}:{run_index}")
+        model_action, model_prop, model_policy, model_params = routed_model_choice(
+            config.model_route_by_fixture[fixture.fixture_id], design_rng
+        )
     prompt = build_fix_prompt(fixture, sandbox)
     resp = llm.call(role=model_action, prompt=prompt)
     _charge(budget, resp.cost_usd, ledger_path)
@@ -383,8 +416,8 @@ def run_one_trace(
                     decision_id=f"d-{run_index:06d}-model-1",
                     decision_type="model_call",
                     chosen_action=model_action,
-                    policy="epsilon_greedy",
-                    policy_params={"epsilon": model_eps, "greedy": config.model_greedy},
+                    policy=model_policy,
+                    policy_params=model_params,
                     valid_actions=list(MODEL_ARMS),
                     propensity=model_prop,
                     context_features={"prompt_chars": len(prompt), "attempt": 1},
@@ -478,8 +511,8 @@ def run_one_trace(
                     decision_id=f"d-{run_index:06d}-model-2",
                     decision_type="model_call",
                     chosen_action=model_action,
-                    policy="epsilon_greedy",
-                    policy_params={"epsilon": model_eps, "greedy": config.model_greedy},
+                    policy=model_policy,
+                    policy_params=model_params,
                     valid_actions=list(MODEL_ARMS),
                     propensity=model_prop,
                     context_features={

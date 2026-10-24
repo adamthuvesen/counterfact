@@ -214,6 +214,12 @@ def _run_identity(
             "model_epsilon": config.resolved_model_epsilon(),
             "retry_greedy": config.retry_greedy,
             "retry_epsilon": config.resolved_retry_epsilon(),
+            # Present only when routing is on, so receipts for unrouted commands still match.
+            **(
+                {"model_route_by_fixture": dict(sorted(config.model_route_by_fixture.items()))}
+                if config.model_route_by_fixture is not None
+                else {}
+            ),
         },
         "role_to_model": dict(sorted(role_to_model.items())),
     }
@@ -375,6 +381,23 @@ def resolve_fixtures(
     return FIXTURES
 
 
+def _route_error(config: AgentRunConfig, fixtures: tuple[FixtureSpec, ...]) -> str | None:
+    route = config.model_route_by_fixture
+    if route is None:
+        return None
+    ids = {fx.fixture_id for fx in fixtures}
+    if set(route) != ids:
+        return (
+            f"--model-route-by-fixture must name exactly the run's fixtures {sorted(ids)}; "
+            f"got {sorted(route)}"
+        )
+    outside = {k: v for k, v in route.items() if not 0.0 < v < 1.0}
+    if outside:
+        # 0 or 1 would give an arm zero probability, which no estimator can recover.
+        return f"route probabilities must be strictly between 0 and 1; got {outside}"
+    return None
+
+
 def run_real_corpus(
     *,
     n: int,
@@ -396,6 +419,10 @@ def run_real_corpus(
     """
     config = config or AgentRunConfig()
     fixtures = resolve_fixtures(fixture_ids, fixture_set)
+    route_error = _route_error(config, fixtures)
+    if route_error is not None:
+        print(f"counterfact bench real: {route_error}", file=sys.stderr)
+        return 2
     approval_path = marker_path or APPROVAL_MARKER
     expected_receipt = approval_receipt_template(
         n=n,
