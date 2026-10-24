@@ -84,6 +84,25 @@ approved pilot, inspect the failure-mode table before promoting anything; the
 streaming fixture is useful only if misses are genuine stateful-semantics misses
 rather than missing patches or harness failures.
 
+## Routed trial: ground truth for the engine
+
+`--model-route-by-fixture` turns one approved command into an experiment with its own ground truth. Each run is randomized into one of two logged designs for the first `model_call`:
+
+- `trial`: P(large) = 0.5 on every fixture. Its difference in pass rates is an unbiased estimate of the true effect.
+- `fixture_router`: P(large) is set per fixture. Fixtures differ in difficulty, so a naive comparison of these runs is confounded, the way a production router that escalates hard tasks would be.
+
+```bash
+counterfact bench real --n 800 \
+  --fixtures streaming_watermark_dedupe,date_window,rate_limit,csv-stats \
+  --model-route-by-fixture streaming_watermark_dedupe=0.85,date_window=0.7,rate_limit=0.3,csv-stats=0.15 \
+  --tool-epsilon 0.0 --retry-epsilon 0.0 \
+  --budget-cap 18 \
+  --output-dir bench/real/pilot_routed_trial_2026-10-24
+python -m bench.real.analyze_routed_trial bench/real/pilot_routed_trial_2026-10-24
+```
+
+The analysis compares the naive gap and the engine's AIPW estimate on the routed runs against the trial truth. It then removes the propensities from the routed runs and checks that the engine refuses. The route map must name exactly the run's fixtures, with every probability strictly between 0 and 1.
+
 ## Why no auto-rename?
 
 Auto-promotion on `promote: True` would silently turn the analyzer's verdict
