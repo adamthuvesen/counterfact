@@ -57,7 +57,10 @@ def _run(i: int, rng: random.Random) -> Run:
 
 def test_engine_matches_trial_truth_and_naive_does_not() -> None:
     rng = random.Random(0)
-    report = analyze([_run(i, rng) for i in range(4000)])
+    runs = [_run(i, rng) for i in range(4000)]
+    # Put a retried run first: it must not become the focal trace.
+    runs.sort(key=lambda r: len(r.steps), reverse=True)
+    report = analyze(runs)
     truth = 0.5 * ((0.6 - 0.15) + (0.95 - 0.8))  # +0.30
 
     assert abs(report.trial_effect - truth) < 3 * report.trial_se
