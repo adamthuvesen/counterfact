@@ -875,3 +875,105 @@ def test_intervene__single_class_among_runs_reaching_decision_is_unidentified() 
     assert est.identifiability == IdentifiabilityStatus.UNIDENTIFIED
     assert est.outcome_delta is None
     assert est.next_step.payload["missing_strata"] == ["Outcome.value=False"]
+
+
+def test_intervene__three_arm_policy_without_reconstructable_mass_is_bounded() -> None:
+    """Every run logs a chosen-arm propensity below 1, but under an unknown
+    3-arm policy that never proves `search_docs` had positive probability on
+    runs that chose another arm. Menu membership alone must not identify."""
+    arms = ["run_tests", "inspect_file", "search_docs"]
+    runs = [
+        Run(
+            schema_version="0.1.0",
+            run_id=f"three-{i}",
+            steps=[
+                Step(
+                    step_index=0,
+                    decisions=[
+                        Decision(
+                            decision_id=f"d-three-{i}",
+                            decision_type="tool_call",
+                            chosen_action=arms[i % 3],
+                            policy="learned_router",
+                            policy_params={},
+                            valid_actions=arms,
+                            propensity=0.6,
+                            context_features={},
+                        )
+                    ],
+                )
+            ],
+            outcome=Outcome(kind="binary", value=bool(i % 2), verifier="test"),
+        )
+        for i in range(30)
+    ]
+
+    est = intervene(
+        dag=build_dag(runs[0]),
+        model=fit_outcome_model(runs, seed=0),
+        step=0,
+        intervention={"tool_choice": "search_docs"},
+    )
+
+    assert est.identifiability == IdentifiabilityStatus.BOUNDED
+    assert any("cannot be reconstructed" in g for g in est.next_step.payload["randomization_gaps"])
+
+
+def test_intervene__same_step_decisions_are_not_adjusted_for() -> None:
+    """A decision logged in the same step as the treatment may be simultaneous
+    or downstream, so only strictly earlier steps enter the adjustment set."""
+    runs = []
+    for i in range(40):
+        model_arm = "sonnet" if i % 2 else "haiku"
+        runs.append(
+            Run(
+                schema_version="0.1.0",
+                run_id=f"same-{i}",
+                steps=[
+                    Step(
+                        step_index=0,
+                        decisions=[
+                            Decision(
+                                decision_id=f"d-tool-{i}",
+                                decision_type="tool_call",
+                                chosen_action="run_tests" if i % 4 < 2 else "inspect_file",
+                            )
+                        ],
+                    ),
+                    Step(
+                        step_index=1,
+                        decisions=[
+                            Decision(
+                                decision_id=f"d-retry-{i}",
+                                decision_type="retry",
+                                chosen_action="retry_once" if i % 3 else "no_retry",
+                            ),
+                            Decision(
+                                decision_id=f"d-model-{i}",
+                                decision_type="model_call",
+                                chosen_action=model_arm,
+                                policy="uniform",
+                                policy_params={},
+                                valid_actions=["haiku", "sonnet"],
+                                propensity=0.5,
+                                context_features={},
+                            ),
+                        ],
+                    ),
+                ],
+                outcome=Outcome(kind="binary", value=bool(i % 5 < 2), verifier="test"),
+            )
+        )
+
+    focal = next(r for r in runs if r.steps[1].decisions[1].chosen_action == "haiku")
+    est = intervene(
+        dag=build_dag(focal),
+        model=fit_outcome_model(runs, seed=0),
+        step=1,
+        decision_id=focal.steps[1].decisions[1].decision_id,
+        intervention={"model_choice": "sonnet"},
+    )
+
+    assert est.identifiability == IdentifiabilityStatus.IDENTIFIED
+    assert est.adjustment_set
+    assert all(name.startswith("tool_call::") for name in est.adjustment_set)
