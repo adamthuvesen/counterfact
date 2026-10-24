@@ -132,3 +132,41 @@ def test_increase_n_command_floors_at_minimum() -> None:
     )
     assert cmd is not None
     assert "--n 30" in cmd
+
+
+def test_suggestion_is_dropped_for_corpora_the_harness_did_not_produce() -> None:
+    from bench.synthetic import generate_traces
+    from counterfact import build_dag, fit_outcome_model, intervene
+    from counterfact.schema import Run
+
+    runs = [Run.model_validate(t) for t in generate_traces(n=120, seed=1)]
+    est = intervene(
+        dag=build_dag(runs[0]),
+        model=fit_outcome_model(runs, seed=1),
+        step=2,
+        intervention={"model_choice": "sonnet"},
+        baseline="haiku",
+    )
+
+    assert est.next_step.action == "increase_n"
+    assert "suggested_command" not in est.next_step.payload
+
+
+def test_suggestion_names_the_harness_corpus_fixtures() -> None:
+    from counterfact import build_dag, fit_outcome_model, intervene
+    from tests.fixtures.corpus_loaders import SMOKE_MIXED_OUTCOME_DIR, load_json_corpus
+
+    runs = load_json_corpus(SMOKE_MIXED_OUTCOME_DIR)
+    focal = runs[0]
+    step = next(s.step_index for s in focal.steps if s.decisions[0].decision_type == "model_call")
+    est = intervene(
+        dag=build_dag(focal),
+        model=fit_outcome_model(runs, seed=1),
+        step=step,
+        intervention={"model_choice": "small"},
+        baseline="large",
+    )
+
+    command = est.next_step.payload["suggested_command"]
+    assert "--fixtures streaming_watermark_dedupe" in command
+    build_parser().parse_args(shlex.split(command)[3:])

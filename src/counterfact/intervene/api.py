@@ -29,6 +29,7 @@ from counterfact.intervene.dispatch import (
 )
 from counterfact.intervene.estimate import CausalEstimate, InterventionQuery
 from counterfact.intervene.estimators import logged_arm
+from counterfact.intervene.suggest import fit_suggestion_to_corpus
 from counterfact.outcome.features import canonical_intervention_value, intervention_feature_family
 from counterfact.outcome.model import OutcomeModel
 from counterfact.schema import Decision
@@ -137,14 +138,13 @@ def intervene(
         decision_type=decision_type,
     )
 
-    if stance == "always-replay":
-        return _STANCE_HANDLERS[stance](ctx)
-
-    if dag.run is not None and stance == "requires-randomized-support":
-        duplicate_steps = duplicate_decision_type_steps(
-            dag.run, except_step=step, decision_type=decision_type
-        )
-        if duplicate_steps:
-            return handle_duplicate_step_refusal(ctx, duplicate_steps)
-
-    return _STANCE_HANDLERS[stance](ctx)
+    duplicate_steps = (
+        duplicate_decision_type_steps(dag.run, except_step=step, decision_type=decision_type)
+        if dag.run is not None and stance == "requires-randomized-support"
+        else []
+    )
+    if duplicate_steps:
+        estimate = handle_duplicate_step_refusal(ctx, duplicate_steps)
+    else:
+        estimate = _STANCE_HANDLERS[stance](ctx)
+    return fit_suggestion_to_corpus(estimate, model.runs)

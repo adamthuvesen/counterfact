@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from typing import Any, Literal
 
 from counterfact.baselines import PassRateRow
@@ -14,7 +13,7 @@ from counterfact.intervene.estimate import (
 )
 from counterfact.intervene.suggest import known_arms, suggest_harness_command
 from counterfact.outcome.model import OutcomeModel
-from counterfact.stats import Z_95, wilson_ci
+from counterfact.stats import wilson_ci
 
 IDENTIFIED_TIGHT_CI_WIDTH = 0.10
 
@@ -62,31 +61,6 @@ def missing_arms_for(decision_type: str, intervention_kind: str, observed: list[
         return []
     obs = set(observed)
     return [arm for arm in canonical if arm not in obs]
-
-
-def power_from_arm_table(
-    arm_table: list[PassRateRow],
-    target_arm: str,
-    baseline_arm: str,
-    target_ci_width: float,
-    *,
-    current_n: int,
-) -> tuple[int, str]:
-    """Traces needed for a two-arm Wald CI on the contrast to reach `target_ci_width`.
-
-    Caller must pass an arm table that holds rows for both arms.
-    """
-    rows = {r.arm: r for r in arm_table}
-    target_row, baseline_row = rows[target_arm], rows[baseline_arm]
-    n_total = sum(r.n for r in arm_table)
-    var_per_n = sum(
-        row.pass_rate * (1 - row.pass_rate) / (row.n / n_total)
-        for row in (target_row, baseline_row)
-    )
-    if var_per_n <= 0:
-        return current_n + 1, "binomial_wald_two_arm"
-    n_required = math.ceil(var_per_n * (2.0 * Z_95 / target_ci_width) ** 2)
-    return max(int(n_required), current_n + 1), "binomial_wald_two_arm"
 
 
 def replay_inputs_for(decision_type: str, intervention_kind: str) -> list[str]:

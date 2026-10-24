@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -33,7 +34,6 @@ from counterfact.intervene.support import (
     arm_table_from_model,
     build_broaden_arm_support_estimate,
     missing_arms_for,
-    power_from_arm_table,
     replay_inputs_for,
 )
 from counterfact.outcome.model import OutcomeModel
@@ -309,12 +309,11 @@ def handle_identified(ctx: InterveneContext, data: TreatmentData, baseline: str)
         )
     else:
         arm_table = arm_table_from_model(ctx.model, ctx.feature_family)
-        estimated_required_n, power_method = power_from_arm_table(
-            arm_table,
-            target,
-            baseline,
-            IDENTIFIED_TIGHT_CI_WIDTH,
-            current_n=n_used,
+        # The influence-function CI width shrinks as 1/sqrt(n), so scaling the
+        # observed width sizes the experiment for this estimator, adjustment
+        # and propensities included.
+        estimated_required_n = max(
+            math.ceil(n_used * (ci_width / IDENTIFIED_TIGHT_CI_WIDTH) ** 2), n_used + 1
         )
         suggestion = suggest_harness_command(
             decision_type=ctx.decision_type,
@@ -327,7 +326,7 @@ def handle_identified(ctx: InterveneContext, data: TreatmentData, baseline: str)
             "current_n": n_used,
             "estimated_required_n": estimated_required_n,
             "target_ci_width": IDENTIFIED_TIGHT_CI_WIDTH,
-            "power_method": power_method,
+            "power_method": "aipw_influence_scaling",
             "arm_breakdown": arm_rows_as_payload(arm_table),
         }
         if suggestion is not None:

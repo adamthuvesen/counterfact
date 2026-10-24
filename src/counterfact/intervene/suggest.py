@@ -12,6 +12,8 @@ in lockstep.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from counterfact.bench_flags import (
     MIN_BENCH_N,
     MODEL_GREEDY_CHOICES,
@@ -19,6 +21,8 @@ from counterfact.bench_flags import (
     SUGGESTED_FIXTURE_SET,
     SUGGESTED_RANDOMIZATION_EPSILON,
 )
+from counterfact.intervene.estimate import CausalEstimate
+from counterfact.schema import Run
 
 # Canonical arm sets per (decision_type, intervention_kind), pulled from the
 # CLI's flag `choices=...` lists. When a kind is absent, arms are free-form
@@ -123,3 +127,29 @@ def suggest_harness_command(
         *arm_flags,
     ]
     return " ".join(parts)
+
+
+def fit_suggestion_to_corpus(estimate: CausalEstimate, runs: Iterable[Run]) -> CausalEstimate:
+    """Point `suggested_command` at the corpus's own fixtures, or drop it.
+
+    The command reruns `bench real`, whose verifier logs `fixture_id` on every
+    run. For any other corpus that harness cannot produce more of the same
+    traces, so the suggestion is removed.
+    """
+    payload = estimate.next_step.payload
+    command = payload.get("suggested_command")
+    if command is None:
+        return estimate
+    fixture_ids = [run.outcome.metadata.get("fixture_id") for run in runs]
+    if fixture_ids and all(isinstance(f, str) for f in fixture_ids):
+        fixtures = ",".join(sorted(set(fixture_ids)))  # type: ignore[arg-type]
+        updated = {
+            **payload,
+            "suggested_command": command.replace(
+                f"--fixture-set {SUGGESTED_FIXTURE_SET}", f"--fixtures {fixtures}"
+            ),
+        }
+    else:
+        updated = {k: v for k, v in payload.items() if k != "suggested_command"}
+    next_step = estimate.next_step.model_copy(update={"payload": updated})
+    return estimate.model_copy(update={"next_step": next_step})
