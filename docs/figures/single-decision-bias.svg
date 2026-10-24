@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 498" width="860" height="498" role="img" aria-label="Single decision: sonnet vs haiku, 8 causal models built to break estimators">
+
+<style>
+  svg { --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #8a8983; --grid: #e4e3df;
+        --naive: #eb6834; --model: #1baf7a; --engine: #2a78d6; --bg: #fcfcfb; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f8e86; --grid: #34342f;
+          --naive: #d95926; --model: #199e70; --engine: #3987e5; --bg: #1a1a19; }
+  }
+  text { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+         fill: var(--ink-2); font-size: 13px; }
+  .title { fill: var(--ink); font-size: 16px; font-weight: 600; }
+  .sub { fill: var(--ink-2); font-size: 12.5px; }
+  .row { fill: var(--ink); }
+  .tick { fill: var(--ink-3); font-size: 11.5px; }
+  .note { fill: var(--ink-2); font-size: 12px; font-style: italic; }
+  .grid { stroke: var(--grid); stroke-width: 1; }
+  .zero { stroke: var(--ink-3); stroke-width: 1.5; }
+  .naive { fill: var(--naive); } .model { fill: var(--model); } .engine { fill: var(--engine); }
+  .bg { fill: var(--bg); }
+  circle { stroke: var(--bg); stroke-width: 2; }
+</style>
+
+<rect class="bg" width="860" height="498" rx="8"/>
+<title>Single decision: sonnet vs haiku, 8 causal models built to break estimators</title>
+<text class="title" x="16" y="28">Single decision: sonnet vs haiku, 8 causal models built to break estimators</text>
+<text class="sub" x="16" y="48">500 corpora per scenario. The engine refuses where the data cannot identify the effect.</text>
+<circle class="naive" cx="22.0" cy="70" r="6"/>
+<text x="34.0" y="74">naive pass-rate gap</text>
+<circle class="model" cx="197.2" cy="70" r="6"/>
+<text x="209.2" y="74">adjust-everything g-formula</text>
+<circle class="engine" cx="426.79999999999995" cy="70" r="6"/>
+<text x="438.79999999999995" y="74">counterfact (AIPW)</text>
+<line class="grid" x1="370.8" x2="370.8" y1="86" y2="444"/>
+<text class="tick" x="370.8" y="462" text-anchor="middle">-0.1</text>
+<line class="zero" x1="472.4" x2="472.4" y1="86" y2="444"/>
+<text class="tick" x="472.4" y="462" text-anchor="middle">0</text>
+<line class="grid" x1="574.0" x2="574.0" y1="86" y2="444"/>
+<text class="tick" x="574.0" y="462" text-anchor="middle">+0.1</text>
+<line class="grid" x1="675.6" x2="675.6" y1="86" y2="444"/>
+<text class="tick" x="675.6" y="462" text-anchor="middle">+0.2</text>
+<line class="grid" x1="777.2" x2="777.2" y1="86" y2="444"/>
+<text class="tick" x="777.2" y="462" text-anchor="middle">+0.3</text>
+<text class="tick" x="472.4" y="482" text-anchor="middle">mean bias against the exact truth (0 = unbiased)</text>
+<text class="row" x="306" y="118.0" text-anchor="end">randomized</text>
+<circle class="naive" cx="474.3" cy="105.0" r="6"><title>+0.002</title></circle>
+<circle class="model" cx="472.6" cy="114.0" r="6"><title>+0.000</title></circle>
+<circle class="engine" cx="474.7" cy="123.0" r="6"><title>+0.002</title></circle>
+<text class="row" x="306" y="162.0" text-anchor="end">small n</text>
+<circle class="naive" cx="461.3" cy="149.0" r="6"><title>-0.011</title></circle>
+<circle class="model" cx="439.4" cy="158.0" r="6"><title>-0.033</title></circle>
+<circle class="engine" cx="462.8" cy="167.0" r="6"><title>-0.009</title></circle>
+<text class="row" x="306" y="206.0" text-anchor="end">logged confounding</text>
+<circle class="naive" cx="580.4" cy="193.0" r="6"><title>+0.106</title></circle>
+<circle class="model" cx="473.1" cy="202.0" r="6"><title>+0.001</title></circle>
+<circle class="engine" cx="474.2" cy="211.0" r="6"><title>+0.002</title></circle>
+<text class="row" x="306" y="250.0" text-anchor="end">interaction</text>
+<circle class="naive" cx="787.3" cy="237.0" r="6"><title>+0.310</title></circle>
+<circle class="model" cx="481.2" cy="246.0" r="6"><title>+0.009</title></circle>
+<circle class="engine" cx="473.4" cy="255.0" r="6"><title>+0.001</title></circle>
+<text class="row" x="306" y="294.0" text-anchor="end">unlogged confounder logged propensity</text>
+<circle class="naive" cx="634.8" cy="281.0" r="6"><title>+0.160</title></circle>
+<circle class="model" cx="631.6" cy="290.0" r="6"><title>+0.157</title></circle>
+<circle class="engine" cx="474.9" cy="299.0" r="6"><title>+0.002</title></circle>
+<text class="row" x="306" y="338.0" text-anchor="end">unlogged confounder</text>
+<circle class="naive" cx="634.3" cy="325.0" r="6"><title>+0.159</title></circle>
+<circle class="model" cx="631.1" cy="334.0" r="6"><title>+0.156</title></circle>
+<text class="note" x="462.4" y="338.0" text-anchor="end">engine: bounded</text>
+<text class="row" x="306" y="382.0" text-anchor="end">post treatment retry</text>
+<circle class="naive" cx="473.6" cy="369.0" r="6"><title>+0.001</title></circle>
+<circle class="model" cx="380.1" cy="378.0" r="6"><title>-0.091</title></circle>
+<circle class="engine" cx="473.6" cy="387.0" r="6"><title>+0.001</title></circle>
+<text class="row" x="306" y="426.0" text-anchor="end">positivity violation</text>
+<circle class="naive" cx="667.2" cy="413.0" r="6"><title>+0.192</title></circle>
+<circle class="model" cx="483.2" cy="422.0" r="6"><title>+0.011</title></circle>
+<text class="note" x="462.4" y="426.0" text-anchor="end">engine: bounded</text>
+</svg>
