@@ -35,7 +35,6 @@ def run(args: argparse.Namespace) -> int:
         focal,
         corpus,
         decision_type=args.decision_type,
-        bootstrap=args.bootstrap,
         seed=args.seed,
         run_path=str(run_path),
         corpus_dir=str(runs_dir),

@@ -61,8 +61,6 @@ def test_intervene__decision_id_json_round_trips(
             decision_id,
             "--set",
             "model_choice=sonnet",
-            "--bootstrap",
-            "20",
             "--json",
         ]
     )
@@ -96,8 +94,6 @@ def test_intervene__decision_id_targets_decision_inside_multi_decision_step(
             decision_id,
             "--set",
             "model_choice=sonnet",
-            "--bootstrap",
-            "20",
             "--json",
         ]
     )
@@ -127,8 +123,6 @@ def test_intervene__output_writes_json_artifact(
             decision_id,
             "--set",
             "tool_choice=run_tests",
-            "--bootstrap",
-            "20",
             "--output",
             str(output),
         ]
@@ -160,8 +154,6 @@ def test_intervene__json_plus_output_separates_streams(
             decision_id,
             "--set",
             "model_choice=sonnet",
-            "--bootstrap",
-            "20",
             "--json",
             "--output",
             str(output),
@@ -193,8 +185,6 @@ def test_intervene__human_output_names_decision_and_next_step(
             decision_id,
             "--set",
             "retry_policy=retry_once",
-            "--bootstrap",
-            "20",
         ]
     )
 
@@ -222,8 +212,6 @@ def test_intervene__missing_arm_surfaces_support_diagnostics(
             decision_id,
             "--set",
             "model_choice=opus",
-            "--bootstrap",
-            "20",
             "--json",
         ]
     )

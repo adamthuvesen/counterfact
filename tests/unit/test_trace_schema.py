@@ -58,7 +58,7 @@ def test_outcome_tagged_union__binary_outcome_accepted_end_to_end() -> None:
     payload_neg["outcome"] = {"kind": "binary", "value": True, "verifier": "pytest", "metadata": {}}
     run_neg = Run.model_validate(payload_neg)
 
-    model = fit_outcome_model([run_pos, run_neg], n_bootstrap=4)
+    model = fit_outcome_model([run_pos, run_neg])
     assert model is not None
     assert model.outcome_kind == "binary"
 

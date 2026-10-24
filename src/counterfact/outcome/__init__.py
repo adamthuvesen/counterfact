@@ -1,4 +1,4 @@
-"""Outcome model fitting (logistic regression + bootstrap)."""
+"""Outcome model fitting (logistic regression)."""
 
 from counterfact.outcome.model import fit_outcome_model
 

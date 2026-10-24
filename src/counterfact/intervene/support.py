@@ -66,40 +66,27 @@ def missing_arms_for(decision_type: str, intervention_kind: str, observed: list[
 
 def power_from_arm_table(
     arm_table: list[PassRateRow],
-    target_arm: str | None,
+    target_arm: str,
+    baseline_arm: str,
     target_ci_width: float,
     *,
     current_n: int,
-    current_ci_width: float,
 ) -> tuple[int, str]:
-    """Estimate required n + label which method produced it."""
-    observable = [r for r in arm_table if r.n >= 1]
-    if len(observable) >= 2:
-        ranked = sorted(observable, key=lambda r: r.n, reverse=True)
-        target_row = next((r for r in observable if r.arm == target_arm), None)
-        if target_row is None:
-            target_row = ranked[0]
-            sibling_row = ranked[1]
-        else:
-            sibling_row = next((r for r in ranked if r.arm != target_row.arm), ranked[0])
-        n_a = target_row.n
-        n_b = sibling_row.n
-        p_a = target_row.pass_rate
-        p_b = sibling_row.pass_rate
-        n_total = sum(r.n for r in arm_table)
-        if n_total <= 0:
-            n_total = n_a + n_b
-        f_a = n_a / n_total
-        f_b = n_b / n_total
-        var_per_n = p_a * (1 - p_a) / f_a + p_b * (1 - p_b) / f_b
-        if var_per_n <= 0:
-            return max(current_n + 1, current_n), "binomial_wald_two_arm"
-        n_required = math.ceil(var_per_n * (2.0 * Z_95 / target_ci_width) ** 2)
-        return max(int(n_required), current_n + 1), "binomial_wald_two_arm"
+    """Traces needed for a two-arm Wald CI on the contrast to reach `target_ci_width`.
 
-    scale = (current_ci_width / target_ci_width) ** 2
-    n_required = max(round(current_n * scale), current_n + 1)
-    return int(n_required), "inline_scaling"
+    Caller must pass an arm table that holds rows for both arms.
+    """
+    rows = {r.arm: r for r in arm_table}
+    target_row, baseline_row = rows[target_arm], rows[baseline_arm]
+    n_total = sum(r.n for r in arm_table)
+    var_per_n = sum(
+        row.pass_rate * (1 - row.pass_rate) / (row.n / n_total)
+        for row in (target_row, baseline_row)
+    )
+    if var_per_n <= 0:
+        return current_n + 1, "binomial_wald_two_arm"
+    n_required = math.ceil(var_per_n * (2.0 * Z_95 / target_ci_width) ** 2)
+    return max(int(n_required), current_n + 1), "binomial_wald_two_arm"
 
 
 def replay_inputs_for(decision_type: str, intervention_kind: str) -> list[str]:

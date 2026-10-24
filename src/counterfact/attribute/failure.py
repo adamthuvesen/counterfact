@@ -1,14 +1,14 @@
 """Failure attribution: which decision most influenced this outcome?
 
-For each decision in the trace whose type accepts interventions, we compare
-the predicted outcome under the actually-chosen action against the predicted
-outcome under the most-different sibling arm. The absolute difference is the
-*influence score*; entries are ranked by score.
+For each decision in the trace whose type accepts interventions, we estimate
+the contrast between every observed sibling arm and the arm actually chosen.
+The largest absolute supported contrast is the *influence score*; entries are
+ranked by score.
 
 Identifiability is inherited from the underlying `intervene` call:
 
-* identified  → influence is the |g-formula counterfactual - actual|
-* bounded     → influence is reported with the bound; ranking still shown
+* identified  → influence is |E[Y | do(sibling)] - E[Y | do(chosen)]| (AIPW)
+* bounded     → influence is 0.0; the entry keeps its Manski bounds
 * unidentified → influence is 0.0 and the entry is labeled unidentified
 
 Per spec: each entry exposes `identifiability` so callers can filter or
@@ -49,17 +49,6 @@ class FailureAttribution:
         return self.entries[:k]
 
 
-def _combined_identifiability(
-    actual: CausalEstimate, counterfactual: CausalEstimate
-) -> IdentifiabilityStatus:
-    statuses = {actual.identifiability, counterfactual.identifiability}
-    if IdentifiabilityStatus.UNIDENTIFIED in statuses:
-        return IdentifiabilityStatus.UNIDENTIFIED
-    if statuses == {IdentifiabilityStatus.IDENTIFIED}:
-        return IdentifiabilityStatus.IDENTIFIED
-    return IdentifiabilityStatus.BOUNDED
-
-
 def _sibling_actions(model: OutcomeModel, decision_type: str, chosen_action: str) -> list[str]:
     """Return every observed sibling arm for `decision_type`, in feature-index order.
 
@@ -94,38 +83,17 @@ def _is_step_localizable(run: Run, step: Step, decision: Decision) -> bool:
     return not decision_type_repeats_elsewhere(run, step.step_index, decision.decision_type)
 
 
-def _best_sibling_contrast(
-    *,
-    dag: DAG,
-    model: OutcomeModel,
-    step: Step,
-    intervention_kind: str,
-    siblings: list[str],
-    actual: CausalEstimate,
-) -> tuple[float, IdentifiabilityStatus]:
-    """Return the largest supported contrast against any observed sibling arm."""
-    actual_delta = actual.outcome_delta
-    if actual_delta is None:
-        return 0.0, IdentifiabilityStatus.UNIDENTIFIED
+_LABEL_RANK = {
+    IdentifiabilityStatus.IDENTIFIED: 0,
+    IdentifiabilityStatus.BOUNDED: 1,
+    IdentifiabilityStatus.UNIDENTIFIED: 2,
+}
 
-    best_influence: float | None = None
-    best_ident = IdentifiabilityStatus.UNIDENTIFIED
-    for sibling in siblings:
-        cf = _intervene(
-            dag=dag,
-            model=model,
-            step=step.step_index,
-            intervention={intervention_kind: sibling},
-        )
-        ident = _combined_identifiability(actual, cf)
-        if cf.outcome_delta is not None and ident != IdentifiabilityStatus.UNIDENTIFIED:
-            influence = abs(actual_delta.point - cf.outcome_delta.point)
-        else:
-            influence = 0.0
-        if best_influence is None or influence > best_influence:
-            best_influence = influence
-            best_ident = ident
-    return best_influence or 0.0, best_ident
+
+def _influence(estimate: CausalEstimate) -> float:
+    if estimate.identifiability != IdentifiabilityStatus.IDENTIFIED:
+        return 0.0
+    return abs(estimate.outcome_delta.point) if estimate.outcome_delta is not None else 0.0
 
 
 def _entry_for_decision(
@@ -147,30 +115,24 @@ def _entry_for_decision(
         # or repeated-type traces. Surface that uncertainty instead of scoring.
         return _unidentified_entry(decision)
 
-    actual = _intervene(
-        dag=dag,
-        model=model,
-        step=step.step_index,
-        intervention={intervention_kind: decision.chosen_action},
-    )
-    if actual.outcome_delta is None:
-        return _unidentified_entry(decision, estimate=actual)
-
-    influence, ident = _best_sibling_contrast(
-        dag=dag,
-        model=model,
-        step=step,
-        intervention_kind=intervention_kind,
-        siblings=siblings,
-        actual=actual,
-    )
+    estimates = [
+        _intervene(
+            dag=dag,
+            model=model,
+            step=step.step_index,
+            intervention={intervention_kind: sibling},
+        )
+        for sibling in siblings
+    ]
+    estimate = min(estimates, key=lambda e: (_LABEL_RANK[e.identifiability], -_influence(e)))
+    influence = _influence(estimate)
     return AttributionEntry(
         decision_id=decision.decision_id,
         decision_type=decision.decision_type,
         chosen_action=decision.chosen_action or "",
         influence=influence,
-        identifiability=ident,
-        estimate=actual,
+        identifiability=estimate.identifiability,
+        estimate=estimate,
     )
 
 

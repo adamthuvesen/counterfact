@@ -23,7 +23,7 @@ def test_build_report__mixed_outcome_corpus_has_ranked_attribution() -> None:
     assert len(classes) == 2, "synthetic corpus should not be single-class"
 
     focal = corpus[0]
-    report = build_report(focal, corpus, decision_type="model_call", bootstrap=20, seed=42)
+    report = build_report(focal, corpus, decision_type="model_call", seed=42)
 
     assert report.degenerate_estimate is None
     assert report.attribution.entries, "mixed-outcome corpus must yield entries"
@@ -35,7 +35,7 @@ def test_build_report__single_class_corpus_returns_degenerate_refusal() -> None:
     corpus = single_class_refusal_corpus()
     focal = corpus[0]
 
-    report = build_report(focal, corpus, decision_type="model_call", bootstrap=20, seed=42)
+    report = build_report(focal, corpus, decision_type="model_call", seed=42)
 
     assert report.attribution.entries == []
     assert report.degenerate_estimate is not None
@@ -60,7 +60,7 @@ def test_build_report__never_calls_fit_outcome_model_on_single_class(
 
     corpus = single_class_refusal_corpus()
     focal = corpus[0]
-    report = build_report(focal, corpus, bootstrap=20, seed=42)
+    report = build_report(focal, corpus, seed=42)
 
     assert calls["n"] == 0
     assert report.degenerate_estimate is not None
@@ -82,7 +82,7 @@ def test_build_report__mixed_outcome_without_features_returns_unidentified() -> 
         ),
     ]
 
-    report = build_report(corpus[0], corpus, bootstrap=10, seed=42)
+    report = build_report(corpus[0], corpus, seed=42)
 
     assert report.attribution.entries == []
     assert report.degenerate_estimate is not None
@@ -94,8 +94,8 @@ def test_build_report__deterministic_for_fixed_inputs() -> None:
     corpus = synthetic_corpus(n=24, seed=7)
     focal = corpus[0]
 
-    a = build_report(focal, corpus, bootstrap=20, seed=42)
-    b = build_report(focal, corpus, bootstrap=20, seed=42)
+    a = build_report(focal, corpus, seed=42)
+    b = build_report(focal, corpus, seed=42)
 
     # Pydantic equality covers attribution.entries via the inner models.
     assert a.model_dump(mode="python") == b.model_dump(mode="python")
@@ -105,4 +105,4 @@ def test_build_report__rejects_focal_run_not_in_corpus() -> None:
     corpus = synthetic_corpus(n=24, seed=7)
     intruder = single_class_refusal_corpus()[0]
     with pytest.raises(ValueError, match="not present in the supplied corpus"):
-        build_report(intruder, corpus, bootstrap=20, seed=42)
+        build_report(intruder, corpus, seed=42)

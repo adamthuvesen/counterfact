@@ -4,18 +4,20 @@ from counterfact.intervene.api import intervene
 from counterfact.intervene.estimate import (
     CausalEstimate,
     DistributionSummary,
+    EstimatorDiagnostics,
     IdentifiabilityStatus,
+    IdentificationBounds,
     InterventionQuery,
     NextStep,
-    SensitivityBounds,
 )
 
 __all__ = [
     "CausalEstimate",
     "DistributionSummary",
+    "EstimatorDiagnostics",
     "IdentifiabilityStatus",
+    "IdentificationBounds",
     "InterventionQuery",
     "NextStep",
-    "SensitivityBounds",
     "intervene",
 ]

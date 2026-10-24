@@ -65,7 +65,7 @@ def corpus() -> list[Run]:
 
 @pytest.fixture(scope="module")
 def fitted_model(corpus: list[Run]) -> object:
-    return fit_outcome_model(corpus, n_bootstrap=100, seed=42)
+    return fit_outcome_model(corpus, seed=42)
 
 
 def _run_by_id(corpus: list[Run], run_id: str) -> Run | None:

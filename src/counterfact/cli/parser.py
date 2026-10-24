@@ -53,7 +53,6 @@ def build_parser() -> argparse.ArgumentParser:
     demo_parser.add_argument("--target", default=None, help="Optional intervention arm")
     demo_parser.add_argument("--synthetic-n", type=int, default=500)
     demo_parser.add_argument("--seed", type=int, default=42)
-    demo_parser.add_argument("--bootstrap", type=positive_int, default=200)
     demo_parser.add_argument(
         "--synthetic-fallback",
         action="store_true",
@@ -102,7 +101,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=("Output HTML path (default: <run-json-parent>/counterfact-explain-<run_id>.html)"),
     )
-    explain_parser.add_argument("--bootstrap", type=positive_int, default=200)
     explain_parser.add_argument("--seed", type=int, default=42)
     explain_parser.set_defaults(func=explain.run)
 
@@ -142,6 +140,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Decision edit as key=value, e.g. model_choice=sonnet",
     )
     intervene_parser.add_argument(
+        "--baseline",
+        default=None,
+        help="Arm to contrast against (default: the arm the focal decision chose)",
+    )
+    intervene_parser.add_argument(
         "--json",
         action="store_true",
         help="Emit only CausalEstimate JSON to stdout",
@@ -152,7 +155,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Write the CausalEstimate JSON artifact to this path",
     )
-    intervene_parser.add_argument("--bootstrap", type=positive_int, default=200)
     intervene_parser.add_argument("--seed", type=int, default=42)
     intervene_parser.set_defaults(func=intervene_cli.run)
 
@@ -174,7 +176,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only rank decisions of this type",
     )
     diagnose.add_argument("--top-k", type=positive_int, default=3)
-    diagnose.add_argument("--bootstrap", type=positive_int, default=200)
     diagnose.add_argument("--seed", type=int, default=42)
     diagnose.add_argument("--json", action="store_true", help="Emit JSON only")
     diagnose.add_argument(
@@ -209,7 +210,6 @@ def build_parser() -> argparse.ArgumentParser:
         default="model_call",
     )
     compare.add_argument("--top-k", type=positive_int, default=3)
-    compare.add_argument("--bootstrap", type=positive_int, default=200)
     compare.add_argument("--seed", type=int, default=42)
     compare.add_argument("--json", action="store_true", help="Emit JSON only")
     compare.set_defaults(func=compare_cli.run)

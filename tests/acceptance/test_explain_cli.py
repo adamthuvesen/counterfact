@@ -26,8 +26,6 @@ def test_explain__synthetic_run_writes_identified_report(tmp_path: Path) -> None
             str(focal),
             "--runs-dir",
             str(runs_dir),
-            "--bootstrap",
-            "20",
             "--output",
             str(output),
         ]
@@ -52,8 +50,6 @@ def test_explain__single_class_refusal_run_writes_unidentified_report(tmp_path: 
             str(focal),
             "--runs-dir",
             str(single_class_refusal),
-            "--bootstrap",
-            "20",
             "--output",
             str(output),
         ]

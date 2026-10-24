@@ -13,7 +13,8 @@ GLOSS: dict[IdentifiabilityStatus, str] = {
         "the corpus supports this counterfactual under the stated assumptions."
     ),
     IdentifiabilityStatus.BOUNDED: (
-        "the corpus partially supports this counterfactual; the bound widens by the e-value."
+        "the corpus cannot point-identify this counterfactual; "
+        "the bounds hold under any confounding."
     ),
     IdentifiabilityStatus.UNIDENTIFIED: ("the corpus cannot answer this question; see next step."),
 }

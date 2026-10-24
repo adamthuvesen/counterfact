@@ -367,6 +367,7 @@ def _render_counterfactual_lookup(report: ExplainReport) -> str:
         parts = [
             f"{estimate.query.decision_type}.{estimate.query.intervention_kind}",
             f"target={estimate.query.target}",
+            f"baseline={estimate.query.baseline}",
             f"identifiability={estimate.identifiability.value}",
         ]
         if shows_outcome_delta(estimate):
@@ -709,7 +710,7 @@ def _render_estimate_card(
     if shows_outcome_delta(estimate):
         d = estimate.outcome_delta
         assert d is not None
-        value = f"{d.point:.3f} [{d.ci_low:.3f}, {d.ci_high:.3f}] (n_bootstrap={d.n_bootstrap})"
+        value = f"{d.point:.3f} [{d.ci_low:.3f}, {d.ci_high:.3f}] ({d.ci_method})"
         fields.append(
             _render_field(
                 "outcome_delta",
@@ -720,10 +721,24 @@ def _render_estimate_card(
 
     if estimate.bounds is not None:
         b = estimate.bounds
-        bound_value = f"e_value={b.e_value:.3f} (technique={b.technique})"
+        bound_value = f"[{b.lower:+.3f}, {b.upper:+.3f}] (technique={b.technique})"
         if b.note:
             bound_value += f" — {b.note}"
-        fields.append(_render_field("bounds", bound_value, source="bounds.e_value"))
+        fields.append(_render_field("bounds", bound_value, source="bounds.lower / upper"))
+
+    if estimate.diagnostics is not None:
+        diag = estimate.diagnostics
+        fields.append(
+            _render_field(
+                "cross-check",
+                (
+                    f"g-formula {diag.g_formula_delta:+.3f}, IPW {diag.ipw_delta:+.3f}; "
+                    f"min propensity {diag.min_propensity_target:.2f} / "
+                    f"{diag.min_propensity_baseline:.2f}; n={diag.n_used}"
+                ),
+                source="diagnostics",
+            )
+        )
 
     if estimate.adjustment_set:
         fields.append(
@@ -890,7 +905,6 @@ def _render_footer(report: ExplainReport, *, generated_at: datetime) -> str:
         f"counterfact v{_COUNTERFACT_VERSION}",
         f"decision_type={report.summary_decision_type}",
         f"intervention_kind={report.decision_type_intervention_kind}",
-        f"bootstrap={report.bootstrap}",
         f"seed={report.seed}",
         f"generated_at={generated_at.isoformat(timespec='seconds')}",
     ]

@@ -21,8 +21,6 @@ def test_diagnose_cli__json_round_trips(tmp_path: Path, capsys: pytest.CaptureFi
             str(paths[0]),
             "--runs-dir",
             str(tmp_path / "runs"),
-            "--bootstrap",
-            "10",
             "--json",
         ]
     )
@@ -48,8 +46,6 @@ def test_diagnose_cli__decision_type_filters_ranked_entries(
             "model_call",
             "--top-k",
             "10",
-            "--bootstrap",
-            "10",
             "--json",
         ]
     )
@@ -72,8 +68,6 @@ def test_diagnose_cli__html_writes_report_and_keeps_text_summary(
             str(paths[0]),
             "--runs-dir",
             str(tmp_path / "runs"),
-            "--bootstrap",
-            "10",
             "--html",
             str(html_path),
         ]
@@ -101,8 +95,6 @@ def test_diagnose_cli__json_with_html_keeps_stdout_parseable(
             str(paths[0]),
             "--runs-dir",
             str(tmp_path / "runs"),
-            "--bootstrap",
-            "10",
             "--json",
             "--html",
             str(html_path),
@@ -128,8 +120,6 @@ def test_diagnose_cli__html_write_failure_exits_2(
             str(paths[0]),
             "--runs-dir",
             str(tmp_path / "runs"),
-            "--bootstrap",
-            "10",
             "--html",
             str(tmp_path / "missing" / "diagnosis.html"),
         ]
@@ -196,8 +186,6 @@ def test_compare_cli__diagnosis_overlay_preserves_unidentified_hide_rule(
             str(single),
             "--focal",
             "right",
-            "--bootstrap",
-            "10",
         ]
     )
 

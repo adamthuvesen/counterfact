@@ -153,12 +153,13 @@ def test_naive_baseline_and_causal_estimator_return_distinct_structures() -> Non
     corpus = [Run.model_validate(t) for t in generate_traces(n=120, seed=11)]
 
     table = pass_rate_by_arm(corpus, "model_call")
-    model = fit_outcome_model(corpus, n_bootstrap=10, seed=11)
+    model = fit_outcome_model(corpus, seed=11)
     estimate = intervene(
         dag=build_dag(corpus[0]),
         model=model,
         step=2,  # model_call step in synthetic SCM
         intervention={"model_choice": "sonnet"},
+        baseline="haiku",
     )
 
     assert isinstance(table, PassRateTable)

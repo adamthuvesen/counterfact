@@ -26,9 +26,9 @@ from counterfact.intervene.estimate import (
     CausalEstimate,
     DistributionSummary,
     IdentifiabilityStatus,
+    IdentificationBounds,
     InterventionQuery,
     NextStep,
-    SensitivityBounds,
 )
 from counterfact.schema import Decision, Metadata, Outcome, Run
 from tests.conftest import single_class_refusal_corpus, synthetic_corpus
@@ -86,10 +86,7 @@ def _identified_estimate() -> CausalEstimate:
         ),
         identifiability=IdentifiabilityStatus.IDENTIFIED,
         estimand="E[Y | do(model=small)]",
-        outcome_delta=DistributionSummary(
-            point=0.332, ci_low=0.179, ci_high=0.493, n_bootstrap=200
-        ),
-        bounds=SensitivityBounds(e_value=1.4),
+        outcome_delta=DistributionSummary(point=0.332, ci_low=0.179, ci_high=0.493),
         assumptions=["positivity holds for model_call"],
         warnings=[],
         next_step=NextStep(
@@ -240,7 +237,7 @@ def _extract_section(html: str, h2_text: str) -> str:
 
 def _build_synthetic_report(*, corpus_size: int = 24, seed: int = 7) -> ExplainReport:
     corpus = synthetic_corpus(n=corpus_size, seed=seed)
-    return build_report(corpus[0], corpus, decision_type="model_call", bootstrap=20, seed=seed)
+    return build_report(corpus[0], corpus, decision_type="model_call", seed=seed)
 
 
 def _isolate_card(html: str, status: str) -> str:
@@ -304,7 +301,7 @@ def _hand_built_report(
     `attribute_failure`."""
     corpus = synthetic_corpus(n=12, seed=11)
     focal = corpus[0]
-    base = build_report(focal, corpus, bootstrap=10, seed=11)
+    base = build_report(focal, corpus, seed=11)
     return base.model_copy(
         update={
             "attribution": attribution,
@@ -366,7 +363,7 @@ def test_render__timeline_omits_raw_observation_content() -> None:
         }
     )
     corpus = [focal, *corpus[1:]]
-    report = build_report(focal, corpus, bootstrap=10, seed=11)
+    report = build_report(focal, corpus, seed=11)
 
     html = render_html(report, now=FIXED_NOW)
     assert "observations=1" in html
@@ -416,7 +413,7 @@ def test_render__identified_card_renders_assumptions_list() -> None:
     assert "<li>positivity holds for model_call</li>" in card
 
 
-def test_render__bounded_e_value_is_emitted_when_present_and_hidden_when_none() -> None:
+def test_render__bounded_bounds_are_emitted_when_present_and_hidden_when_none() -> None:
     base_unid = _unidentified_estimate()
 
     bounded_with = CausalEstimate(
@@ -427,8 +424,7 @@ def test_render__bounded_e_value_is_emitted_when_present_and_hidden_when_none() 
             step=2,
         ),
         identifiability=IdentifiabilityStatus.BOUNDED,
-        outcome_delta=DistributionSummary(point=0.21, ci_low=0.05, ci_high=0.37, n_bootstrap=200),
-        bounds=SensitivityBounds(e_value=1.4, note="loose bound"),
+        bounds=IdentificationBounds(lower=-0.4, upper=0.6, note="loose bound"),
         next_step=NextStep(
             action="replay_required",
             payload={
@@ -471,10 +467,10 @@ def test_render__bounded_e_value_is_emitted_when_present_and_hidden_when_none() 
     card_with = _isolate_card(html_with, "bounded")
     card_without = _isolate_card(html_without, "bounded")
 
-    assert "1.400" in card_with
+    assert "[-0.400, +0.600]" in card_with
     assert "loose bound" in card_with
-    assert "bounds.e_value" in card_with
-    assert "e_value" not in card_without
+    assert "bounds.lower / upper" in card_with
+    assert "bounds.lower" not in card_without
     _ = base_unid  # used as fixture import only; silence unused warnings
 
 
@@ -548,7 +544,6 @@ def test_render__diagnosis_report_shows_summary_entries() -> None:
         corpus[0],
         corpus,
         top_k=3,
-        bootstrap=10,
         seed=42,
         run_path="synthetic/syn-000000.json",
         corpus_dir="synthetic",
@@ -570,7 +565,7 @@ def test_render__diagnosis_report_shows_summary_entries() -> None:
 
 def test_render__diagnosis_report_is_deterministic_with_frozen_clock() -> None:
     corpus = synthetic_corpus(n=48, seed=42)
-    _, report = build_diagnosis_pair(corpus[0], corpus, bootstrap=10, seed=42)
+    _, report = build_diagnosis_pair(corpus[0], corpus, seed=42)
 
     a = render_html(report, now=FIXED_NOW)
     b = render_html(report, now=FIXED_NOW)
@@ -580,7 +575,7 @@ def test_render__diagnosis_report_is_deterministic_with_frozen_clock() -> None:
 
 def test_render__diagnosis_report_is_self_contained() -> None:
     corpus = synthetic_corpus(n=48, seed=42)
-    _, report = build_diagnosis_pair(corpus[0], corpus, bootstrap=10, seed=42)
+    _, report = build_diagnosis_pair(corpus[0], corpus, seed=42)
 
     html = render_html(report, now=FIXED_NOW)
 
@@ -778,7 +773,7 @@ def test_render__byte_identical_for_fixed_inputs_and_clock() -> None:
 def test_render__single_class_corpus_produces_no_decimal_point_estimate() -> None:
     corpus = single_class_refusal_corpus()
     focal = corpus[0]
-    report = build_report(focal, corpus, bootstrap=20, seed=42)
+    report = build_report(focal, corpus, seed=42)
     html = render_html(report, now=FIXED_NOW)
 
     card = _isolate_card(html, "unidentified")

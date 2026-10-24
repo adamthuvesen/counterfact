@@ -2,13 +2,12 @@
 
 build_dag, SCM-recovery, and outcome-fit-on-binary scenarios are covered by
 test_dag.py, tests/acceptance/test_scm_recovery.py, and test_trace_schema.py.
-This module pins the rest: fit_outcome_model bootstrap CI, intervene paths,
-attribute_failure, E-value, stacked uncertainty, and no-silent-L3.
+This module pins the rest: fit_outcome_model, intervene paths,
+attribute_failure, stacked uncertainty, and no-silent-L3.
 """
 
 from __future__ import annotations
 
-import math
 from typing import ClassVar
 
 import numpy as np
@@ -23,7 +22,6 @@ from counterfact.errors import (
 )
 from counterfact.intervene import IdentifiabilityStatus
 from counterfact.schema import Decision, Outcome, Run, Step
-from counterfact.sensitivity import e_value
 
 # --- shared fixtures ---------------------------------------------------------
 
@@ -35,11 +33,19 @@ def small_corpus() -> list[Run]:
 
 @pytest.fixture(scope="module")
 def fitted(small_corpus: list[Run]) -> object:
-    return fit_outcome_model(small_corpus, n_bootstrap=50, seed=1)
+    return fit_outcome_model(small_corpus, seed=1)
 
 
 def _dag(run: Run):  # convenience
     return build_dag(run)
+
+
+@pytest.fixture(scope="module")
+def not_run_tests_run(small_corpus: list[Run]) -> Run:
+    """A run whose tool_call is not `run_tests`, so `tool_choice=run_tests` is a contrast."""
+    return next(
+        run for run in small_corpus if run.steps[1].decisions[0].chosen_action != "run_tests"
+    )
 
 
 # --- fit_outcome_model spec scenarios ---------------------------------------
@@ -49,38 +55,12 @@ def test_fit_outcome_model__fits_on_synthetic_corpus_and_returns_a_model(
     fitted: object,
 ) -> None:
     assert fitted.coefficients is not None
-    assert fitted.bootstrap_ci is not None
     assert callable(fitted.predict_proba)
     sample_X = fitted.train_X[:5]
     pred = fitted.predict_proba(sample_X)
     assert pred.shape == (5,)
     assert np.all((pred >= 0) & (pred <= 1))
     assert fitted.train_n == 120
-
-
-def test_fit_outcome_model__bootstrap_cis_surround_point_estimate(fitted: object) -> None:
-    cis = fitted.bootstrap_ci
-    for name, (lo, hi) in cis.items():
-        i = fitted.feature_names.index(name)
-        point = float(fitted.coefficients[i])
-        assert lo <= point <= hi, f"coefficient {name} point={point} outside [{lo}, {hi}]"
-
-
-def test_fit_outcome_model__warns_when_bootstrap_resamples_are_single_class() -> None:
-    runs = [Run.model_validate(t) for t in generate_traces(n=2, seed=10)]
-    runs = [
-        runs[0].model_copy(
-            update={"outcome": Outcome(kind="binary", value=True, verifier="synthetic")}
-        ),
-        runs[1].model_copy(
-            update={"outcome": Outcome(kind="binary", value=False, verifier="synthetic")}
-        ),
-    ]
-
-    with pytest.warns(RuntimeWarning, match="bootstrap resamples"):
-        model = fit_outcome_model(runs, n_bootstrap=20, seed=0)
-
-    assert model.bootstrap_degenerate_resamples > 0
 
 
 def test_fit_outcome_model__all_pass_corpus_raises_domain_error() -> None:
@@ -112,7 +92,7 @@ def test_fit_outcome_model__all_fail_corpus_raises_domain_error() -> None:
 def test_fit_outcome_model__mixed_binary_corpus_still_fits() -> None:
     runs = [Run.model_validate(t) for t in generate_traces(n=80, seed=5)]
     assert {bool(run.outcome.value) for run in runs} == {False, True}
-    model = fit_outcome_model(runs, n_bootstrap=10, seed=5)
+    model = fit_outcome_model(runs, seed=5)
     assert model.train_n == len(runs)
 
 
@@ -159,7 +139,7 @@ def test_fit_outcome_model__extracts_temperature_feature_from_model_config() -> 
         for i in range(20)
     ]
 
-    model = fit_outcome_model(runs, n_bootstrap=8, seed=8)
+    model = fit_outcome_model(runs, seed=8)
 
     assert "model_call::haiku" in model.feature_index
     assert "model_call.temperature::0" in model.feature_index
@@ -262,94 +242,27 @@ def test_intervene_query_step_accepts_none() -> None:
     assert q.step is None
 
 
-def test_intervene_missing_train_n_raises_clear_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Per spec scenario: when model.train_n is 0 AND train_X is unavailable,
-    power estimation must raise InvalidInterventionError rather than silently
-    substituting `delta.n_bootstrap` (the old, masking fallback)."""
-    import numpy as np
-
-    from counterfact.intervene import dispatch as intervene_dispatch
-    from counterfact.intervene.estimate import DistributionSummary
-    from counterfact.outcome.model import OutcomeModel
-
-    n = 80
-    rng = np.random.default_rng(11)
-    y = (rng.random(n) < 0.55).astype(int)
-    boot_coefs = np.zeros((50, 1), dtype=float)
-    boot_intercepts = np.linspace(-8.0, 8.0, 50)
-
-    # Model with train_n=0 and train_X=None: a malformed outcome model must fail
-    # loudly instead of substituting bootstrap draw count for corpus size.
-    bad_model = OutcomeModel(
-        feature_names=["tool_call::run_tests"],
-        coefficients=np.zeros(1),
-        intercept=0.0,
-        bootstrap_coefs=boot_coefs,
-        bootstrap_intercepts=boot_intercepts,
-        train_X=None,  # type: ignore[arg-type]
-        train_y=y,
-        train_n=0,
-        feature_index={"tool_call::run_tests": 0},
-        outcome_kind="binary",
-    )
-
-    # Stub the g-formula adjust so we exercise the post-adjust power branch
-    # directly. (Real adjust would crash on train_X=None; that is a separate
-    # invariant violation, not what this test covers.)
-    def _fake_adjust(model, feature_family, intervention_kind, target_action):  # type: ignore[no-untyped-def]
-        return DistributionSummary(
-            point=0.6,
-            ci_low=0.2,
-            ci_high=0.9,
-            n_bootstrap=200,
-        )
-
-    monkeypatch.setattr(intervene_dispatch, "_adjust_g_formula", _fake_adjust)
-
-    run = Run(
-        schema_version="0.1.0",
-        run_id="missing-train-n",
-        steps=[
-            Step(
-                step_index=0,
-                decisions=[
-                    Decision(
-                        decision_id="d-tool",
-                        decision_type="tool_call",
-                        chosen_action="run_tests",
-                    )
-                ],
-            )
-        ],
-        outcome=Outcome(kind="binary", value=True, verifier="stub"),
-    )
-
-    with pytest.raises(InvalidInterventionError, match="train_n"):
-        intervene(
-            dag=build_dag(run),
-            model=bad_model,
-            step=0,
-            intervention={"tool_choice": "run_tests"},
-        )
-
-
 # --- intervene spec scenarios ------------------------------------------------
 
 
-def test_intervene__identified_result_has_outcome_delta_and_adjustment_set(
+def test_intervene__adjustment_set_holds_only_pre_treatment_decisions(
     small_corpus: list[Run], fitted: object
 ) -> None:
+    """The model_call contrast adjusts for the earlier tool_call and never for
+    the later retry: conditioning on a post-treatment decision would estimate
+    a controlled direct effect instead of the total effect."""
+    haiku_run = next(r for r in small_corpus if r.steps[2].decisions[0].chosen_action == "haiku")
     est = intervene(
-        dag=_dag(small_corpus[0]),
+        dag=_dag(haiku_run),
         model=fitted,
-        step=1,  # tool_call step in synthetic SCM
-        intervention={"tool_choice": "run_tests"},
+        step=2,
+        intervention={"model_choice": "sonnet"},
     )
     assert est.identifiability == IdentifiabilityStatus.IDENTIFIED
     assert est.outcome_delta is not None
-    assert len(est.adjustment_set) > 0
+    assert est.query.baseline == "haiku"
+    assert est.adjustment_set
+    assert all(name.startswith("tool_call::") for name in est.adjustment_set)
 
 
 def test_intervene__bounded_result_has_null_bounds_and_assumptions(
@@ -382,12 +295,11 @@ def test_intervene__bounded_result_has_null_bounds_and_assumptions(
         intervention={"memory_content": "all"},
     )
     assert est.identifiability == IdentifiabilityStatus.BOUNDED
-    # Bounded path: no observed P(success | do(...)), so emitting an E-value
-    # against a 0.5 baseline would always be 1.0 — false precision. Honest
-    # stance is bounds=None plus an assumption that says why.
+    # Bounded path with no logged memory arm to contrast: honest stance is
+    # bounds=None plus an assumption that says why.
     assert est.bounds is None
     assert len(est.assumptions) >= 1
-    assert any("E-value not computed" in a for a in est.assumptions)
+    assert any("no sensitivity bound computed" in a for a in est.assumptions)
 
 
 def test_intervene__unidentified_result_has_reason_and_structured_next_step(
@@ -407,7 +319,9 @@ def test_intervene__unidentified_result_has_reason_and_structured_next_step(
     assert est.next_step.human_text
 
 
-def test_intervene__temperature_uses_logged_temperature_support() -> None:
+def test_intervene__temperature_without_logged_randomization_is_bounded() -> None:
+    """Temperature is logged as metadata, not as a randomized arm with a
+    propensity, so the contrast has support but no identification."""
     runs = [
         Run(
             schema_version="0.1.0",
@@ -429,7 +343,7 @@ def test_intervene__temperature_uses_logged_temperature_support() -> None:
         )
         for i in range(40)
     ]
-    model = fit_outcome_model(runs, n_bootstrap=10, seed=9)
+    model = fit_outcome_model(runs, seed=9)
 
     est = intervene(
         dag=build_dag(runs[0]),
@@ -438,10 +352,11 @@ def test_intervene__temperature_uses_logged_temperature_support() -> None:
         intervention={"temperature": "0.70"},
     )
 
-    assert est.identifiability == IdentifiabilityStatus.IDENTIFIED
-    assert est.outcome_delta is not None
-    if est.next_step.action == "increase_n":
-        assert any(row["arm"] == "0.7" for row in est.next_step.payload["arm_breakdown"])
+    assert est.identifiability == IdentifiabilityStatus.BOUNDED
+    assert est.outcome_delta is None
+    assert est.bounds is not None
+    assert est.bounds.lower <= est.bounds.upper
+    assert est.next_step.action == "add_arm_randomization"
 
 
 def test_intervene__invalid_intervention_for_decision_type_raises(
@@ -457,28 +372,27 @@ def test_intervene__invalid_intervention_for_decision_type_raises(
 
 
 def test_intervene__increase_n_uses_training_trace_count(
-    small_corpus: list[Run], fitted: object
+    small_corpus: list[Run], fitted: object, not_run_tests_run: Run
 ) -> None:
     est = intervene(
-        dag=_dag(small_corpus[0]),
+        dag=_dag(not_run_tests_run),
         model=fitted,
         step=1,
         intervention={"tool_choice": "run_tests"},
     )
     assert est.next_step.action == "increase_n"
     assert est.next_step.payload["current_n"] == len(small_corpus)
-    assert est.next_step.payload["current_n"] != est.outcome_delta.n_bootstrap
 
 
 def test_intervene__increase_n_power_method_two_arm_matches_power_analysis(
-    small_corpus: list[Run], fitted: object
+    small_corpus: list[Run], fitted: object, not_run_tests_run: Run
 ) -> None:
     """Two-arm corpus: power_method=binomial_wald_two_arm, agrees with
     counterfact.power_analysis to within ±1 trace."""
-    from counterfact import pass_rate_by_arm, power_analysis
+    from counterfact import power_analysis
 
     est = intervene(
-        dag=_dag(small_corpus[0]),
+        dag=_dag(not_run_tests_run),
         model=fitted,
         step=1,
         intervention={"tool_choice": "run_tests"},
@@ -492,9 +406,8 @@ def test_intervene__increase_n_power_method_two_arm_matches_power_analysis(
     assert len({r["arm"] for r in arm_breakdown}) >= 2
 
     # Cross-check against power_analysis on the same corpus.
-    table = pass_rate_by_arm(small_corpus, "tool_call")
     target_arm = "run_tests"
-    other_arm = next(r.arm for r in table.rows if r.arm != target_arm)
+    other_arm = est.query.baseline
     pr = power_analysis(
         small_corpus,
         decision_type="tool_call",
@@ -512,67 +425,6 @@ def test_intervene__increase_n_power_method_two_arm_matches_power_analysis(
         f"engine n={payload['estimated_required_n']} vs "
         f"power_analysis n={pr.estimated_required_n}: rel_diff={rel_diff:.3f}"
     )
-
-
-def test_intervene__increase_n_power_method_inline_scaling_on_single_arm() -> None:
-    import numpy as np
-
-    from counterfact.intervene.api import intervene as intervene_fn
-    from counterfact.outcome.model import OutcomeModel
-
-    # Build a single-arm fake OutcomeModel: one tool_call::run_tests column,
-    # train_X varies enough that the bootstrap surfaces a wide CI.
-    n = 80
-    rng = np.random.default_rng(7)
-    X = np.ones((n, 1), dtype=float)
-    # Mix of pass/fail to get a fittable but wide model
-    y = (rng.random(n) < 0.55).astype(int)
-    coefs = np.zeros(1)
-    intercept = 0.0
-    boot_coefs = np.zeros((50, 1), dtype=float)
-    boot_intercepts = np.linspace(-8.0, 8.0, 50)
-
-    model = OutcomeModel(
-        feature_names=["tool_call::run_tests"],
-        coefficients=coefs,
-        intercept=intercept,
-        bootstrap_coefs=boot_coefs,
-        bootstrap_intercepts=boot_intercepts,
-        train_X=X,
-        train_y=y,
-        train_n=n,
-        feature_index={"tool_call::run_tests": 0},
-        outcome_kind="binary",
-    )
-
-    run = Run(
-        schema_version="0.1.0",
-        run_id="single-arm",
-        steps=[
-            Step(
-                step_index=0,
-                decisions=[
-                    Decision(
-                        decision_id="d-tool",
-                        decision_type="tool_call",
-                        chosen_action="run_tests",
-                    )
-                ],
-            )
-        ],
-        outcome=Outcome(kind="binary", value=True, verifier="stub"),
-    )
-
-    est = intervene_fn(
-        dag=build_dag(run),
-        model=model,
-        step=0,
-        intervention={"tool_choice": "run_tests"},
-    )
-    payload = est.next_step.payload
-    assert est.next_step.action == "increase_n"
-    assert payload["power_method"] == "inline_scaling"
-    assert payload["estimated_required_n"] >= payload["current_n"] + 1
 
 
 def test_intervene__multi_decision_step_raises_clear_error(fitted: object) -> None:
@@ -794,50 +646,22 @@ def test_attribute_failure__multi_decision_step_is_unidentified(
     assert all(e.influence == 0.0 for e in entries)
 
 
-# --- E-value spec scenarios --------------------------------------------------
-
-
-def test_evalue__present_on_identified_estimate(small_corpus: list[Run], fitted: object) -> None:
-    est = intervene(
-        dag=_dag(small_corpus[0]),
-        model=fitted,
-        step=1,
-        intervention={"tool_choice": "run_tests"},
-    )
-    assert est.identifiability == IdentifiabilityStatus.IDENTIFIED
-    assert est.bounds is not None
-    assert math.isfinite(est.bounds.e_value)
-    assert est.bounds.e_value >= 1.0
-
-
-def test_evalue__matches_reference_formula() -> None:
-    """WHEN the E-value is computed for a known risk ratio RR > 1
-    THEN the result equals RR + sqrt(RR * (RR - 1)) within numerical tolerance."""
-    rr = 2.0
-    expected = rr + math.sqrt(rr * (rr - 1))
-    assert e_value(rr) == pytest.approx(expected, rel=1e-9)
-    rr = 3.5
-    expected = rr + math.sqrt(rr * (rr - 1))
-    assert e_value(rr) == pytest.approx(expected, rel=1e-9)
-    # symmetric: RR < 1 should equal E-value of 1/RR
-    assert e_value(0.5) == pytest.approx(e_value(2.0), rel=1e-9)
-
-
 # --- Stacked uncertainty / no-silent-L3 -------------------------------------
 
 
-def test_stacked_uncertainty__bootstrap_ci_does_not_absorb_bounds(
-    small_corpus: list[Run], fitted: object
+def test_stacked_uncertainty__identified_estimate_carries_ci_and_cross_checks_not_bounds(
+    small_corpus: list[Run], fitted: object, not_run_tests_run: Run
 ) -> None:
     est = intervene(
-        dag=_dag(small_corpus[0]),
+        dag=_dag(not_run_tests_run),
         model=fitted,
         step=1,
         intervention={"tool_choice": "run_tests"},
     )
     assert est.outcome_delta is not None
-    assert est.bounds is not None
-    assert est.outcome_delta is not est.bounds
+    assert est.bounds is None
+    assert est.diagnostics is not None
+    assert est.diagnostics.n_used == len(small_corpus)
 
 
 def test_stacked_uncertainty__stable_model_on_unidentified_query_stays_unidentified(
@@ -855,10 +679,10 @@ def test_stacked_uncertainty__stable_model_on_unidentified_query_stays_unidentif
 
 
 def test_no_silent_l3__identified_estimate_names_its_adjustment(
-    small_corpus: list[Run], fitted: object
+    small_corpus: list[Run], fitted: object, not_run_tests_run: Run
 ) -> None:
     est = intervene(
-        dag=_dag(small_corpus[0]),
+        dag=_dag(not_run_tests_run),
         model=fitted,
         step=1,
         intervention={"tool_choice": "run_tests"},
@@ -873,7 +697,7 @@ def test_no_silent_l3__bounded_estimate_explains_sensitivity_stance(
 ) -> None:
     """WHEN any bounded estimate is inspected
     THEN estimate.assumptions either names a sensitivity technique used or
-    explicitly says no E-value/sensitivity bound was computed (and why)."""
+    explicitly says no sensitivity bound was computed (and why)."""
     run = Run(
         schema_version="0.1.0",
         run_id="r-mem-2",
@@ -898,8 +722,8 @@ def test_no_silent_l3__bounded_estimate_explains_sensitivity_stance(
         intervention={"memory_content": "all"},
     )
     assert est.identifiability == IdentifiabilityStatus.BOUNDED
-    assert any("E-value" in a or "e_value" in a for a in est.assumptions), (
-        f"assumptions did not address E-value stance: {est.assumptions}"
+    assert any("sensitivity" in a for a in est.assumptions), (
+        f"assumptions did not address the sensitivity stance: {est.assumptions}"
     )
 
 
@@ -917,3 +741,137 @@ def test_unsupported_outcome__non_binary_model_rejected_at_intervene(
             step=1,
             intervention={"tool_choice": "run_tests"},
         )
+
+
+def test_intervene__deterministic_assignment_violates_positivity_and_is_bounded() -> None:
+    """Each run logs a propensity, but every one is 1.0: the policy picked the
+    model deterministically, so the other arm had probability 0 on every run.
+    Logged propensities alone must not promote that to `identified`."""
+    runs = [
+        Run(
+            schema_version="0.1.0",
+            run_id=f"det-{i}",
+            steps=[
+                Step(
+                    step_index=0,
+                    decisions=[
+                        Decision(
+                            decision_id=f"d-det-{i}",
+                            decision_type="model_call",
+                            chosen_action="sonnet" if i % 2 else "haiku",
+                            policy="deterministic",
+                            policy_params={},
+                            valid_actions=["haiku", "sonnet"],
+                            propensity=1.0,
+                            context_features={},
+                        )
+                    ],
+                )
+            ],
+            outcome=Outcome(kind="binary", value=bool(i % 3), verifier="test"),
+        )
+        for i in range(30)
+    ]
+    model = fit_outcome_model(runs, seed=0)
+
+    est = intervene(
+        dag=build_dag(runs[0]),
+        model=model,
+        step=0,
+        intervention={"model_choice": "sonnet"},
+    )
+
+    assert est.identifiability == IdentifiabilityStatus.BOUNDED
+    assert est.query.baseline == "haiku"
+    assert est.bounds is not None
+    assert any("positivity" in gap for gap in est.next_step.payload["randomization_gaps"])
+
+
+def _tool_run(i: int, steps: list[str], passed: bool) -> Run:
+    return Run(
+        schema_version="0.1.0",
+        run_id=f"tool-{i}",
+        steps=[
+            Step(
+                step_index=j,
+                decisions=[
+                    Decision(
+                        decision_id=f"d-{i}-{j}",
+                        decision_type="tool_call",
+                        chosen_action=action,
+                        policy="uniform",
+                        policy_params={},
+                        valid_actions=["run_tests", "inspect_file"],
+                        propensity=0.5,
+                        context_features={},
+                    )
+                ],
+            )
+            for j, action in enumerate(steps)
+        ],
+        outcome=Outcome(kind="binary", value=passed, verifier="test"),
+    )
+
+
+def test_intervene__repeated_decisions_after_treatment_do_not_select_runs() -> None:
+    """The arm has no effect, but failing run_tests runs log a second tool_call.
+    Dropping those runs would select on a post-treatment variable and invent an
+    effect near +0.5; keying on the first occurrence keeps every run."""
+    rng = np.random.default_rng(0)
+    runs = []
+    for i in range(2000):
+        arm = "run_tests" if rng.random() < 0.5 else "inspect_file"
+        passed = bool(rng.random() < 0.5)
+        steps = [arm, "inspect_file"] if arm == "run_tests" and not passed else [arm]
+        runs.append(_tool_run(i, steps, passed))
+    focal = next(
+        r
+        for r in runs
+        if len(r.steps) == 1 and r.steps[0].decisions[0].chosen_action == "inspect_file"
+    )
+
+    est = intervene(
+        dag=build_dag(focal),
+        model=fit_outcome_model(runs, seed=0),
+        step=0,
+        intervention={"tool_choice": "run_tests"},
+    )
+
+    assert est.identifiability == IdentifiabilityStatus.IDENTIFIED
+    assert est.diagnostics is not None and est.diagnostics.n_excluded == 0
+    assert est.outcome_delta is not None
+    assert est.outcome_delta.ci_low <= 0.0 <= est.outcome_delta.ci_high
+
+
+def test_intervene__single_class_among_runs_reaching_decision_is_unidentified() -> None:
+    """The corpus has both outcomes, but only runs that never reach tool_call
+    fail. The analyzed rows are one class, so no contrast can be estimated."""
+    runs = [_tool_run(i, ["run_tests" if i % 2 else "inspect_file"], True) for i in range(6)]
+    runs.append(
+        Run(
+            schema_version="0.1.0",
+            run_id="no-tool",
+            steps=[
+                Step(
+                    step_index=0,
+                    decisions=[
+                        Decision(
+                            decision_id="d-m", decision_type="model_call", chosen_action="haiku"
+                        )
+                    ],
+                )
+            ],
+            outcome=Outcome(kind="binary", value=False, verifier="test"),
+        )
+    )
+
+    est = intervene(
+        dag=build_dag(runs[0]),
+        model=fit_outcome_model(runs, seed=0),
+        step=0,
+        intervention={"tool_choice": "run_tests"},
+    )
+
+    assert est.identifiability == IdentifiabilityStatus.UNIDENTIFIED
+    assert est.outcome_delta is None
+    assert est.next_step.payload["missing_strata"] == ["Outcome.value=False"]

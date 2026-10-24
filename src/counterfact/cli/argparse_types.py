@@ -6,7 +6,7 @@ import argparse
 
 
 def positive_int(raw: str) -> int:
-    """argparse type for ints that must be >= 1 (bootstrap counts)."""
+    """argparse type for ints that must be >= 1 (counts such as --top-k)."""
     try:
         value = int(raw)
     except ValueError as exc:

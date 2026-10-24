@@ -14,14 +14,18 @@ def test_demo__defaults_to_smoke_mixed_outcome_and_reports_identified_verdict(
     The engine must fit the outcome model and produce an `identified` verdict
     with a finite outcome_delta and a structured next_step.
     """
-    rc = main(["demo", "--bootstrap", "20"])
+    rc = main(
+        [
+            "demo",
+        ]
+    )
     out = capsys.readouterr().out
 
     assert rc == 0
     assert "counterfact demo: naive vs honest" in out
     assert "data: bench/real/smoke_mixed_outcome" in out
     assert "pass_rate_by_arm(model_call)" in out
-    assert "intervene(model_call ->" in out
+    assert "intervene(model_call: " in out
     assert "identifiability: identified" in out
     assert "outcome_delta:" in out
     assert "next_step:" in out
@@ -33,7 +37,13 @@ def test_demo__on_single_class_refusal_reports_honest_refusal(capsys) -> None:
     With --runs-dir explicitly pointed at it, the engine must surface the
     degenerate-corpus refusal rather than fitting a one-class model.
     """
-    rc = main(["demo", "--runs-dir", "bench/real/single_class_refusal", "--bootstrap", "20"])
+    rc = main(
+        [
+            "demo",
+            "--runs-dir",
+            "bench/real/single_class_refusal",
+        ]
+    )
     out = capsys.readouterr().out
 
     assert rc == 0
@@ -64,8 +74,6 @@ def test_demo__falls_back_to_synthetic_without_real_harness_import(
             str(tmp_path / "missing"),
             "--synthetic-n",
             "120",
-            "--bootstrap",
-            "20",
             "--target",
             "sonnet",
             "--synthetic-fallback",
@@ -76,7 +84,7 @@ def test_demo__falls_back_to_synthetic_without_real_harness_import(
     assert rc == 0
     assert "data: synthetic SCM" in out
     assert "pass_rate_by_arm(model_call)" in out
-    assert "intervene(model_call -> sonnet)" in out
+    assert "intervene(model_call: haiku -> sonnet)" in out
     assert "identifiability: identified" in out
     # When the synthetic-tight branch fires, next_step.action is "none" and
     # no suggested_command line is printed; when it's wide, an increase_n
@@ -108,8 +116,6 @@ def test_demo__confound_runs_confounded_synthetic_showcase(capsys) -> None:
             "1000",
             "--seed",
             "42",
-            "--bootstrap",
-            "20",
         ]
     )
     out = capsys.readouterr().out
@@ -117,7 +123,7 @@ def test_demo__confound_runs_confounded_synthetic_showcase(capsys) -> None:
     assert rc == 0
     assert "data: synthetic SCM (confounded, n=1000, seed=42)" in out
     assert "pass_rate_by_arm(model_call)" in out
-    assert "intervene(model_call ->" in out
+    assert "intervene(model_call: " in out
     assert "identifiability: identified" in out
     assert "naive_vs_causal_contrast:" in out
     # No real corpus paths in --confound mode.
@@ -130,7 +136,11 @@ def test_demo__confound_runs_confounded_synthetic_showcase(capsys) -> None:
 def test_demo__default_invocation_unchanged(capsys) -> None:
     """Regression: without --confound, default `counterfact demo` still
     points at the committed smoke_mixed_outcome corpus."""
-    rc = main(["demo", "--bootstrap", "20"])
+    rc = main(
+        [
+            "demo",
+        ]
+    )
     out = capsys.readouterr().out
 
     assert rc == 0
@@ -159,8 +169,6 @@ def test_demo__confound_suppresses_contrast_line_when_gap_below_threshold(
             "1000",
             "--seed",
             "42",
-            "--bootstrap",
-            "20",
         ]
     )
     out = capsys.readouterr().out

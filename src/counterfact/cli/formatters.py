@@ -10,6 +10,31 @@ from counterfact.intervene.estimate import CausalEstimate
 from counterfact.schema import Decision, Run, Step
 
 
+def estimate_lines(estimate: CausalEstimate) -> list[str]:
+    """Label, contrast, bounds, and cross-checks shared by `demo` and `intervene`."""
+    lines = [f"identifiability: {estimate.identifiability.value}"]
+    if estimate.outcome_delta is not None:
+        delta = estimate.outcome_delta
+        lines.append(
+            f"outcome_delta: {delta.point:+.3f} [{delta.ci_low:+.3f}, {delta.ci_high:+.3f}]"
+            "  (AIPW, cross-fit)"
+        )
+    if estimate.bounds is not None:
+        bounds = estimate.bounds
+        lines.append(f"bounds ({bounds.technique}): [{bounds.lower:+.3f}, {bounds.upper:+.3f}]")
+    if estimate.diagnostics is not None:
+        diag = estimate.diagnostics
+        lines.append(
+            f"cross-check: g-formula {diag.g_formula_delta:+.3f}, IPW {diag.ipw_delta:+.3f}; "
+            f"min propensity {diag.min_propensity_target:.2f}/{diag.min_propensity_baseline:.2f}"
+        )
+    if estimate.reason:
+        lines.append(f"reason: {estimate.reason}")
+    if estimate.warnings:
+        lines.append(f"warning: {estimate.warnings[0]}")
+    return lines
+
+
 def format_intervention_estimate(
     *,
     estimate: CausalEstimate,
@@ -25,16 +50,9 @@ def format_intervention_estimate(
             f"decision: {decision.decision_id} step={step.step_index} "
             f"type={decision.decision_type} chosen={decision.chosen_action}"
         ),
-        f"edit: {intervention_kind}={target}",
-        f"identifiability: {estimate.identifiability.value}",
+        f"edit: {intervention_kind}={target} (baseline: {estimate.query.baseline})",
+        *estimate_lines(estimate),
     ]
-    if estimate.outcome_delta is not None:
-        delta = estimate.outcome_delta
-        lines.append(f"outcome_delta: {delta.point:.3f} [{delta.ci_low:.3f}, {delta.ci_high:.3f}]")
-    if estimate.reason:
-        lines.append(f"reason: {estimate.reason}")
-    if estimate.warnings:
-        lines.append(f"warning: {estimate.warnings[0]}")
     missing_arms = estimate.next_step.payload.get("missing_arms")
     if missing_arms:
         lines.append(f"missing_arms: {', '.join(str(arm) for arm in missing_arms)}")
@@ -170,8 +188,10 @@ def format_diagnosis(report: DiagnosisReport) -> str:
         )
         if entry.outcome_delta is not None:
             delta = entry.outcome_delta
+            target = entry.estimate.query.target if entry.estimate else "?"
             lines.append(
-                f"     outcome_delta: {delta.point:.3f} [{delta.ci_low:.3f}, {delta.ci_high:.3f}]"
+                f"     outcome_delta: {delta.point:+.3f} "
+                f"[{delta.ci_low:+.3f}, {delta.ci_high:+.3f}] ({target} vs {entry.chosen_action})"
             )
         if entry.reason:
             lines.append(f"     reason: {entry.reason}")
