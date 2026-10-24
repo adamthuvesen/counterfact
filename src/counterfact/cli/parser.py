@@ -19,6 +19,7 @@ from counterfact.cli.commands import (
     compare_cli,
     demo,
     diagnose_cli,
+    evaluate_policy_cli,
     explain,
     export_runs_cli,
     ingest_claude_agent_sdk_cli,
@@ -104,6 +105,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     explain_parser.add_argument("--seed", type=int, default=42)
     explain_parser.set_defaults(func=explain.run)
+
+    policy_parser = sub.add_parser(
+        "evaluate-policy",
+        help="Estimate how a decision policy would change success, from logged traces",
+    )
+    policy_parser.add_argument("runs_dir", type=Path, help="Directory of Run JSON traces")
+    policy_parser.add_argument("--policy", type=Path, required=True, help="Policy JSON to evaluate")
+    policy_parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=None,
+        help="Policy JSON to compare against (default: the logged policy)",
+    )
+    policy_parser.add_argument(
+        "--observation-key",
+        action="append",
+        default=None,
+        help="Structured observation field the outcome models may use (repeatable)",
+    )
+    policy_parser.add_argument("--seed", type=int, default=42)
+    policy_parser.add_argument("--json", action="store_true", help="Emit PolicyEstimate JSON")
+    policy_parser.set_defaults(func=evaluate_policy_cli.run)
 
     intervene_parser = sub.add_parser(
         "intervene",
@@ -312,7 +335,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--scenario",
         action="append",
         default=None,
-        help="Run only this scenario (repeatable; default: all)",
+        help="Run only this single-decision scenario and skip the policy cases (repeatable)",
     )
     suite.add_argument("--workers", type=positive_int, default=None, help="Worker processes")
     suite.add_argument(
