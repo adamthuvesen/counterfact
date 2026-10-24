@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 410" width="860" height="410" role="img" aria-label="Whole policies: retry rules over a sequential agent">
+
+<style>
+  svg { --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #8a8983; --grid: #e4e3df;
+        --naive: #eb6834; --model: #1baf7a; --engine: #2a78d6; --bg: #fcfcfb; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f8e86; --grid: #34342f;
+          --naive: #d95926; --model: #199e70; --engine: #3987e5; --bg: #1a1a19; }
+  }
+  text { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+         fill: var(--ink-2); font-size: 13px; }
+  .title { fill: var(--ink); font-size: 16px; font-weight: 600; }
+  .sub { fill: var(--ink-2); font-size: 12.5px; }
+  .row { fill: var(--ink); }
+  .tick { fill: var(--ink-3); font-size: 11.5px; }
+  .note { fill: var(--ink-2); font-size: 12px; font-style: italic; }
+  .grid { stroke: var(--grid); stroke-width: 1; }
+  .zero { stroke: var(--ink-3); stroke-width: 1.5; }
+  .naive { fill: var(--naive); } .model { fill: var(--model); } .engine { fill: var(--engine); }
+  .bg { fill: var(--bg); }
+  circle { stroke: var(--bg); stroke-width: 2; }
+</style>
+
+<rect class="bg" width="860" height="410" rx="8"/>
+<title>Whole policies: retry rules over a sequential agent</title>
+<text class="title" x="16" y="28">Whole policies: retry rules over a sequential agent</text>
+<text class="sub" x="16" y="48">500 corpora per case. Test results confound the retry choice.</text>
+<circle class="naive" cx="22.0" cy="70" r="6"/>
+<text x="34.0" y="74">filter to matching runs</text>
+<circle class="model" cx="224.4" cy="70" r="6"/>
+<text x="236.4" y="74">outcome model only (ICE)</text>
+<circle class="engine" cx="433.6" cy="70" r="6"/>
+<text x="445.6" y="74">counterfact (DR)</text>
+<line class="grid" x1="370.8" x2="370.8" y1="86" y2="356"/>
+<text class="tick" x="370.8" y="374" text-anchor="middle">-0.2</text>
+<line class="grid" x1="472.4" x2="472.4" y1="86" y2="356"/>
+<text class="tick" x="472.4" y="374" text-anchor="middle">-0.1</text>
+<line class="zero" x1="574.0" x2="574.0" y1="86" y2="356"/>
+<text class="tick" x="574.0" y="374" text-anchor="middle">0</text>
+<line class="grid" x1="675.6" x2="675.6" y1="86" y2="356"/>
+<text class="tick" x="675.6" y="374" text-anchor="middle">+0.1</text>
+<line class="grid" x1="777.2" x2="777.2" y1="86" y2="356"/>
+<text class="tick" x="777.2" y="374" text-anchor="middle">+0.2</text>
+<text class="tick" x="574.0" y="394" text-anchor="middle">mean bias against the exact truth (0 = unbiased)</text>
+<text class="row" x="306" y="118.0" text-anchor="end">always retry (blind outcome model)</text>
+<circle class="naive" cx="377.5" cy="105.0" r="6"><title>-0.193</title></circle>
+<circle class="model" cx="393.8" cy="114.0" r="6"><title>-0.177</title></circle>
+<circle class="engine" cx="574.5" cy="123.0" r="6"><title>+0.000</title></circle>
+<text class="row" x="306" y="162.0" text-anchor="end">always retry</text>
+<circle class="naive" cx="377.5" cy="149.0" r="6"><title>-0.193</title></circle>
+<circle class="model" cx="572.7" cy="158.0" r="6"><title>-0.001</title></circle>
+<circle class="engine" cx="574.1" cy="167.0" r="6"><title>+0.000</title></circle>
+<text class="row" x="306" y="206.0" text-anchor="end">never retry</text>
+<circle class="naive" cx="815.5" cy="193.0" r="6"><title>+0.238</title></circle>
+<circle class="model" cx="582.5" cy="202.0" r="6"><title>+0.008</title></circle>
+<circle class="engine" cx="574.0" cy="211.0" r="6"><title>+0.000</title></circle>
+<text class="row" x="306" y="250.0" text-anchor="end">retry on fail</text>
+<circle class="naive" cx="599.9" cy="237.0" r="6"><title>+0.025</title></circle>
+<circle class="model" cx="569.6" cy="246.0" r="6"><title>-0.004</title></circle>
+<circle class="engine" cx="574.1" cy="255.0" r="6"><title>+0.000</title></circle>
+<text class="row" x="306" y="294.0" text-anchor="end">sonnet then retry on fail</text>
+<circle class="naive" cx="598.5" cy="281.0" r="6"><title>+0.024</title></circle>
+<circle class="model" cx="568.8" cy="290.0" r="6"><title>-0.005</title></circle>
+<circle class="engine" cx="575.4" cy="299.0" r="6"><title>+0.001</title></circle>
+<text class="row" x="306" y="338.0" text-anchor="end">retry on fail (propensity unlogged)</text>
+<text class="note" x="564.0" y="338.0" text-anchor="end">engine: bounded</text>
+</svg>
