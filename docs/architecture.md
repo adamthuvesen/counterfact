@@ -67,8 +67,9 @@ Reading order if you have fifteen minutes and want to evaluate the codebase inst
 4. **`src/counterfact/outcome/model.py`** - featurization and corpus validation. Notice the single-class refusal path.
 5. **`src/counterfact/intervene/api.py`** - thin `intervene()` entry; **`intervene/dispatch.py`** - stance handlers; **`intervene/estimators.py`** - randomization check, AIPW, Manski bounds; **`stats.py`** - shared Wilson/z helpers; **`trace_localization.py`** - duplicate-step honesty; **`cli/`** - decomposed CLI package (`commands/`, `parser.py`).
 6. **`src/counterfact/intervene/estimate.py`** - the `CausalEstimate` and `NextStep` schemas. The output shape is the contract with every downstream consumer.
-7. **`src/counterfact/attribute/failure.py`** - per-decision attribution ranking that powers `counterfact diagnose`.
-8. **`tests/acceptance/test_scm_recovery.py`** - the canonical "we recover the synthetic ground truth within tolerance" test. This is the proof the engine is doing what it claims.
+7. **`src/counterfact/policy/evaluate.py`** - off-policy evaluation of whole agent policies over decision sequences: identification per controlled decision, then cross-fitted sequential doubly robust estimation.
+8. **`src/counterfact/attribute/failure.py`** - per-decision attribution ranking that powers `counterfact diagnose`.
+9. **`tests/acceptance/test_scm_recovery.py`** - the canonical "we recover the synthetic ground truth within tolerance" test. This is the proof the engine is doing what it claims.
 
 ## 6. Why bench/ is separate
 

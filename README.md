@@ -62,7 +62,7 @@ naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (AIPW) = +0.255
 
 The table says what happened in the logged corpus. The intervention estimate is the contrast `E[Y | do(sonnet)] - E[Y | do(haiku)]`. It uses the logged propensities and adjusts only for decisions made before `model_call`. Those are different claims, and the demo shows them disagreeing on purpose. The truth under the synthetic SCM is +0.233.
 
-How honest is that label? [`docs/benchmark.md`](docs/benchmark.md) runs the engine against eight structural causal models built to break estimators: hidden confounders, post-treatment retries, positivity violations, misspecified outcome models and small samples. Over 4,000 corpora the engine labels every scenario correctly, and its 95% CIs cover the true effect 94–96% of the time. Where a naive table or an adjust-everything g-formula is off by up to 0.31, the engine's average error stays within 0.01 of the truth, or it refuses.
+How honest is that label? [`docs/benchmark.md`](docs/benchmark.md) runs the engine against eight structural causal models built to break estimators: hidden confounders, post-treatment retries, positivity violations, misspecified outcome models and small samples. Over 4,000 corpora the engine labels every scenario correctly, and its 95% CIs cover the true effect 94–96% of the time. For whole policies over decision sequences, filtering the logs gets both retry policies backwards, while the engine's sequential doubly robust estimate has an average error of at most 0.0014. Where a naive table or an adjust-everything g-formula is off by up to 0.31, the engine's average error stays within 0.01 of the truth, or it refuses.
 
 Identification is checked against the data, not declared. Remove the confounder and the logged propensities from the same corpus, and `intervene` returns `bounded` with Manski bounds of [-0.36, +0.64] instead of a confident wrong number. `tests/acceptance/test_scm_recovery_confounded.py` pins that behavior.
 
@@ -279,6 +279,30 @@ reads RunRecord-style parquet: population-level benchmark audits, dashboards,
 or your own analysis. `counterfact` itself does not render verdicts at the
 population level; the export is the boundary.
 
+### Evaluate A Policy
+
+```bash
+uv run counterfact evaluate-policy corpus/ --policy sonnet_retry_on_fail.json --observation-key tests_passed
+```
+
+`sonnet_retry_on_fail.json` declares what the agent should do at each decision type it controls. Every other decision stays as logged:
+
+```json
+{
+  "name": "sonnet_retry_on_fail",
+  "rules": [
+    {"decision_type": "model_call", "action": "sonnet"},
+    {
+      "decision_type": "retry",
+      "when": {"source": "observation", "key": "tests_passed"},
+      "cases": {"true": "no_retry", "false": "retry_once"}
+    }
+  ]
+}
+```
+
+The answer is V(policy) - V(logged), or V(policy) - V(baseline) with `--baseline other.json`. It comes from sequential doubly robust estimation over the logged decision sequence, with ICE g-formula and self-normalized importance sampling as cross-checks. It is `identified` only when every decision the policy controls logs a propensity that gives the policy's action positive probability. The output also prints what filtering the logs to matching runs would say, labeled as descriptive. On the benchmark that number gets both retry policies backwards; see [`docs/benchmark.md`](docs/benchmark.md#policy-evaluation-decisions-that-react-to-the-run).
+
 ### Benchmark The Estimator
 
 ```bash
@@ -329,6 +353,7 @@ print(estimate.next_step)
 - `build_dag()`: builds an inspectable per-trace graph from logged structure. The graph is not learned from data.
 - `fit_outcome_model()`: validates a corpus and fits a transparent binary outcome model over it. Single-class corpora return `unidentified` instead of pretending to fit.
 - `intervene()`: estimates `E[Y | do(target)] - E[Y | do(baseline)]` for one decision and returns a structured `CausalEstimate`. The baseline defaults to the arm the trace chose.
+- `evaluate_policy()`: estimates how success would change if the agent followed a `Policy` at the decision types it controls, and returns a `PolicyEstimate` with the same identifiability labels.
 - `pass_rate_by_arm()`: descriptive baseline, not a causal claim.
 
 ## Real-Agent Trace Corpora

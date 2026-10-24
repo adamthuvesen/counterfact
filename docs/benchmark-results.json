@@ -162,5 +162,97 @@
       "mean_bound_low": -0.30572400000000005,
       "mean_bound_high": 0.6942760000000001
     }
+  ],
+  "policies": [
+    {
+      "case": "always_retry, outcome model blind to tests_passed",
+      "n_runs": 2000,
+      "n_seeds": 500,
+      "true_delta": 0.0396787306617673,
+      "expected_label": "identified",
+      "label_accuracy": 1.0,
+      "dr_bias": 0.0004562179554143584,
+      "dr_rmse": 0.018009220654875438,
+      "ci_coverage": 0.944,
+      "ice_bias": -0.17733251405005643,
+      "snis_bias": 9.860834749535286e-05,
+      "matched_bias": -0.1933596995378506,
+      "mean_effective_n": 676.2815172517655
+    },
+    {
+      "case": "always_retry",
+      "n_runs": 2000,
+      "n_seeds": 500,
+      "true_delta": 0.0396787306617673,
+      "expected_label": "identified",
+      "label_accuracy": 1.0,
+      "dr_bias": 0.00011536388638545578,
+      "dr_rmse": 0.0033519958249447934,
+      "ci_coverage": 0.938,
+      "ice_bias": -0.0012720913085044186,
+      "snis_bias": 9.860834749535286e-05,
+      "matched_bias": -0.1933596995378506,
+      "mean_effective_n": 676.2815172517655
+    },
+    {
+      "case": "never_retry",
+      "n_runs": 2000,
+      "n_seeds": 500,
+      "true_delta": -0.09258370487745715,
+      "expected_label": "identified",
+      "label_accuracy": 1.0,
+      "dr_bias": 2.3980815913093036e-06,
+      "dr_rmse": 0.006272727569225218,
+      "ci_coverage": 0.958,
+      "ice_bias": 0.008401751566426106,
+      "snis_bias": -0.00018578299726402825,
+      "matched_bias": 0.23771472574452923,
+      "mean_effective_n": 819.737507092381
+    },
+    {
+      "case": "retry_on_fail",
+      "n_runs": 2000,
+      "n_seeds": 500,
+      "true_delta": 0.0396787306617673,
+      "expected_label": "identified",
+      "label_accuracy": 1.0,
+      "dr_bias": 0.00011406671806472911,
+      "dr_rmse": 0.0033532152698840232,
+      "ci_coverage": 0.942,
+      "ice_bias": -0.004378541745061381,
+      "snis_bias": 0.00018045571654508853,
+      "matched_bias": 0.025497656731890844,
+      "mean_effective_n": 1478.3785920923456
+    },
+    {
+      "case": "sonnet_then_retry_on_fail",
+      "n_runs": 2000,
+      "n_seeds": 500,
+      "true_delta": 0.17229144891318326,
+      "expected_label": "identified",
+      "label_accuracy": 1.0,
+      "dr_bias": 0.0013847797463506226,
+      "dr_rmse": 0.01183758559877109,
+      "ci_coverage": 0.974,
+      "ice_bias": -0.005138214790819306,
+      "snis_bias": 0.001667163575852046,
+      "matched_bias": 0.02407973905791992,
+      "mean_effective_n": 752.5938840423852
+    },
+    {
+      "case": "retry_on_fail, retry propensity not logged",
+      "n_runs": 2000,
+      "n_seeds": 500,
+      "true_delta": 0.0396787306617673,
+      "expected_label": "bounded",
+      "label_accuracy": 1.0,
+      "dr_bias": null,
+      "dr_rmse": null,
+      "ci_coverage": null,
+      "ice_bias": null,
+      "snis_bias": null,
+      "matched_bias": null,
+      "mean_effective_n": null
+    }
   ]
 }
