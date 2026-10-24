@@ -45,7 +45,7 @@ A decision supports `identified` when all of these hold:
 2. The log shows positive probability for both contrasted arms on every analyzed run. The chosen arm proves its own mass. With two valid actions, a propensity below 1 proves mass on the other one. A named randomization policy (`uniform`, `epsilon_greedy`) counts only when the logged propensity equals the value that policy implies.
 3. The adjustment set holds only decisions from steps strictly before the treatment. A same-step or later decision is never a covariate.
 
-When a decision fails rule 1 or 2 but both arms occur, the label is `bounded`. When the corpus has one outcome class, no support for an arm, or a question that needs replay (such as a prompt rewrite), the label is `unidentified`.
+When a decision fails rule 1 or 2 but both arms occur, the label is `bounded`. A one-class corpus or an arm with no support gives `unidentified`.
 
 Policy evaluation applies the same rules at every decision the policy controls. Positivity is checked only on the reachable part of each run: the decisions up to and including the first one where the logged action leaves the policy.
 
@@ -79,28 +79,28 @@ The engine reports two cross-checks: the plug-in ICE value and self-normalized i
 
 ## 4. Benchmark design
 
-The original synthetic model in `bench/synthetic/scm.py` is a main-effects logistic model, the same family the outcome model fits. Recovering its effect shows that the code runs. It does not show that the engine is honest when its assumptions fail.
+Recovering the effect of a model from the same family as the outcome model shows only that the code runs. This benchmark is built to break estimators instead. It uses discrete structural causal models, so each true effect is an exact sum over the model, not a simulation. `tests/unit/test_benchmark_scenarios.py` checks each truth against a simulated intervention.
 
-The benchmark uses discrete structural causal models, so each true effect is an exact sum over the model, not a simulation. A unit test checks each truth against a simulated intervention. Each single-decision scenario breaks one assumption:
+Every single-decision scenario asks for the effect of sonnet against haiku on task success, and each one breaks one assumption. The scenarios are defined in `bench/synthetic/scenarios.py`:
 
 | Scenario | What it breaks |
 | --- | --- |
 | `randomized` | Nothing. The control case. |
 | `small_n` | Sample size: n = 80. |
 | `logged_confounding` | Naive pass rates. The arm depends on a logged tool choice. |
-| `interaction` | Outcome-model form. A strong tool × model interaction. |
+| `interaction` | Outcome-model form. Sonnet helps only after the agent runs the tests, and it is mostly routed to those runs. |
 | `unlogged_confounder_logged_propensity` | Covariate adjustment. Hidden difficulty drives the arm, but the propensity is logged. |
 | `unlogged_confounder` | Point identification. The same process with no propensity. |
-| `post_treatment_retry` | Adjust-everything. A retry that reacts to the treatment. |
+| `post_treatment_retry` | Adjust-everything. The agent retries after a failed first attempt, which the model choice caused. |
 | `positivity_violation` | Positivity. The model is routed deterministically by tool. |
 
-Each scenario compares three estimators on the same corpora: the naive pass-rate gap, an adjust-everything g-formula (the engine before identification checks), and the engine.
+Each scenario compares three estimators on the same corpora: the naive pass-rate gap, an adjust-everything g-formula with no identification check, and the engine.
 
-The sequential scenario adds a time-varying confounder. A randomized model choice affects whether the first test run passes. The logging policy retries 70% of the time after a failure and 20% after a pass. Hidden difficulty affects both attempts.
+The sequential scenario in `bench/synthetic/sequential.py` adds a time-varying confounder. A randomized model choice affects whether the first test run passes, and the run logs `tests_passed`. The logging policy retries 70% of the time after a failure and 20% after a pass, and logs that propensity. Hidden difficulty affects both attempts. `policy_value` computes the exact value of any deterministic policy. Two policy cases test failure modes: one hides `tests_passed` from the outcome models, and one drops the retry propensity from the log.
 
 ## 5. Results
 
-500 seeds per scenario. Bias is the mean error against the exact truth. Engine bias and coverage use only seeds labeled `identified`. The full tables are in [benchmark-results.md](benchmark-results.md).
+500 seeds per scenario. Bias is the mean error against the exact truth. Engine bias and coverage use only seeds labeled `identified`. The Monte Carlo standard error of each coverage figure is about 1 percentage point. The full tables are in [benchmark-results.md](benchmark-results.md).
 
 | Scenario | Truth | Naive bias | Adjust-all bias | Engine label | Engine bias | 95% CI coverage |
 | --- | ---: | ---: | ---: | --- | ---: | ---: |
@@ -149,7 +149,7 @@ Synthetic models test the engine against processes it can describe. A real agent
 - The trial arm gives an unbiased ground-truth effect from one corpus. The router arm gives a confounded log of the same agent on the same fixtures.
 - The analysis compares the naive gap and the engine's AIPW estimate on the routed runs against the trial truth. It then removes the logged propensities from the routed runs and checks that the engine refuses.
 
-The harness and the analysis are merged and tested. The paid run (800 traces, a cap of $18) has not been run yet. This report will add its results when it is.
+This section describes the design. It reports no routed-trial results.
 
 ## 7. Limits
 
@@ -157,7 +157,7 @@ The harness and the analysis are merged and tested. The paid run (800 traces, a 
 - `identified` needs logged propensities. Most production agents do not log them today. The engine's answer for those logs is `bounded`, which is correct and not very useful. Logging propensities, or randomizing a small share of decisions, is the practical fix.
 - Policies are deterministic rules over one history feature per decision type. Stochastic policies and rules over several features are not supported.
 - Trajectory weights grow with the number of controlled decisions. Long horizons need more runs. The reported effective sample size shows when that limit applies.
-- Manski bounds are honest but wide. Sensitivity analysis that trades a stated assumption for a tighter interval is future work.
+- Manski bounds are honest but wide. There is no sensitivity analysis that trades a stated assumption for a tighter interval.
 
 ## Reproduce
 
@@ -166,4 +166,4 @@ uv run counterfact bench suite --seeds 500 --markdown docs/benchmark-results.md 
 uv run python scripts/build_figures.py
 ```
 
-The suite makes no API calls. Design notes for each scenario are in [benchmark.md](benchmark.md). The identification guarantees are in [invariants.md](invariants.md).
+The suite is deterministic by seed and makes no API calls. The figures are drawn from `docs/benchmark-results.json`. The identification guarantees are in [invariants.md](invariants.md).
