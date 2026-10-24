@@ -27,6 +27,7 @@ binary outcome is the Manski no-assumption interval.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -148,13 +149,24 @@ def _has_mass(row: TreatmentRow, arm: str) -> bool | None:
         # The other arm's probability is 1 - P(chosen).
         return row.propensity is not None and row.propensity < 1.0
     # Policy names emitted by this repo's harnesses: `uniform` (bench/synthetic)
-    # and `epsilon_greedy` (bench/real/coding_agent/randomize.py).
+    # and `epsilon_greedy` (bench/real/coding_agent/randomize.py). A named policy
+    # counts only when the logged propensity matches what it implies; metadata
+    # that contradicts itself proves nothing.
     params = decision.policy_params or {}
-    if decision.policy == "uniform":
+    n = len(valid)
+    if decision.policy == "uniform" and _matches(row.propensity, 1.0 / n):
         return True
-    if decision.policy == "epsilon_greedy" and "epsilon" in params:
-        return float(params["epsilon"]) > 0 or params.get("greedy") == arm
+    if decision.policy == "epsilon_greedy" and "epsilon" in params and "greedy" in params:
+        epsilon = float(params["epsilon"])
+        chose_greedy = row.arm == params["greedy"]
+        expected = (1.0 - epsilon) + epsilon / n if chose_greedy else epsilon / n
+        if _matches(row.propensity, expected):
+            return epsilon > 0 or params["greedy"] == arm
     return None
+
+
+def _matches(logged: float | None, expected: float) -> bool:
+    return logged is not None and math.isclose(logged, expected, rel_tol=1e-9, abs_tol=1e-9)
 
 
 def adjustment_set(data: TreatmentData) -> list[str]:

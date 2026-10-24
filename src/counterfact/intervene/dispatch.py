@@ -246,7 +246,7 @@ def handle_not_randomized(
             upper=upper,
             note=(
                 f"Manski bounds over {len(data.rows)} runs; they hold under any "
-                "confounding, which is why they always span width 1"
+                f"confounding, which is why they span width {upper - lower:.2f}"
             ),
         ),
         assumptions=[

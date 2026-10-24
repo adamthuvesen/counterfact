@@ -977,3 +977,56 @@ def test_intervene__same_step_decisions_are_not_adjusted_for() -> None:
     assert est.identifiability == IdentifiabilityStatus.IDENTIFIED
     assert est.adjustment_set
     assert all(name.startswith("tool_call::") for name in est.adjustment_set)
+
+
+@pytest.mark.parametrize(
+    ("policy", "params", "propensity"),
+    [
+        ("uniform", {}, 1.0),
+        ("epsilon_greedy", {"epsilon": 0.3, "greedy": "run_tests"}, 0.5),
+    ],
+)
+def test_intervene__named_policy_with_contradicting_propensity_is_bounded(
+    policy: str, params: dict, propensity: float
+) -> None:
+    """A policy name proves positivity only when the logged propensity matches
+    what that policy implies; contradictory metadata is a randomization gap."""
+    arms = ["run_tests", "inspect_file", "search_docs"]
+    runs = [
+        Run(
+            schema_version="0.1.0",
+            run_id=f"named-{i}",
+            steps=[
+                Step(
+                    step_index=0,
+                    decisions=[
+                        Decision(
+                            decision_id=f"d-named-{i}",
+                            decision_type="tool_call",
+                            chosen_action=arms[i % 3],
+                            policy=policy,
+                            policy_params=params,
+                            valid_actions=arms,
+                            propensity=propensity,
+                            context_features={},
+                        )
+                    ],
+                )
+            ],
+            outcome=Outcome(kind="binary", value=bool(i % 2), verifier="test"),
+        )
+        for i in range(30)
+    ]
+
+    est = intervene(
+        dag=build_dag(runs[0]),
+        model=fit_outcome_model(runs, seed=0),
+        step=0,
+        intervention={"tool_choice": "search_docs"},
+    )
+
+    assert est.identifiability == IdentifiabilityStatus.BOUNDED
+    assert est.bounds is not None
+    width = est.bounds.upper - est.bounds.lower
+    assert width > 1.0  # a third observed arm widens Manski bounds past 1
+    assert est.bounds.note is not None and f"width {width:.2f}" in est.bounds.note
