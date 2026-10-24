@@ -11,7 +11,7 @@ src/counterfact/
 ├── schema/      strict trace schema, the producer/consumer contract for CounterBench and adapters
 ├── dag/         inspectable per-trace graph construction
 ├── outcome/     transparent outcome modeling
-├── intervene/   intervention API, identifiability labels, sensitivity/bounds, next_step guidance
+├── intervene/   intervention API, identifiability labels, estimators and bounds, next_step guidance
 ├── attribute/   failure attribution ranking
 ├── explain/     per-trace narrative: ExplainReport model + stdlib HTML renderer (`counterfact explain`)
 ├── adapters/    SDK adapters and live tracers
