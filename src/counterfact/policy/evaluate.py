@@ -220,7 +220,7 @@ def _history(run: Run, before_step: int, observation_keys: set[str]) -> tuple[st
 
 def _feature_value(run: Run, before_step: int, feature: HistoryFeature) -> str | None:
     value: str | None = None
-    for step in run.steps:
+    for step in sorted(run.steps, key=lambda st: st.step_index):
         if step.step_index >= before_step:
             continue
         if feature.source == "decision":
@@ -235,13 +235,20 @@ def _feature_value(run: Run, before_step: int, feature: HistoryFeature) -> str |
 
 
 def _run_nodes(run: Run, policy: Policy, keys: set[str]) -> _RunNodes:
-    nodes: list[_Node] = []
+    # Time is step_index, not list position: a run may list steps out of order
+    # or split one index across several Step entries.
+    by_step: dict[int, list[Decision]] = {}
     for step in run.steps:
-        controlled = [d for d in step.decisions if policy.rule_for(d.decision_type) is not None]
+        for decision in step.decisions:
+            if policy.rule_for(decision.decision_type) is not None:
+                by_step.setdefault(step.step_index, []).append(decision)
+    nodes: list[_Node] = []
+    for step_index in sorted(by_step):
+        controlled = by_step[step_index]
         if len(controlled) > 1:
             raise _Unevaluable(
-                f"run {run.run_id!r} has {len(controlled)} controlled decisions in step "
-                f"{step.step_index}; they cannot be ordered"
+                f"run {run.run_id!r} has {len(controlled)} controlled decisions at step "
+                f"{step_index}; they cannot be ordered"
             )
         for decision in controlled:
             if decision.chosen_action is None:
@@ -252,7 +259,7 @@ def _run_nodes(run: Run, policy: Policy, keys: set[str]) -> _RunNodes:
                 target = rule.action
             else:
                 assert rule.when is not None and rule.cases is not None
-                value = _feature_value(run, step.step_index, rule.when)
+                value = _feature_value(run, step_index, rule.when)
                 if value is None or value not in rule.cases:
                     raise _Unevaluable(
                         f"policy {policy.name!r} is undefined at {decision.decision_id!r}: "
@@ -261,9 +268,9 @@ def _run_nodes(run: Run, policy: Policy, keys: set[str]) -> _RunNodes:
                 target = rule.cases[value]
             nodes.append(
                 _Node(
-                    step=step.step_index,
+                    step=step_index,
                     decision=decision,
-                    history=_history(run, step.step_index, keys),
+                    history=_history(run, step_index, keys),
                     target=target,
                     chosen=canonical_feature_value(decision.chosen_action),
                 )
@@ -272,15 +279,22 @@ def _run_nodes(run: Run, policy: Policy, keys: set[str]) -> _RunNodes:
 
 
 def _positivity_gaps(runs: list[_RunNodes]) -> list[str]:
+    """Support gaps on the nodes the policy can reach.
+
+    Once a run's logged action departs from the policy, its later nodes are off
+    the policy's path: no estimator weights them, so they need no support.
+    """
     unlogged = zero = unknown = 0
     for run in runs:
         for node in run.nodes:
             if node.decision.propensity is None:
                 unlogged += 1
-                continue
-            mass = has_mass(node.decision, node.chosen, node.decision.propensity, node.target)
-            zero += mass is False
-            unknown += mass is None
+            else:
+                mass = has_mass(node.decision, node.chosen, node.decision.propensity, node.target)
+                zero += mass is False
+                unknown += mass is None
+            if node.chosen != node.target:
+                break
     gaps = []
     if unlogged:
         gaps.append(f"{unlogged} controlled decisions log no propensity")
