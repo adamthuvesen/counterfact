@@ -220,3 +220,87 @@ def test_held_out_outcome_never_stands_in_for_its_own_outcome_model() -> None:
 
     assert estimate.outcome_delta is not None
     assert estimate.outcome_delta.point == pytest.approx(-0.5)
+
+
+def _decision(i: int, kind: str, action: str, arms: list[str], propensity: float) -> Decision:
+    return Decision(
+        decision_id=f"d-{i}-{kind}",
+        decision_type=kind,
+        chosen_action=action,
+        policy="router",
+        policy_params={},
+        valid_actions=arms,
+        propensity=propensity,
+        context_features={},
+    )
+
+
+def test_unreachable_nodes_need_no_support() -> None:
+    """Haiku runs never retry (propensity 1.0), sonnet runs retry at random.
+    A sonnet-then-retry policy never reaches a haiku run's retry node, so the
+    haiku branch's missing retry support must not block identification."""
+    rng = random.Random(3)
+    runs = []
+    for i in range(400):
+        model = rng.choice(["haiku", "sonnet"])
+        if model == "haiku":
+            retry, p_retry = "no_retry", 1.0
+        else:
+            retry = rng.choice(["no_retry", "retry_once"])
+            p_retry = 0.5
+        runs.append(
+            Run(
+                schema_version="0.1.0",
+                run_id=f"r{i}",
+                steps=[
+                    Step(
+                        step_index=0,
+                        decisions=[_decision(i, "model_call", model, ["haiku", "sonnet"], 0.5)],
+                    ),
+                    Step(
+                        step_index=1,
+                        decisions=[
+                            _decision(i, "retry", retry, ["no_retry", "retry_once"], p_retry)
+                        ],
+                    ),
+                ],
+                outcome=Outcome(kind="binary", value=rng.random() < 0.5, verifier="t"),
+            )
+        )
+    policy = Policy(
+        name="sonnet_retry",
+        rules=[
+            {"decision_type": "model_call", "action": "sonnet"},
+            {"decision_type": "retry", "action": "retry_once"},
+        ],
+    )
+
+    assert evaluate_policy(runs, policy).identifiability == IdentifiabilityStatus.IDENTIFIED
+
+
+def test_controlled_decisions_are_ordered_by_step_index_not_list_position() -> None:
+    """Listing the retry step before the model step must not change the estimate,
+    and two controlled decisions sharing a step_index must be refused."""
+    runs = _sequential(n=600)
+    reversed_runs = [r.model_copy(update={"steps": list(reversed(r.steps))}) for r in runs]
+    policy = Policy(name="p", rules=[{"decision_type": "model_call", "action": "sonnet"}, ON_FAIL])
+
+    forward = evaluate_policy(runs, policy, observation_keys={"tests_passed"})
+    backward = evaluate_policy(reversed_runs, policy, observation_keys={"tests_passed"})
+    assert forward.outcome_delta is not None and backward.outcome_delta is not None
+    assert backward.outcome_delta.point == pytest.approx(forward.outcome_delta.point)
+
+    split = [
+        r.model_copy(
+            update={
+                "steps": [
+                    s.model_copy(update={"step_index": 0}) if s.step_index == 2 else s
+                    for s in r.steps
+                ]
+            }
+        )
+        for r in runs
+    ]
+    refused = evaluate_policy(split, policy)
+    assert refused.identifiability == IdentifiabilityStatus.UNIDENTIFIED
+    assert "cannot be ordered" in (refused.reason or "")
