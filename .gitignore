@@ -57,3 +57,6 @@ bench/real/runs_pilot_*/
 bench/real/pilot_*/
 bench/real/_archive/
 bench/synthetic/_out/
+
+# Local planning notes and approval drafts
+docs/plan/
