@@ -50,6 +50,10 @@ def _first_model_call(run: Run) -> Decision | None:
     )
 
 
+def _model_call_count(run: Run) -> int:
+    return sum(d.decision_type == "model_call" for step in run.steps for d in step.decisions)
+
+
 def _difference_in_means(runs: list[Run], design: str) -> tuple[float, float]:
     """Per-run pass-rate gap keyed on the first model_call, with its standard error.
 
@@ -70,7 +74,12 @@ def _difference_in_means(runs: list[Run], design: str) -> tuple[float, float]:
 
 
 def _engine(runs: list[Run]) -> CausalEstimate:
-    focal = runs[0]
+    # The step-scoped API refuses a focal trace that retried (two model_calls).
+    # The estimand keys on each run's first call, so any single-call run works
+    # as the focal trace; every run still enters the fit.
+    focal = next((r for r in runs if _model_call_count(r) == 1), None)
+    if focal is None:
+        raise ValueError("every run retried its model_call; no single-call focal trace exists")
     step = next(
         s.step_index
         for s in focal.steps
