@@ -11,7 +11,7 @@ The usual answer is a pass-rate table split by the decision. That table is confo
 Every answer carries a label, checked against the data:
 
 - `identified`: the logs record how each decision was randomized. You get a doubly robust estimate with a 95% CI.
-- `bounded`: both options occur, but the logs do not show how they were assigned. You get no-assumption bounds instead of a guess.
+- `bounded`: the logs do not show how the options were assigned, so a point estimate would be a guess. You get no-assumption bounds when the data support them, and no interval when they do not.
 - `unidentified`: the logs cannot answer the question. You get the concrete next step, such as which runs to collect.
 
 ![Single-decision bias by estimator](https://raw.githubusercontent.com/adamthuvesen/counterfact/main/docs/figures/single-decision-bias.svg)
