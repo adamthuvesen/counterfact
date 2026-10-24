@@ -117,3 +117,20 @@ def test_trial_truth_counts_runs_not_retry_decisions() -> None:
     runs += [run(100 + i, "fixture_router", m, p) for i, (m, p) in enumerate(routed)]
 
     assert analyze(runs).trial_effect == pytest.approx(1 / 3)
+
+
+def test_single_class_routed_runs_get_the_honest_refusal() -> None:
+    rng = random.Random(2)
+    runs = [_run(i, rng) for i in range(400)]
+    routed_all_pass = [
+        r.model_copy(update={"outcome": r.outcome.model_copy(update={"value": True})})
+        if r.steps[0].decisions[0].policy == "fixture_router"
+        else r
+        for r in runs
+    ]
+
+    report = analyze(routed_all_pass)
+
+    assert report.engine_routed.identifiability == IdentifiabilityStatus.UNIDENTIFIED
+    assert report.engine_without_propensities.identifiability == IdentifiabilityStatus.UNIDENTIFIED
+    assert "unidentified" in to_markdown(report)
