@@ -8,7 +8,7 @@ Fixtures: {'streaming_watermark_dedupe': 120}
 | **public=T**|       56 |       64 |
 | **public=F**|        0 |        0 |
 
-## Decision gate (task 6.3)
+## Decision gate
 Generalization-gap cell `(public=T, hidden=F)`: 64 (need >=3)
 Gate: **PASS**
 

@@ -204,7 +204,7 @@ def render(report: dict[str, object]) -> str:
                 f"{table['public=F,hidden=F']:8d} |"
             ),
             "",
-            "## Decision gate (task 6.3)",
+            "## Decision gate",
             (
                 "Generalization-gap cell `(public=T, hidden=F)`: "
                 f"{table['public=T,hidden=F (gap)']} (need >=3)"

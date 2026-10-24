@@ -88,8 +88,7 @@ def test_engine_beats_naive_on_confounded_corpus(
 def test_hidden_confounder_without_logged_randomization_is_not_identified() -> None:
     """Drop the confounder (tool_call) and every propensity. The engine must
     refuse a point estimate and return no-assumption bounds that still contain
-    the do-calculus truth. Before data-checked identification it returned
-    `identified` with a biased gap (0.312 vs truth 0.233 at n=2000, seed=1)."""
+    the do-calculus truth."""
     traces = list(generate_traces(n=1000, seed=42, confound=True))
     for trace in traces:
         trace["steps"] = [
