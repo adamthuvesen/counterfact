@@ -8,7 +8,7 @@ First public release.
 
 ### Added
 
-- `intervene`: one-decision counterfactual contrasts with an identifiability label (`identified`, `bounded`, `unidentified`) that is checked against the logged propensities and support.
+- `intervene`: one-decision counterfactual contrasts with an identifiability label (`identified`, `bounded`, `unidentified`). Model, tool, temperature, and retry questions are checked against the logged propensities and support. `identified` is never granted without that check.
 - Cross-fitted AIPW estimates with influence-function 95% CIs, plus g-formula and Hajek IPW cross-checks.
 - Manski no-assumption bounds when both arms occur but the log does not prove how they were assigned.
 - `evaluate_policy` and `counterfact evaluate-policy`: sequential doubly robust evaluation of deterministic policies over several decisions, with ICE and SNIS cross-checks and an effective sample size.
