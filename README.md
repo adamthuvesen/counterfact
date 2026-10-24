@@ -56,12 +56,13 @@ intervene(model_call: haiku -> sonnet)
 identifiability: identified
 outcome_delta: +0.255 [+0.179, +0.330]  (AIPW, cross-fit)
 cross-check: g-formula +0.251, IPW +0.251; min propensity 0.20/0.20
-next_step: increase_n - CI width 0.150 > 0.10; ~1351 traces would tighten it.
-suggested_command: uv run counterfact bench real --n 1351 --fixture-set broad_calibration
+next_step: increase_n - CI width 0.150 > 0.10; ~2264 traces would tighten it.
 naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (AIPW) = +0.255; the marginal table overstates what the corpus supports — see DAG and assumptions.
 ```
 
 The table says what happened in the logged corpus. The intervention estimate is the contrast `E[Y | do(sonnet)] - E[Y | do(haiku)]`. It uses the logged propensities and adjusts only for decisions made before `model_call`. Those are different claims, and the demo shows them disagreeing on purpose. The truth under the synthetic SCM is +0.233.
+
+How honest is that label? [`docs/benchmark.md`](docs/benchmark.md) runs the engine against eight structural causal models built to break estimators: hidden confounders, post-treatment retries, positivity violations, misspecified outcome models and small samples. Over 4,000 corpora the engine labels every scenario correctly, and its 95% CIs cover the true effect 94–96% of the time. Where a naive table or an adjust-everything g-formula is off by up to 0.31, the engine's average error stays within 0.01 of the truth, or it refuses.
 
 Identification is checked against the data, not declared. Remove the confounder and the logged propensities from the same corpus, and `intervene` returns `bounded` with Manski bounds of [-0.36, +0.64] instead of a confident wrong number. `tests/acceptance/test_scm_recovery_confounded.py` pins that behavior.
 
@@ -277,6 +278,14 @@ each field was derived. The output is consumable by any downstream tool that
 reads RunRecord-style parquet: population-level benchmark audits, dashboards,
 or your own analysis. `counterfact` itself does not render verdicts at the
 population level; the export is the boundary.
+
+### Benchmark The Estimator
+
+```bash
+uv run counterfact bench suite --seeds 500 --markdown docs/benchmark-results.md
+```
+
+This scores the naive table, an adjust-everything g-formula, and the engine on every scenario in `bench/synthetic/scenarios.py`. It is deterministic and local. See [`docs/benchmark.md`](docs/benchmark.md) for the results and what they show.
 
 ### Generate Synthetic Traces
 

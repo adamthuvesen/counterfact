@@ -22,8 +22,7 @@ intervene(model_call: haiku -> sonnet)
 identifiability: identified
 outcome_delta: +0.255 [+0.179, +0.330]  (AIPW, cross-fit)
 cross-check: g-formula +0.251, IPW +0.251; min propensity 0.20/0.20
-next_step: increase_n - CI width 0.150 > 0.10; ~1351 traces would tighten it.
-suggested_command: uv run counterfact bench real --n 1351 --fixture-set broad_calibration
+next_step: increase_n - CI width 0.150 > 0.10; ~2264 traces would tighten it.
 naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (AIPW) = +0.255; the marginal table overstates what the corpus supports — see DAG and assumptions.
 ```
 
@@ -48,7 +47,7 @@ Without `--confound`, `counterfact demo` runs the same flow against the committe
 
 `intervene(model_call: small -> large)` on the same corpus returns
 `identifiability=identified` with `outcome_delta=+0.656 [+0.519, +0.792]` and a
-`next_step.action="increase_n"` recommending ~830 traces to tighten the CI.
+`next_step.action="increase_n"` recommending ~896 traces to tighten the CI.
 The corpus assigns the model by a 50/50 coin flip, so the naive gap (+0.660)
 is itself unbiased here, and the AIPW contrast agrees with it.
 
