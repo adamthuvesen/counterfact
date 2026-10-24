@@ -1,6 +1,6 @@
 """The benchmark's headline claims, checked on a small number of seeds.
 
-The full table lives in docs/benchmark.md and comes from 500 seeds. Here a
+The full table lives in docs/benchmark-results.md and comes from 500 seeds. Here a
 dozen seeds are enough to pin the claims that matter: the engine labels every
 scenario correctly, stays close to the truth where it reports a number, and
 the scenarios really do break the naive and adjust-everything estimators.
