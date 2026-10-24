@@ -25,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
+from bench.synthetic.policy_suite import N_RUNS, PolicySummary, policy_markdown
 from bench.synthetic.scenarios import BASELINE, SCENARIOS, TARGET, Scenario, by_name
 from counterfact import build_dag, fit_outcome_model, intervene, pass_rate_by_arm
 from counterfact.errors import InsufficientOutcomeSupportError
@@ -202,7 +203,13 @@ def _cell(bias: float | None, rmse: float | None) -> str:
     return f"{_fmt(bias)} ({_fmt(rmse, signed=False)})"
 
 
-def to_markdown(summaries: list[ScenarioSummary], *, seeds: int, command: str) -> str:
+def to_markdown(
+    summaries: list[ScenarioSummary],
+    policies: list[PolicySummary],
+    *,
+    seeds: int,
+    command: str,
+) -> str:
     lines = [
         "| Scenario | Breaks | n | Truth | Naive bias (RMSE) | Adjust-all bias (RMSE) "
         "| Engine label (expected) | Engine bias (RMSE) | 95% CI coverage | Mean bounds |",
@@ -222,11 +229,20 @@ def to_markdown(summaries: list[ScenarioSummary], *, seeds: int, command: str) -
         "Bias and RMSE are against the exact true effect of sonnet vs haiku. "
         "Engine bias, RMSE and CI coverage use only seeds labeled `identified`."
     )
-    return header + "\n\n" + "\n".join(lines) + "\n"
+    text = header + "\n\n" + "\n".join(lines) + "\n"
+    if policies:
+        text += (
+            f"\n## Policy evaluation\n\n{N_RUNS} runs of the sequential scenario per seed. "
+            "Matched-runs bias is what filtering the logs to runs that already followed the "
+            "policy reports. DR bias, RMSE and CI coverage use only seeds labeled `identified`.\n\n"
+            + policy_markdown(policies)
+        )
+    return text
 
 
 def write_outputs(
     summaries: list[ScenarioSummary],
+    policies: list[PolicySummary],
     *,
     seeds: int,
     command: str,
@@ -235,8 +251,13 @@ def write_outputs(
 ) -> None:
     if markdown is not None:
         markdown.parent.mkdir(parents=True, exist_ok=True)
-        markdown.write_text(to_markdown(summaries, seeds=seeds, command=command))
+        markdown.write_text(to_markdown(summaries, policies, seeds=seeds, command=command))
     if json_path is not None:
         json_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"seeds": seeds, "command": command, "scenarios": [asdict(s) for s in summaries]}
+        payload = {
+            "seeds": seeds,
+            "command": command,
+            "scenarios": [asdict(s) for s in summaries],
+            "policies": [asdict(p) for p in policies],
+        }
         json_path.write_text(json.dumps(payload, indent=2) + "\n")
