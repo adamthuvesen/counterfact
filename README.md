@@ -16,6 +16,10 @@ Every answer carries an identifiability label. Read that label before you read t
 - `bounded` - both arms have support, but the corpus does not log randomization, so a point estimate would assume no unmeasured confounding. You get Manski no-assumption bounds, or `None` when the data cannot support any.
 - `unidentified` - the corpus cannot answer the question without more data, stronger assumptions, or replay. You get a concrete `next_step` instead of a number.
 
+![Single-decision bias by estimator](https://raw.githubusercontent.com/adamthuvesen/counterfact/main/docs/figures/single-decision-bias.svg)
+
+The figure scores three estimators on eight causal models built to break them, with 500 corpora each and an exact true effect. The naive pass-rate gap and an adjust-everything g-formula are off by up to 0.31. `counterfact` stays within 0.01 of the truth, or it refuses with `bounded`. The [technical report](https://github.com/adamthuvesen/counterfact/blob/main/docs/report.md) covers the method, the benchmark, and the limits.
+
 For the design philosophy and a reading guide through the source, see [`docs/architecture.md`](docs/architecture.md).
 
 ## Install
@@ -62,7 +66,7 @@ naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (AIPW) = +0.255
 
 The table says what happened in the logged corpus. The intervention estimate is the contrast `E[Y | do(sonnet)] - E[Y | do(haiku)]`. It uses the logged propensities and adjusts only for decisions made before `model_call`. Those are different claims, and the demo shows them disagreeing on purpose. The truth under the synthetic SCM is +0.233.
 
-How honest is that label? [`docs/benchmark.md`](docs/benchmark.md) runs the engine against eight structural causal models built to break estimators: hidden confounders, post-treatment retries, positivity violations, misspecified outcome models and small samples. Over 4,000 corpora the engine labels every scenario correctly, and its 95% CIs cover the true effect 94–96% of the time. For whole policies over decision sequences, filtering the logs gets both retry policies backwards, while the engine's sequential doubly robust estimate has an average error of at most 0.0014. Where a naive table or an adjust-everything g-formula is off by up to 0.31, the engine's average error stays within 0.01 of the truth, or it refuses.
+How honest is that label? [`docs/benchmark.md`](docs/benchmark.md) runs the engine against eight structural causal models built to break estimators: hidden confounders, post-treatment retries, positivity violations, misspecified outcome models and small samples. Over 4,000 corpora the engine labels every scenario correctly, and its 95% CIs cover the true effect 94–96% of the time. For whole policies over decision sequences, filtering the logs gets both retry policies backwards, while the engine's sequential doubly robust estimate has an average error of at most 0.0014.
 
 Identification is checked against the data, not declared. Remove the confounder and the logged propensities from the same corpus, and `intervene` returns `bounded` with Manski bounds of [-0.36, +0.64] instead of a confident wrong number. `tests/acceptance/test_scm_recovery_confounded.py` pins that behavior.
 
