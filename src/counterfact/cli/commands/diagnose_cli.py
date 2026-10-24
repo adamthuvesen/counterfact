@@ -40,7 +40,6 @@ def run(args: argparse.Namespace) -> int:
             corpus,
             decision_type=args.decision_type,
             top_k=args.top_k,
-            bootstrap=args.bootstrap,
             seed=args.seed,
             run_path=str(run_path),
             corpus_dir=str(runs_dir),

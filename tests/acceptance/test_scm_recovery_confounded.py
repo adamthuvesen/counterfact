@@ -28,18 +28,18 @@ from counterfact.schema import Run
 @pytest.fixture(scope="module")
 def confounded_corpus() -> tuple[list[Run], object]:
     runs = [Run.model_validate(t) for t in generate_traces(n=1000, seed=42, confound=True)]
-    model = fit_outcome_model(runs, n_bootstrap=50, seed=42)
+    model = fit_outcome_model(runs, seed=42)
     return runs, model
 
 
 def _arm_gap(model: object, runs: list[Run]) -> float:
     dag = build_dag(runs[0])
-    e_sonnet = intervene(dag=dag, model=model, step=2, intervention={"model_choice": "sonnet"})
-    e_haiku = intervene(dag=dag, model=model, step=2, intervention={"model_choice": "haiku"})
-    assert e_sonnet.identifiability == IdentifiabilityStatus.IDENTIFIED
-    assert e_haiku.identifiability == IdentifiabilityStatus.IDENTIFIED
-    assert e_sonnet.outcome_delta is not None and e_haiku.outcome_delta is not None
-    return e_sonnet.outcome_delta.point - e_haiku.outcome_delta.point
+    estimate = intervene(
+        dag=dag, model=model, step=2, intervention={"model_choice": "sonnet"}, baseline="haiku"
+    )
+    assert estimate.identifiability == IdentifiabilityStatus.IDENTIFIED
+    assert estimate.outcome_delta is not None
+    return estimate.outcome_delta.point
 
 
 def test_engine_recovers_do_calculus_arm_gap_within_tolerance(
@@ -83,3 +83,39 @@ def test_engine_beats_naive_on_confounded_corpus(
     # Sanity: confounding actually showed up in the sample (naive gap is far
     # from do-calculus truth and close-ish to the analytic confounded headline).
     assert abs(naive_gap - CONFOUNDED_NAIVE_HEADLINE) < 0.10
+
+
+def test_hidden_confounder_without_logged_randomization_is_not_identified() -> None:
+    """Drop the confounder (tool_call) and every propensity. The engine must
+    refuse a point estimate and return no-assumption bounds that still contain
+    the do-calculus truth. Before data-checked identification it returned
+    `identified` with a biased gap (0.312 vs truth 0.233 at n=2000, seed=1)."""
+    traces = list(generate_traces(n=1000, seed=42, confound=True))
+    for trace in traces:
+        trace["steps"] = [
+            step for step in trace["steps"] if step["decisions"][0]["decision_type"] != "tool_call"
+        ]
+        for step in trace["steps"]:
+            for decision in step["decisions"]:
+                for key in ("policy", "policy_params", "valid_actions", "propensity"):
+                    decision[key] = None
+                decision["context_features"] = None
+    runs = [Run.model_validate(t) for t in traces]
+    model = fit_outcome_model(runs, seed=42)
+    model_step = next(
+        s.step_index for s in runs[0].steps if s.decisions[0].decision_type == "model_call"
+    )
+
+    estimate = intervene(
+        dag=build_dag(runs[0]),
+        model=model,
+        step=model_step,
+        intervention={"model_choice": "sonnet"},
+        baseline="haiku",
+    )
+
+    assert estimate.identifiability == IdentifiabilityStatus.BOUNDED
+    assert estimate.outcome_delta is None
+    assert estimate.bounds is not None
+    assert estimate.bounds.lower <= CONFOUNDED_DO_HEADLINE <= estimate.bounds.upper
+    assert estimate.next_step.action == "add_arm_randomization"

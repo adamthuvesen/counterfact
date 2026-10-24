@@ -45,7 +45,6 @@ class ExplainReport(BaseModel):
     summary_decision_type: DecisionTypeLiteral
     decision_type_intervention_kind: str
     target_arm: str | None = None
-    bootstrap: int = 200
     seed: int = 42
     run_path: str | None = None
     corpus_dir: str | None = None
@@ -95,7 +94,6 @@ class _ReportCommon(TypedDict):
     pass_rate: float | None
     intervention_kind: str
     decision_type: DecisionTypeLiteral
-    bootstrap: int
     seed: int
     run_path: str | None
     corpus_dir: str | None
@@ -110,7 +108,6 @@ def _report_shell(
     pass_rate: float | None,
     intervention_kind: str,
     decision_type: DecisionTypeLiteral,
-    bootstrap: int,
     seed: int,
     run_path: str | None,
     corpus_dir: str | None,
@@ -130,7 +127,6 @@ def _report_shell(
         summary_decision_type=decision_type,
         decision_type_intervention_kind=intervention_kind,
         target_arm=target_arm,
-        bootstrap=bootstrap,
         seed=seed,
         run_path=run_path,
         corpus_dir=corpus_dir,
@@ -143,7 +139,6 @@ def build_report(
     corpus: list[Run],
     *,
     decision_type: Literal["model_call", "tool_call", "retry"] = "model_call",
-    bootstrap: int = 200,
     seed: int = 42,
     run_path: str | None = None,
     corpus_dir: str | None = None,
@@ -174,7 +169,6 @@ def build_report(
         "pass_rate": pass_rate,
         "intervention_kind": intervention_kind,
         "decision_type": decision_type,
-        "bootstrap": bootstrap,
         "seed": seed,
         "run_path": run_path,
         "corpus_dir": corpus_dir,
@@ -198,7 +192,7 @@ def build_report(
         )
 
     try:
-        model = fit_outcome_model(corpus, n_bootstrap=bootstrap, seed=seed)
+        model = fit_outcome_model(corpus, seed=seed)
     except InsufficientOutcomeSupportError as exc:
         target = first_observed_arm(corpus, decision_type)
         estimate = _no_feature_estimate(

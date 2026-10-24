@@ -15,7 +15,7 @@ BENCH_UNAVAILABLE_MESSAGE = (
 DEMO_CONTRAST_THRESHOLD = 0.05
 DEMO_CONTRAST_TEMPLATE = (
     "naive_vs_causal_contrast: naive arm gap = {naive:+.3f}; "
-    "causal arm gap (do-calculus, g-formula) = {causal:+.3f}; "
+    "causal arm gap (AIPW) = {causal:+.3f}; "
     "the marginal table overstates what the corpus supports — see "
     "DAG and assumptions."
 )

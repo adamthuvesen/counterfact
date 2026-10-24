@@ -31,10 +31,8 @@ from counterfact.outcome.model import OutcomeModel
 from counterfact.schema import Run
 from counterfact.taxonomy import DECISION_TYPES, valid_interventions
 
-# Bootstrap draws for the model fit used to probe identifiability coverage.
-# Small because the analyzer doesn't need tight CIs — it only reads the
-# returned identifiability label per query.
-_PROBE_BOOTSTRAP = 50
+# Seeds the cross-fit folds when probing identifiability coverage; the analyzer
+# only reads the returned label per query.
 _PROBE_SEED = 42
 
 
@@ -104,7 +102,7 @@ def _unfittable_coverage() -> tuple[IdentifiabilityCoverage, set[str]]:
 
 def _fit_probe_model(runs: list[Run]) -> OutcomeModel | None:
     try:
-        return fit_outcome_model(runs, n_bootstrap=_PROBE_BOOTSTRAP, seed=_PROBE_SEED)
+        return fit_outcome_model(runs, seed=_PROBE_SEED)
     except InsufficientOutcomeSupportError:
         return None
 
@@ -130,7 +128,8 @@ def _probe_reachable_identifiability(
         for kind in kinds_by_dt[dt]:
             for arm in dt_arms:
                 located = step_index.get((dt, arm))
-                if located is None:
+                baseline = next((other for other in dt_arms if other != arm), None)
+                if located is None or baseline is None:
                     continue
                 run, step_idx = located
                 try:
@@ -138,7 +137,8 @@ def _probe_reachable_identifiability(
                         dag=build_dag(run),
                         model=model,
                         step=step_idx,
-                        intervention={kind: arm},
+                        intervention={kind: baseline},
+                        baseline=arm,
                     )
                 except InvalidInterventionError:
                     continue

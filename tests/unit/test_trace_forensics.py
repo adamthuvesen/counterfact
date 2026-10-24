@@ -19,8 +19,8 @@ from tests.conftest import synthetic_corpus
 
 def test_build_diagnosis__deterministic_for_fixed_inputs() -> None:
     corpus = synthetic_corpus(n=48, seed=42)
-    a = build_diagnosis(corpus[0], corpus, bootstrap=10, seed=42)
-    b = build_diagnosis(corpus[0], corpus, bootstrap=10, seed=42)
+    a = build_diagnosis(corpus[0], corpus, seed=42)
+    b = build_diagnosis(corpus[0], corpus, seed=42)
 
     assert a.model_dump(mode="python") == b.model_dump(mode="python")
     assert a.entries
@@ -35,7 +35,6 @@ def test_build_diagnosis__decision_type_filters_ranked_entries() -> None:
         corpus,
         decision_type="model_call",
         top_k=10,
-        bootstrap=10,
         seed=42,
     )
     tool_report = build_diagnosis(
@@ -43,7 +42,6 @@ def test_build_diagnosis__decision_type_filters_ranked_entries() -> None:
         corpus,
         decision_type="tool_call",
         top_k=10,
-        bootstrap=10,
         seed=42,
     )
 
@@ -57,7 +55,7 @@ def test_build_diagnosis__single_class_refusal_has_no_outcome_delta() -> None:
     paths = sorted(Path("bench/real/single_class_refusal").glob("*.json"))
     corpus = [Run.model_validate_json(path.read_text()) for path in paths]
 
-    report = build_diagnosis(corpus[0], corpus, bootstrap=10, seed=42)
+    report = build_diagnosis(corpus[0], corpus, seed=42)
 
     assert report.entries
     assert {entry.identifiability for entry in report.entries} == {
@@ -85,7 +83,7 @@ def test_build_diagnosis__repeated_decision_type_is_unidentified() -> None:
     )
     corpus = [focal, *corpus[1:]]
 
-    report = build_diagnosis(focal, corpus, top_k=10, bootstrap=10, seed=42)
+    report = build_diagnosis(focal, corpus, top_k=10, seed=42)
     model_entries = [entry for entry in report.entries if entry.decision_type == "model_call"]
 
     assert model_entries

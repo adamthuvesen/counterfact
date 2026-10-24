@@ -25,7 +25,7 @@ def _estimate_for_corpus(
     decision: Decision,
     intervention_kind: str,
     target_value: str,
-    bootstrap: int,
+    baseline: str | None,
     seed: int,
     use_decision_id: bool,
 ) -> CausalEstimate:
@@ -40,13 +40,14 @@ def _estimate_for_corpus(
             target=target_value,
         )
 
-    model = fit_outcome_model(corpus, n_bootstrap=bootstrap, seed=seed)
+    model = fit_outcome_model(corpus, seed=seed)
     return intervene(
         dag=build_dag(focal),
         model=model,
         step=step.step_index,
         intervention={intervention_kind: target_value},
         decision_id=decision.decision_id if use_decision_id else None,
+        baseline=baseline,
     )
 
 
@@ -86,7 +87,7 @@ def run(args: argparse.Namespace) -> int:
             decision=decision,
             intervention_kind=intervention_kind,
             target_value=target_value,
-            bootstrap=args.bootstrap,
+            baseline=args.baseline,
             seed=args.seed,
             use_decision_id=use_decision_id,
         )

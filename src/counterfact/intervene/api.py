@@ -3,9 +3,10 @@
 For each (decision_type, intervention_kind) pair the taxonomy declares an
 identifiability stance. `intervene` dispatches on that stance:
 
-* `requires-randomized-support`: g-formula via the fitted outcome model —
-  set the targeted feature to 1 in every training row, zero out sibling-arm
-  features, predict, average. Returns `identified` with point + bootstrap CI.
+* `requires-randomized-support`: checks the corpus for logged propensities and
+  positivity. When both hold, returns `identified` with a cross-fitted AIPW
+  contrast against the baseline arm. When they do not, returns `bounded` with
+  Manski no-assumption bounds.
 * `requires-back-door-adjustment`: returns `bounded` and names the adjustment
   set. When observed support is missing, `bounds` is `None` and `next_step`
   explains how to broaden support.
@@ -27,13 +28,15 @@ from counterfact.intervene.dispatch import (
     handle_duplicate_step_refusal,
 )
 from counterfact.intervene.estimate import CausalEstimate, InterventionQuery
+from counterfact.intervene.estimators import logged_arm
 from counterfact.outcome.features import canonical_intervention_value, intervention_feature_family
 from counterfact.outcome.model import OutcomeModel
+from counterfact.schema import Decision
 from counterfact.taxonomy import identifiability_stance, is_valid_intervention
 from counterfact.trace_localization import duplicate_decision_type_steps
 
 
-def _decision_type_at_step(dag: DAG, step: int, *, decision_id: str | None = None) -> str:
+def _decision_at_step(dag: DAG, step: int, *, decision_id: str | None = None) -> Decision:
     if dag.run is None:
         raise InvalidInterventionError("DAG has no associated trace")
     for s in dag.run.steps:
@@ -41,7 +44,7 @@ def _decision_type_at_step(dag: DAG, step: int, *, decision_id: str | None = Non
             if decision_id is not None:
                 for decision in s.decisions:
                     if decision.decision_id == decision_id:
-                        return decision.decision_type
+                        return decision
                 raise InvalidInterventionError(
                     f"decision_id {decision_id!r} not found on step {step}"
                 )
@@ -52,7 +55,7 @@ def _decision_type_at_step(dag: DAG, step: int, *, decision_id: str | None = Non
                     f"step {step} has multiple decisions; the v0 step-scoped "
                     "intervene API cannot target it unambiguously"
                 )
-            return s.decisions[0].decision_type
+            return s.decisions[0]
     raise InvalidInterventionError(f"step {step} not found in trace")
 
 
@@ -72,31 +75,55 @@ def intervene(
     step: int,
     intervention: dict[str, Any],
     decision_id: str | None = None,
+    baseline: Any | None = None,
 ) -> CausalEstimate:
-    """Run an intervention query and return a CausalEstimate."""
+    """Estimate E[Y | do(target)] - E[Y | do(baseline)] for one logged decision.
+
+    `baseline` defaults to the arm the focal decision actually chose, which
+    answers "what if this run had done X instead of what it did?".
+    """
     if model.outcome_kind != "binary":
         raise UnsupportedOutcomeError(
             f"v0 only supports binary outcomes; got model.outcome_kind={model.outcome_kind!r}"
         )
 
     intervention_kind, target_value = _resolve_intervention(intervention)
-    decision_type = _decision_type_at_step(dag, step, decision_id=decision_id)
+    decision = _decision_at_step(dag, step, decision_id=decision_id)
+    decision_type = decision.decision_type
 
     if not is_valid_intervention(decision_type, intervention_kind):
         raise InvalidInterventionError(
             f"intervention {intervention_kind!r} is not valid on decision type {decision_type!r}"
         )
 
+    feature_family = intervention_feature_family(decision_type, intervention_kind)
+    target_arm_name = canonical_intervention_value(intervention_kind, target_value)
+    stance = identifiability_stance(decision_type, intervention_kind)
+    baseline_arm_name: str | None = None
+    if stance == "requires-randomized-support":
+        baseline_arm_name = (
+            canonical_intervention_value(intervention_kind, baseline)
+            if baseline is not None
+            else logged_arm(decision, feature_family)
+        )
+        if baseline_arm_name is None:
+            raise InvalidInterventionError(
+                f"decision {decision.decision_id!r} logs no {feature_family!r} arm; "
+                "pass an explicit baseline to define the contrast"
+            )
+        if baseline_arm_name == target_arm_name:
+            raise InvalidInterventionError(
+                f"target {target_arm_name!r} equals the baseline arm; pass a different "
+                "baseline to define the contrast"
+            )
     query = InterventionQuery(
         decision_type=decision_type,
         intervention_kind=intervention_kind,
         target=target_value,
+        baseline=baseline if baseline is not None else baseline_arm_name,
         step=step,
     )
-    feature_family = intervention_feature_family(decision_type, intervention_kind)
-    target_arm_name = canonical_intervention_value(intervention_kind, target_value)
 
-    stance = identifiability_stance(decision_type, intervention_kind)
     ctx = InterveneContext(
         dag=dag,
         model=model,
@@ -106,6 +133,7 @@ def intervene(
         target_value=target_value,
         feature_family=feature_family,
         target_arm_name=target_arm_name,
+        baseline_arm_name=baseline_arm_name,
         decision_type=decision_type,
     )
 

@@ -70,7 +70,7 @@ def test_demo__at_least_one_identified_result_is_rendered(executed_notebook: dic
     THEN at least one cell output displays a CausalEstimate with identifiability='identified'."""
     text = all_text_outputs(executed_notebook)
     assert "identifiability : identified" in text
-    assert "95% bootstrap CI" in text
+    assert "95% CI" in text
 
 
 def test_demo__at_least_one_bounded_result_is_rendered(executed_notebook: dict) -> None:

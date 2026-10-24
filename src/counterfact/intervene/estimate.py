@@ -22,32 +22,52 @@ class InterventionQuery(_Strict):
     decision_type: str
     intervention_kind: str
     target: Any
+    # The arm the contrast is taken against. None only on refusals that never
+    # reached a contrast (e.g. corpus-wide degenerate or replay-only queries).
+    baseline: Any = None
     # `step` is None when no specific trace step applies (e.g. corpus-wide
     # degenerate refusal). Avoid sentinels like -1 — None is self-documenting.
     step: int | None
 
 
 class DistributionSummary(_Strict):
-    """Summary of the predicted outcome distribution under the intervention.
+    """A point estimate with a 95% sampling interval.
 
-    The bootstrap CI here is *coefficient/prediction* uncertainty (resampling
-    over the outcome model fit). Identifiability uncertainty — confounding
-    bias the data cannot rule out — is a separate concern, captured on
-    `SensitivityBounds`. The two must not be conflated.
+    The interval is sampling uncertainty only, from the AIPW influence
+    function. Identification uncertainty (what the data cannot rule out) is a
+    separate concern, carried by `IdentificationBounds`. Never conflate them.
     """
 
     point: float
     ci_low: float
     ci_high: float
-    n_bootstrap: int
+    ci_method: Literal["aipw_influence_function"] = "aipw_influence_function"
 
 
-class SensitivityBounds(_Strict):
-    """Identifiability/confounding uncertainty. Distinct from prediction CIs."""
+class IdentificationBounds(_Strict):
+    """Bounds on the contrast that hold without any no-confounding assumption."""
 
-    e_value: float
-    technique: Literal["e_value"] = "e_value"
+    lower: float
+    upper: float
+    technique: Literal["manski"] = "manski"
     note: str | None = None
+
+
+class EstimatorDiagnostics(_Strict):
+    """How the identified contrast was computed and how far to trust it."""
+
+    estimator: Literal["aipw_cross_fit"] = "aipw_cross_fit"
+    n_used: int
+    n_excluded: int
+    n_target: int
+    n_baseline: int
+    n_folds: int
+    g_formula_delta: float
+    ipw_delta: float
+    min_propensity_target: float
+    min_propensity_baseline: float
+    effective_n_target: float
+    effective_n_baseline: float
 
 
 # Required payload keys per action. Each action's payload must contain at
@@ -137,8 +157,10 @@ class CausalEstimate(_Strict):
     estimand: str | None = None
     reason: str | None = None
     adjustment_set: list[str] = Field(default_factory=list)
+    # E[Y | do(target)] - E[Y | do(baseline)]: the contrast the label refers to.
     outcome_delta: DistributionSummary | None = None
-    bounds: SensitivityBounds | None = None
+    bounds: IdentificationBounds | None = None
+    diagnostics: EstimatorDiagnostics | None = None
     assumptions: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     next_step: NextStep

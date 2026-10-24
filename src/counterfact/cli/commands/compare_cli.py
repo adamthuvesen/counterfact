@@ -34,7 +34,6 @@ def run(args: argparse.Namespace) -> int:
             corpus,
             decision_type=args.decision_type,
             top_k=args.top_k,
-            bootstrap=args.bootstrap,
             seed=args.seed,
             run_path=str(args.left_run_json if args.focal == "left" else args.right_run_json),
             corpus_dir=str(args.runs_dir),

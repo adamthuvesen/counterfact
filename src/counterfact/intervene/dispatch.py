@@ -6,17 +6,24 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
-
 from counterfact.dag import DAG
-from counterfact.errors import InvalidInterventionError
 from counterfact.intervene.estimate import (
     CausalEstimate,
     DistributionSummary,
+    EstimatorDiagnostics,
     IdentifiabilityStatus,
+    IdentificationBounds,
     InterventionQuery,
     NextStep,
-    SensitivityBounds,
+)
+from counterfact.intervene.estimators import (
+    TreatmentData,
+    adjustment_set,
+    aipw_contrast,
+    manski_bounds,
+    propensity_summary,
+    randomization_gaps,
+    treatment_data,
 )
 from counterfact.intervene.suggest import suggest_harness_command
 from counterfact.intervene.support import (
@@ -29,7 +36,6 @@ from counterfact.intervene.support import (
     power_from_arm_table,
     replay_inputs_for,
 )
-from counterfact.outcome.features import canonical_intervention_value
 from counterfact.outcome.model import OutcomeModel
 from counterfact.taxonomy import IdentifiabilityStance
 
@@ -44,63 +50,8 @@ class InterveneContext:
     target_value: Any
     feature_family: str
     target_arm_name: str
+    baseline_arm_name: str | None
     decision_type: str
-
-
-class _NoSupport(Exception):
-    """Internal: raised when the target arm has zero training support."""
-
-
-def _bootstrap_predict(model: OutcomeModel, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    boot_coefs = model.bootstrap_coefs
-    boot_intercepts = model.bootstrap_intercepts
-    z = X @ model.coefficients + model.intercept
-    point = 1.0 / (1.0 + np.exp(-z))
-    z_boot = X @ boot_coefs.T + boot_intercepts[None, :]
-    boot = 1.0 / (1.0 + np.exp(-z_boot))
-    return point, boot
-
-
-def _adjust_g_formula(
-    model: OutcomeModel,
-    feature_family: str,
-    intervention_kind: str,
-    target_action: Any,
-) -> DistributionSummary:
-    feat_index = model.feature_index
-    target_key = (
-        f"{feature_family}::{canonical_intervention_value(intervention_kind, target_action)}"
-    )
-    if target_key not in feat_index:
-        raise _NoSupport(target_key)
-
-    sibling_keys = [k for k in feat_index if k.startswith(f"{feature_family}::")]
-    target_idx = feat_index[target_key]
-    sibling_idx = [feat_index[k] for k in sibling_keys]
-
-    X = model.train_X.copy()
-    X[:, sibling_idx] = 0.0
-    X[:, target_idx] = 1.0
-
-    point_per_run, boot_per_run = _bootstrap_predict(model, X)
-    point = float(point_per_run.mean())
-    boot_means = boot_per_run.mean(axis=0)
-    ci_lo = float(np.percentile(boot_means, 2.5))
-    ci_hi = float(np.percentile(boot_means, 97.5))
-    return DistributionSummary(
-        point=point,
-        ci_low=ci_lo,
-        ci_high=ci_hi,
-        n_bootstrap=len(boot_means),
-    )
-
-
-def _e_value_from_probs(point: float, baseline: float = 0.5) -> float:
-    from counterfact.sensitivity import e_value as _ev
-
-    p = max(min(point, 1 - 1e-12), 1e-12)
-    b = max(min(baseline, 1 - 1e-12), 1e-12)
-    return _ev(p / b)
 
 
 def handle_always_replay(ctx: InterveneContext) -> CausalEstimate:
@@ -210,8 +161,8 @@ def handle_back_door_bounded(ctx: InterveneContext) -> CausalEstimate:
         adjustment_set=[ctx.decision_type],
         assumptions=[
             f"back-door adjustment on {ctx.decision_type} via taxonomy parents",
-            "E-value not computed: bounded path has no observed marginal "
-            "P(success | do(...)) to compare against a baseline",
+            "no sensitivity bound computed: memory content is not logged as a "
+            "randomized arm, so the corpus has no contrast to bound",
         ],
         bounds=None,
         warnings=[
@@ -230,35 +181,122 @@ def handle_back_door_bounded(ctx: InterveneContext) -> CausalEstimate:
     )
 
 
-def handle_no_support(ctx: InterveneContext, exc: _NoSupport) -> CausalEstimate:
+def handle_no_support(ctx: InterveneContext, missing: list[str]) -> CausalEstimate:
     observed_rows = arm_table_from_model(ctx.model, ctx.feature_family)
     observed_arm_names = [r.arm for r in observed_rows]
     canonical_missing = missing_arms_for(
         ctx.decision_type, ctx.intervention_kind, observed_arm_names
     )
-    if ctx.target_arm_name and ctx.target_arm_name not in canonical_missing:
-        canonical_missing = [ctx.target_arm_name, *canonical_missing]
+    canonical_missing = [*missing, *(arm for arm in canonical_missing if arm not in missing)]
+    strata = [f"{ctx.feature_family}::{arm}" for arm in missing]
     return build_broaden_arm_support_estimate(
         ctx.query,
-        reason=f"no observed support for {exc}; randomization missed this arm",
+        reason=f"no observed support for {', '.join(strata)}; randomization missed this arm",
         observed_rows=observed_rows,
         missing_arms=canonical_missing,
-        missing_strata=[str(exc)],
+        missing_strata=strata,
         warnings=[
             "Increasing epsilon or extending the corpus could create support "
             "for this arm and promote the result to identified."
         ],
         human_text=(
-            f"Arm {ctx.target_value!r} on {ctx.decision_type!r} has zero observed "
-            "support; raise ε or run more traces with a deliberate sweep."
+            f"Arm(s) {', '.join(repr(arm) for arm in missing)} on {ctx.decision_type!r} "
+            "have zero observed support; raise ε or run more traces with a deliberate sweep."
         ),
         arm_name_for_suggestion=ctx.target_arm_name,
     )
 
 
-def handle_identified(ctx: InterveneContext, delta: DistributionSummary) -> CausalEstimate:
-    q = ctx.query
-    ev = _e_value_from_probs(delta.point, baseline=0.5)
+def handle_single_class_rows(
+    ctx: InterveneContext, data: TreatmentData, observed: int
+) -> CausalEstimate:
+    """The corpus has both outcomes, but every run that reaches this decision has one."""
+    observed_rows = arm_table_from_model(ctx.model, ctx.feature_family)
+    return build_broaden_arm_support_estimate(
+        ctx.query,
+        reason=(
+            f"all {len(data.rows)} runs that reach {ctx.decision_type!r} have "
+            f"outcome={bool(observed)}; no outcome variation exists to estimate a contrast"
+        ),
+        observed_rows=observed_rows,
+        missing_arms=[],
+        missing_strata=[f"Outcome.value={not observed}"],
+        human_text=(
+            f"Collect runs that reach {ctx.decision_type!r} with both pass and fail "
+            "outcomes before estimating this contrast."
+        ),
+        arm_name_for_suggestion=ctx.target_arm_name,
+    )
+
+
+def handle_not_randomized(
+    ctx: InterveneContext, data: TreatmentData, baseline: str, gaps: list[str]
+) -> CausalEstimate:
+    lower, upper = manski_bounds(data, ctx.target_arm_name, baseline)
+    policies = sorted({str(r.decision.policy) for r in data.rows})
+    return CausalEstimate(
+        query=ctx.query,
+        identifiability=IdentifiabilityStatus.BOUNDED,
+        estimand=_contrast_estimand(ctx, baseline),
+        reason=(
+            "the corpus does not log randomized assignment for this contrast: " + "; ".join(gaps)
+        ),
+        bounds=IdentificationBounds(
+            lower=lower,
+            upper=upper,
+            note=(
+                f"Manski bounds over {len(data.rows)} runs; they hold under any "
+                "confounding, which is why they always span width 1"
+            ),
+        ),
+        assumptions=[
+            "none beyond consistency: the bounds use only the observed joint "
+            "distribution of arm and outcome"
+        ],
+        warnings=[
+            "a point estimate here would assume no unmeasured confounding, which "
+            "unrandomized traces cannot support"
+        ],
+        next_step=NextStep(
+            action="add_arm_randomization",
+            payload={
+                "arm_name": ctx.decision_type,
+                "current_policy": ", ".join(policies),
+                "randomization_gaps": gaps,
+            },
+            human_text=(
+                f"Randomize {ctx.decision_type!r} with logged propensities over "
+                f"{ctx.target_arm_name!r} and {baseline!r} to identify this contrast."
+            ),
+        ),
+    )
+
+
+def handle_identified(ctx: InterveneContext, data: TreatmentData, baseline: str) -> CausalEstimate:
+    target = ctx.target_arm_name
+    contrast = aipw_contrast(data, target, baseline, seed=ctx.model.seed)
+    delta = DistributionSummary(
+        point=contrast.delta, ci_low=contrast.delta_ci[0], ci_high=contrast.delta_ci[1]
+    )
+    min_p_target, ess_target = propensity_summary(data, target)
+    min_p_baseline, ess_baseline = propensity_summary(data, baseline)
+    n_used = len(data.rows)
+
+    warnings: list[str] = []
+    if data.n_excluded:
+        warnings.append(
+            f"{data.n_excluded} runs excluded: they never reach a {ctx.decision_type} "
+            "decision, so the contrast is the effect among runs that do"
+        )
+    half_width = (delta.ci_high - delta.ci_low) / 2
+    disagreement = abs(contrast.g_formula_delta - contrast.ipw_delta)
+    if disagreement > half_width:
+        warnings.append(
+            f"g-formula ({contrast.g_formula_delta:+.3f}) and IPW ({contrast.ipw_delta:+.3f}) "
+            "disagree by more than the AIPW sampling half-width; the outcome model is "
+            "likely misspecified. AIPW stays consistent because the propensities are logged."
+        )
+
     ci_width = delta.ci_high - delta.ci_low
     if ci_width <= IDENTIFIED_TIGHT_CI_WIDTH:
         next_step = NextStep(
@@ -270,22 +308,13 @@ def handle_identified(ctx: InterveneContext, delta: DistributionSummary) -> Caus
             ),
         )
     else:
-        train_n = ctx.model.train_n
-        if train_n <= 0:
-            train_n = int(ctx.model.train_X.shape[0]) if ctx.model.train_X is not None else 0
-        if train_n <= 0:
-            raise InvalidInterventionError(
-                "outcome model is missing train_n / train_X; cannot estimate power "
-                "without the true corpus size"
-            )
-        current_n = train_n
         arm_table = arm_table_from_model(ctx.model, ctx.feature_family)
         estimated_required_n, power_method = power_from_arm_table(
             arm_table,
-            ctx.target_arm_name,
+            target,
+            baseline,
             IDENTIFIED_TIGHT_CI_WIDTH,
-            current_n=current_n,
-            current_ci_width=ci_width,
+            current_n=n_used,
         )
         suggestion = suggest_harness_command(
             decision_type=ctx.decision_type,
@@ -294,8 +323,8 @@ def handle_identified(ctx: InterveneContext, delta: DistributionSummary) -> Caus
             arm_name=str(ctx.target_value) if ctx.target_value is not None else None,
             estimated_required_n=estimated_required_n,
         )
-        payload = {
-            "current_n": current_n,
+        payload: dict[str, Any] = {
+            "current_n": n_used,
             "estimated_required_n": estimated_required_n,
             "target_ci_width": IDENTIFIED_TIGHT_CI_WIDTH,
             "power_method": power_method,
@@ -312,28 +341,57 @@ def handle_identified(ctx: InterveneContext, delta: DistributionSummary) -> Caus
             ),
         )
     return CausalEstimate(
-        query=q,
+        query=ctx.query,
         identifiability=IdentifiabilityStatus.IDENTIFIED,
-        estimand=f"E[Y | do({ctx.decision_type}={ctx.target_value})]",
-        adjustment_set=sorted(ctx.model.feature_index.keys()),
+        estimand=_contrast_estimand(ctx, baseline),
+        adjustment_set=adjustment_set(data),
         outcome_delta=delta,
-        bounds=SensitivityBounds(e_value=ev, technique="e_value"),
+        diagnostics=EstimatorDiagnostics(
+            n_used=n_used,
+            n_excluded=data.n_excluded,
+            n_target=data.arm_count(target),
+            n_baseline=data.arm_count(baseline),
+            n_folds=contrast.n_folds,
+            g_formula_delta=contrast.g_formula_delta,
+            ipw_delta=contrast.ipw_delta,
+            min_propensity_target=min_p_target,
+            min_propensity_baseline=min_p_baseline,
+            effective_n_target=ess_target,
+            effective_n_baseline=ess_baseline,
+        ),
         assumptions=[
-            "back-door adjustment via empirical training distribution (g-formula)",
-            "uniform / propensity-logged randomization at this decision type",
+            f"logged propensities are the true assignment probabilities (present on "
+            f"all {n_used} analyzed runs)",
+            "positivity: both arms had nonzero assignment probability on every analyzed run",
+            "consistency and no interference: a run's outcome depends only on its own arm",
+            "adjustment set holds only decisions logged before the treatment, so no "
+            "mediator is conditioned on",
         ],
+        warnings=warnings,
         next_step=next_step,
     )
 
 
 def handle_randomized_support(ctx: InterveneContext) -> CausalEstimate:
-    try:
-        delta = _adjust_g_formula(
-            ctx.model, ctx.feature_family, ctx.intervention_kind, ctx.target_value
-        )
-    except _NoSupport as exc:
-        return handle_no_support(ctx, exc)
-    return handle_identified(ctx, delta)
+    baseline = ctx.baseline_arm_name
+    if baseline is None:
+        raise ValueError("randomized-support contrasts require a resolved baseline arm")
+    data = treatment_data(ctx.model.runs, ctx.decision_type, ctx.feature_family)
+    missing = [arm for arm in (ctx.target_arm_name, baseline) if data.arm_count(arm) == 0]
+    if missing:
+        return handle_no_support(ctx, missing)
+    analyzed_classes = {r.outcome for r in data.rows}
+    if len(analyzed_classes) < 2:
+        return handle_single_class_rows(ctx, data, analyzed_classes.pop())
+    gaps = randomization_gaps(data, (ctx.target_arm_name, baseline))
+    if gaps:
+        return handle_not_randomized(ctx, data, baseline, gaps)
+    return handle_identified(ctx, data, baseline)
+
+
+def _contrast_estimand(ctx: InterveneContext, baseline: str) -> str:
+    family = ctx.feature_family
+    return f"E[Y | do({family}={ctx.target_arm_name})] - E[Y | do({family}={baseline})]"
 
 
 _STANCE_HANDLERS: dict[IdentifiabilityStance, Callable[[InterveneContext], CausalEstimate]] = {

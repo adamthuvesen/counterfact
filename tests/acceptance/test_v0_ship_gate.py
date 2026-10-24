@@ -107,26 +107,31 @@ def _pick_three_queries(real_corpus: list[Run]) -> list[tuple[Run, int, dict[str
     """Pick three intervention queries that the real corpus can answer.
 
     Strategy: look at the first run that has decisions of each randomized
-    decision_type (model_call, tool_call, retry) and target the first arm of
-    each. If a type is missing, fall back to a prompt_content query against
+    decision_type (model_call, tool_call, retry) and target an arm other than
+    the one the run chose, so each query is a real contrast against the logged
+    arm. If a type is missing, fall back to a prompt_content query against
     any model_call to exercise the always-replay path.
     """
+    observed = {
+        dt: [row.arm for row in pass_rate_by_arm(real_corpus, dt).rows]
+        for dt in ("model_call", "tool_call", "retry")
+    }
+    kind_for = {"model_call": "model_choice", "tool_call": "tool_choice", "retry": "retry_policy"}
     queries: list[tuple[Run, int, dict[str, object]]] = []
     seen_types: set[str] = set()
     for run in real_corpus:
         for step in run.steps:
             for d in step.decisions:
-                if d.decision_type in seen_types:
+                if d.decision_type in seen_types or d.decision_type not in kind_for:
                     continue
-                if d.decision_type == "model_call":
-                    queries.append((run, step.step_index, {"model_choice": d.chosen_action}))
-                    seen_types.add("model_call")
-                elif d.decision_type == "tool_call" and d.policy:
-                    queries.append((run, step.step_index, {"tool_choice": d.chosen_action}))
-                    seen_types.add("tool_call")
-                elif d.decision_type == "retry":
-                    queries.append((run, step.step_index, {"retry_policy": d.chosen_action}))
-                    seen_types.add("retry")
+                if d.decision_type == "tool_call" and not d.policy:
+                    continue
+                candidates = d.valid_actions or observed[d.decision_type]
+                other = next((arm for arm in candidates if arm != d.chosen_action), None)
+                if other is None:
+                    continue
+                queries.append((run, step.step_index, {kind_for[d.decision_type]: other}))
+                seen_types.add(d.decision_type)
         if len(queries) >= 3:
             break
     # Always end with a prompt_content query: that is the always-replay path
@@ -201,8 +206,8 @@ def test_real_corpus_identifiability_is_honest(real_corpus: list[Run]) -> None:
     """Every real-corpus intervention returns a legal identifiability label.
 
     Any `identified` result must be internally consistent: finite outcome_delta
-    and CI, with the bootstrap CI bracketing the corresponding naive
-    pass-rate-difference. Zero `identified` results is allowed when every query
+    and CI, with the CI bracketing the naive arm gap wherever assignment was
+    randomized with constant propensity. Zero `identified` results is allowed when every query
     is bounded or unidentified."""
     queries = _pick_three_queries(real_corpus)
     assert len(queries) >= 3, f"could not assemble 3 queries; got {len(queries)}"
@@ -212,7 +217,7 @@ def test_real_corpus_identifiability_is_honest(real_corpus: list[Run]) -> None:
         assert est.identifiability.value in {s.value for s in IdentifiabilityStatus}
         return
 
-    fitted_real_model = fit_outcome_model(real_corpus, n_bootstrap=200, seed=42)
+    fitted_real_model = fit_outcome_model(real_corpus, seed=42)
 
     legal = {s.value for s in IdentifiabilityStatus}
     for run, step_idx, intervention in queries:
@@ -239,29 +244,19 @@ def test_real_corpus_identifiability_is_honest(real_corpus: list[Run]) -> None:
                 )
             assert est.outcome_delta.ci_low <= est.outcome_delta.ci_high
 
-            # Naive marginal must fall inside the bootstrap CI for the chosen arm.
+            # The committed corpus randomizes model_choice with constant
+            # propensity, so the naive arm gap is itself unbiased and must sit
+            # inside the identified contrast's CI.
             ((kind, value),) = list(intervention.items())
-            if kind in {"model_choice", "tool_choice", "retry_policy"}:
-                decision_type_for_arm = {
-                    "model_choice": "model_call",
-                    "tool_choice": "tool_call",
-                    "retry_policy": "retry",
-                }[kind]
-                table = pass_rate_by_arm(real_corpus, decision_type_for_arm)
-                row = next((r for r in table.rows if r.arm == value), None)
-                if row is not None:
-                    # Allow for small slack between naive Wilson CI and
-                    # bootstrap CI on the model's marginal — both should
-                    # bracket the same truth.
-                    assert (
-                        est.outcome_delta.ci_low <= row.pass_rate <= est.outcome_delta.ci_high
-                        or (row.ci_low <= est.outcome_delta.point <= row.ci_high)
-                    ), (
-                        f"naive vs identified disagree dramatically: naive "
-                        f"{row.pass_rate:.3f} (CI [{row.ci_low:.3f}, {row.ci_high:.3f}]) "
-                        f"vs identified {est.outcome_delta.point:.3f} "
-                        f"(CI [{est.outcome_delta.ci_low:.3f}, {est.outcome_delta.ci_high:.3f}])"
-                    )
+            if kind == "model_choice":
+                rates = {
+                    r.arm: r.pass_rate for r in pass_rate_by_arm(real_corpus, "model_call").rows
+                }
+                naive_gap = rates[str(value)] - rates[str(est.query.baseline)]
+                assert est.outcome_delta.ci_low <= naive_gap <= est.outcome_delta.ci_high, (
+                    f"naive gap {naive_gap:+.3f} outside identified CI "
+                    f"[{est.outcome_delta.ci_low:+.3f}, {est.outcome_delta.ci_high:+.3f}]"
+                )
 
 
 # --- at least one unidentified with actionable next_step --------------------
@@ -279,7 +274,7 @@ def test_at_least_one_unidentified_with_actionable_next_step(
         assert est.next_step.payload
         return
 
-    fitted_real_model = fit_outcome_model(real_corpus, n_bootstrap=200, seed=42)
+    fitted_real_model = fit_outcome_model(real_corpus, seed=42)
     queries = _pick_three_queries(real_corpus)
     found = False
     for run, step_idx, intervention in queries:
