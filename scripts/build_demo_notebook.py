@@ -46,21 +46,20 @@ def _code(text: str) -> dict:
 
 CELLS = [
     _md(
-        "# `counterfact` demo — causal attribution, with discipline\n\n"
-        "Most agent-infra tools score traces and call it done. `counterfact` runs structural causal "
-        "inference end-to-end **and tells you when your corpus does not support the question you asked**.\n\n"
-        "This notebook walks through that contrast on three artifacts:\n\n"
-        "1. **Naive vs honest** — same query, two estimators. The naive marginal says one number; "
-        "`counterfact.intervene` says `bounded` or `unidentified` with a structured next step.\n"
+        "# `counterfact` demo: causal attribution for agent traces\n\n"
+        "`counterfact` estimates causal effects from agent traces **and says when the corpus does not "
+        "support the question you asked**.\n\n"
+        "This notebook has five sections:\n\n"
+        "1. **Naive vs honest**: the same question answered by `pass_rate_by_arm` and by `intervene`, "
+        "which returns a labeled estimate and a structured next step. Sections 2b and 2c show a confounded "
+        "corpus and the same corpus with the confounder hidden.\n"
         "2. **Synthetic SCM canary** — the engine recovers a *known* effect within tolerance. "
         "Mechanism check, not a headline claim.\n"
         "3. **Three identifiability paths** — `identified`, `bounded`, `unidentified` shown end-to-end "
         "with structured `next_step` data on each.\n"
         "4. **Ranked failure attribution** — every entry carries its identifiability label.\n"
         "5. **What would change the answer?** — `power_analysis` quantifies the corpus size needed "
-        "to tighten a CI under the binomial-Wald approximation.\n\n"
-        "The pitch in one line: *we built corpus analysis that pushes back when your data is too thin "
-        "or your interventions aren't identifiable, with concrete numbers on what would change.*"
+        "to tighten a CI under the binomial-Wald approximation."
     ),
     _code(
         "from __future__ import annotations\n\n"
@@ -155,10 +154,7 @@ CELLS = [
         "    if honest.next_step.payload:\n"
         "        print(f'next_step.payload: {honest.next_step.payload}')\n"
         "elif real_corpus and real_is_degenerate:\n"
-        "    # Pilot 3 result: 30/30 pass on csv_dedupe with frontier models. The\n"
-        "    # logistic outcome model cannot fit on a single-class corpus, which\n"
-        "    # is itself the honest signal. `counterfact`\\'s job is to surface this\n"
-        "    # rather than paper over it.\n"
+        "    # Single-class corpus: the outcome model cannot fit, which is the honest answer.\n"
         "    print('--- honest causal estimator (intervene) ---')\n"
         "    print('identifiability : unidentified')\n"
         "    print('reason          : real corpus is causally degenerate '\n"
@@ -178,13 +174,9 @@ CELLS = [
     _md(
         "**Reading the contrast.** The naive table is a single number per arm with its own CI. The "
         "honest verdict is a label + bounds + a structured `next_step` that names what data, intervention, "
-        "or randomization would change the conclusion. Lab researchers know the naive number is brittle; "
-        "what they want is a tool that pushes back. That's the whole pitch.\n\n"
-        "With the default `smoke_mixed_outcome` corpus (streaming_watermark_dedupe, 120 traces, "
-        "mixed outcomes in both model arms), both estimators produce a number — and the honest one "
-        "carries an identifiability label and an AIPW confidence interval. With the `single_class_refusal` fallback "
-        "(csv_dedupe, single-class), the naive table looks decisive while the honest verdict "
-        "refuses to claim a difference. Both shapes are the feature."
+        "or randomization would change the conclusion.\n\n"
+        "On `smoke_mixed_outcome` the model is randomized 50/50, so both estimators agree and the causal "
+        "one adds a label and a CI. Section 2b shows a corpus where they disagree."
     ),
     _md(
         "## 2. Synthetic SCM canary — does the engine recover a known effect?\n\n"
@@ -414,9 +406,7 @@ CELLS = [
         "Take a query whose CI is too wide (or whose honest verdict is `unidentified` for a non-replay "
         "reason). `power_analysis` answers the binomial-Wald question: at the current per-arm pass rates "
         "and arm fractions, what `n` would shrink the 95% CI on the marginal effect to `target_ci_width`?\n\n"
-        "Scope is deliberately narrow: this is not effect-size-aware power analysis. "
-        "It's the *one* helper the demo's closing paragraph needs to answer 'why don't you just collect "
-        "more data?'"
+        "This is not effect-size-aware power analysis. It sizes a corpus for a target CI width."
     ),
     _code(
         "# On the real corpus we need both arms to have observed support to make\n"
