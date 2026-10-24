@@ -4,16 +4,20 @@ The treatment is the arm a run chose at its *first* decision of the targeted
 type. Later decisions of the same type are downstream of the treatment, so
 they act as mediators: the run stays in, and the estimand is the total effect
 of the first choice. Dropping such runs would select on a post-treatment
-variable. Covariates are the intervenable decisions logged strictly before the
-first occurrence, so the adjustment set never contains a mediator or a
-collider that the treatment itself caused. Runs that never reach the decision
+variable. Covariates are the intervenable decisions logged in strictly earlier
+steps than the first occurrence. Decisions in the same step may be
+simultaneous with the treatment or downstream of it, so they are left out and
+the adjustment set never contains a mediator or a collider. Runs that never reach the decision
 are left out, which conditions only on a pre-treatment event.
 
 Identification is checked against the data, not declared:
 
 * every analyzed run must log the propensity of its chosen arm, and
-* no run may have chosen another arm with propensity 1.0 or have listed
-  `valid_actions` that exclude a contrasted arm (positivity).
+* every run must show positive probability for both contrasted arms
+  (positivity). A chosen arm proves its own mass. Mass on an arm the run did
+  not choose must follow from the log: two valid actions and a chosen-arm
+  propensity below 1, or a policy whose probabilities can be reconstructed.
+  Membership in `valid_actions` alone does not prove it.
 
 Only then is the cross-fitted AIPW estimate reported as identified. The
 outcome-regression (g-formula) and Hajek IPW estimates ride along as
@@ -68,16 +72,25 @@ def treatment_data(runs: list[Run], decision_type: str, feature_family: str) -> 
     rows: list[TreatmentRow] = []
     excluded = 0
     for run in runs:
-        flat = [d for step in run.steps for d in step.decisions]
-        position = next((i for i, d in enumerate(flat) if d.decision_type == decision_type), None)
-        arm = logged_arm(flat[position], feature_family) if position is not None else None
-        if position is None or arm is None:
+        located = next(
+            (
+                (step.step_index, d)
+                for step in run.steps
+                for d in step.decisions
+                if d.decision_type == decision_type
+            ),
+            None,
+        )
+        arm = logged_arm(located[1], feature_family) if located is not None else None
+        if located is None or arm is None:
             excluded += 1
             continue
-        decision = flat[position]
+        treatment_step, decision = located
         covariates = tuple(
             f"{family}::{value}"
-            for earlier in flat[:position]
+            for step in run.steps
+            if step.step_index < treatment_step
+            for earlier in step.decisions
             for family, value in decision_feature_values(earlier)
         )
         # The logged propensity is the probability of `chosen_action`, so it only
@@ -110,20 +123,38 @@ def randomization_gaps(data: TreatmentData, arms: tuple[str, str]) -> list[str]:
     if unlogged:
         gaps.append(f"{unlogged}/{len(data.rows)} runs do not log a propensity for this decision")
     for arm in arms:
-        forced_away = sum(1 for r in data.rows if r.arm != arm and r.propensity == 1.0)
-        if forced_away:
+        mass = [_has_mass(r, arm) for r in data.rows if r.propensity is not None]
+        zero = mass.count(False)
+        unknown = mass.count(None)
+        if zero:
+            gaps.append(f"{zero} runs give {arm!r} probability 0 (positivity violation)")
+        if unknown:
             gaps.append(
-                f"{forced_away} runs chose another arm with propensity 1.0, so "
-                f"P({arm}) = 0 for them (positivity violation)"
+                f"{unknown} runs chose another arm under a policy whose probability "
+                f"for {arm!r} cannot be reconstructed from the log"
             )
-        excluded_by_menu = sum(
-            1
-            for r in data.rows
-            if r.decision.valid_actions is not None and arm not in r.decision.valid_actions
-        )
-        if excluded_by_menu:
-            gaps.append(f"{excluded_by_menu} runs log valid_actions that exclude {arm!r}")
     return gaps
+
+
+def _has_mass(row: TreatmentRow, arm: str) -> bool | None:
+    """Whether the logged policy gave `arm` positive probability; None when unknowable."""
+    decision = row.decision
+    if row.arm == arm:
+        return True
+    valid = decision.valid_actions or []
+    if arm not in valid:
+        return False
+    if len(valid) == 2:
+        # The other arm's probability is 1 - P(chosen).
+        return row.propensity is not None and row.propensity < 1.0
+    # Policy names emitted by this repo's harnesses: `uniform` (bench/synthetic)
+    # and `epsilon_greedy` (bench/real/coding_agent/randomize.py).
+    params = decision.policy_params or {}
+    if decision.policy == "uniform":
+        return True
+    if decision.policy == "epsilon_greedy" and "epsilon" in params:
+        return float(params["epsilon"]) > 0 or params.get("greedy") == arm
+    return None
 
 
 def adjustment_set(data: TreatmentData) -> list[str]:
