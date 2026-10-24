@@ -11,3 +11,4 @@ These are the honesty guarantees `counterfact` defends. A change that weakens an
 - If a query needs a prompt rewrite, hidden state change, or unavailable arm, return an honest replay/support next step rather than an estimated effect.
 - `pass_rate_by_arm()` is descriptive, not causal. Keep that distinction visible in demos, docs, tests, and CLI output.
 - Synthetic SCM tests should remain deterministic by seed and recover the known headline effect within the acceptance tolerance.
+- Policy evaluation follows the same rules at every controlled decision: logged propensities, positive probability for the policy's action, and history from strictly earlier steps only. The matched-runs average stays labeled descriptive.
