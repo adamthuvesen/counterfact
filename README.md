@@ -18,7 +18,7 @@ Every answer carries an identifiability label. Read that label before you read t
 
 ![Single-decision bias by estimator](https://raw.githubusercontent.com/adamthuvesen/counterfact/main/docs/figures/single-decision-bias.svg)
 
-The figure scores three estimators on eight causal models built to break them, with 500 corpora each and an exact true effect. The naive pass-rate gap and an adjust-everything g-formula are off by up to 0.31. `counterfact` stays within 0.01 of the truth, or it refuses with `bounded`. The [technical report](https://github.com/adamthuvesen/counterfact/blob/main/docs/report.md) covers the method, the benchmark, and the limits.
+The figure scores three estimators on eight causal models built to break them, with 500 corpora each and an exact true effect. The naive pass-rate gap and an adjust-everything g-formula are off by up to 0.31. `counterfact` has a mean bias within 0.01 of the truth, or it refuses with `bounded`. The [technical report](https://github.com/adamthuvesen/counterfact/blob/main/docs/report.md) covers the method, the benchmark, and the limits.
 
 For the design philosophy and a reading guide through the source, see [`docs/architecture.md`](docs/architecture.md).
 

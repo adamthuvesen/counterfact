@@ -1,6 +1,6 @@
 # Honest Counterfactuals for Agent Traces
 
-Technical report for `counterfact` 0.1.0. Every number below comes from `docs/benchmark-results.json` and can be reproduced with one command in about two minutes on a 10-core laptop.
+Technical report for `counterfact` 0.1.0. Every benchmark number below comes from `docs/benchmark-results.json` and can be reproduced with one command in about two minutes on a 10-core laptop.
 
 ## Summary
 
@@ -9,7 +9,7 @@ Teams that build LLM agents ask counterfactual questions of their logs. Would th
 `counterfact` answers these questions from logged traces with an identification check first and an estimate second. Every answer carries one of three labels, and the label is checked against the data:
 
 - `identified`: the log records the assignment probability of every analyzed decision, and both arms have positive probability on every run. The engine returns a doubly robust contrast with a 95% CI.
-- `bounded`: both arms occur, but the log does not prove how they were assigned. The engine returns Manski bounds, which assume nothing.
+- `bounded`: both arms occur, but the log does not prove how they were assigned. The engine returns Manski bounds, which assume nothing, or no interval when the data cannot support one.
 - `unidentified`: the corpus cannot answer the question. The engine returns a concrete next step, such as the runs to collect.
 
 The engine is scored on structural causal models with exact true effects, built so that each one breaks one assumption. Over 4,000 single-decision corpora it labels every scenario correctly, and its 95% CIs cover the truth 94% to 96% of the time. For whole policies over a sequential agent, the common practice of averaging the runs that already followed the policy gets both retry policies backwards. The sequential doubly robust estimate has a mean bias of at most 0.0014.
@@ -37,7 +37,7 @@ Two features of agent logs make these questions hard:
 
 ## 2. Identification as a data check
 
-A point estimate is only as good as its identification argument. `counterfact` does not take that argument from configuration or from a decision-type taxonomy. It checks the log.
+A point estimate is only as good as its identification argument. A decision-type taxonomy routes each question first. Questions that need replay, such as a prompt rewrite, go straight to `unidentified`. Memory-content questions need a back-door argument the log cannot check, so they go to `bounded` with no interval. A taxonomy entry can only send a question toward a refusal. It never grants `identified`. For model, tool, temperature, and retry decisions, the engine checks the log.
 
 A decision supports `identified` when all of these hold:
 
@@ -61,7 +61,7 @@ Here $e_i$ is the logged propensity of the chosen action and $\hat\mu_a$ is the 
 
 Two cross-checks are reported next to it: the g-formula with the same outcome model, and the Hajek IPW estimate. A large gap between them is a diagnostic, not a correction.
 
-When the label is `bounded`, the engine returns Manski bounds for a binary outcome. They assume nothing about the unobserved arm, so they are wide by construction. Their value is the refusal: they show how much an unstated assumption would have to carry.
+When a model, tool, temperature, or retry question is `bounded`, the engine returns Manski bounds for a binary outcome. They assume nothing about the unobserved arm, so they are wide by construction. Their value is the refusal: they show how much an unstated assumption would have to carry.
 
 ### A policy over several decisions
 
@@ -73,7 +73,7 @@ The per-run score is
 
 $$\hat Q_1(H_1, \pi(H_1)) + \sum_{k=1}^{K} W_k \left(\hat Q_{k+1}(H_{k+1}, \pi(H_{k+1})) - \hat Q_k(H_k, A_k)\right), \quad W_k = \prod_{j \le k} \frac{1\{A_j = \pi(H_j)\}}{e_j}$$
 
-with $\hat Q_{K+1} = Y$. The sum stops at the first decision where the run leaves the policy. The fits are cross-fitted, and a fold with no controlled decisions falls back to the training mean, so a held-out outcome never enters its own prediction.
+with $\hat Q_{K+1} = Y$. The sum stops at the first decision where the run leaves the policy. The fits are cross-fitted. A held-out decision deeper than any training run falls back to the training mean, so a held-out outcome never enters its own prediction.
 
 The engine reports two cross-checks: the plug-in ICE value and self-normalized importance sampling (SNIS). It also reports the effective sample size of the weights and the descriptive average over runs that already matched the policy.
 
