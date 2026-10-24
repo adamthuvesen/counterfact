@@ -486,7 +486,7 @@ def main() -> None:
                 "language": "python",
                 "name": "python3",
             },
-            "language_info": {"name": "python", "version": "3.11"},
+            "language_info": {"name": "python", "version": "3.13"},
         },
         "nbformat": 4,
         "nbformat_minor": 5,

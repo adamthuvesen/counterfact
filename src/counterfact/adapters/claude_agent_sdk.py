@@ -101,10 +101,7 @@ def _text_and_thinking(blocks: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _result_message(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
-    for msg in reversed(messages):
-        if _message_type(msg) == "ResultMessage":
-            return msg
-    return None
+    return next((m for m in messages[::-1] if _message_type(m) == "ResultMessage"), None)
 
 
 def _session_id(messages: list[dict[str, Any]]) -> str:

@@ -1,6 +1,6 @@
 # counterfact
 
-![License](https://img.shields.io/github/license/adamthuvesen/counterfact) ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![License](https://img.shields.io/github/license/adamthuvesen/counterfact) ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 
 `counterfact` is a small research library for understanding agent decision traces through counterfactual questions.
 
@@ -24,7 +24,7 @@ For the design philosophy and a reading guide through the source, see [`docs/arc
 uv pip install -e ".[dev]"
 ```
 
-Requires Python 3.11+.
+Requires Python 3.13+ (the floor follows [SPEC 0](https://scientific-python.org/specs/spec-0000/), which numpy and scikit-learn use).
 
 The published wheel ships only the core causal-attribution library. The
 real-agent harness under `bench/` is excluded from the wheel; if you need
