@@ -142,6 +142,18 @@ def evaluate_policy(
     except _Unevaluable as exc:
         return _refusal(policy, baseline_name, estimand, reason=str(exc), missing=[str(exc)])
 
+    for name, nodes in ((policy.name, target), (baseline_name, reference)):
+        if nodes is not None and not any(r.nodes for r in nodes):
+            # A policy that never acts would trivially equal the log; in practice
+            # it means the corpus has no evidence about the question asked.
+            return _refusal(
+                policy,
+                baseline_name,
+                estimand,
+                reason=f"no run contains a decision that policy {name!r} controls",
+                missing=[f"decisions controlled by {name!r}"],
+            )
+
     gaps = _positivity_gaps(target) + (_positivity_gaps(reference) if reference else [])
     if gaps:
         return _bounded(policy, baseline_name, estimand, target, reference, gaps)
