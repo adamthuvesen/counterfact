@@ -25,6 +25,7 @@ from pathlib import Path
 
 from counterfact import build_dag, fit_outcome_model, intervene
 from counterfact.intervene import CausalEstimate
+from counterfact.intervene.degenerate import degenerate_estimate, outcome_classes
 from counterfact.outcome.binary import binary_outcome_value
 from counterfact.schema import Decision, Run
 from counterfact.stats import Z_95
@@ -74,6 +75,10 @@ def _difference_in_means(runs: list[Run], design: str) -> tuple[float, float]:
 
 
 def _engine(runs: list[Run]) -> CausalEstimate:
+    if len(outcome_classes(runs)) == 1:
+        return degenerate_estimate(
+            runs, decision_type="model_call", intervention_kind="model_choice", target=TARGET
+        )
     # The step-scoped API refuses a focal trace that retried (two model_calls).
     # The estimand keys on each run's first call, so any single-call run works
     # as the focal trace; every run still enters the fit.
