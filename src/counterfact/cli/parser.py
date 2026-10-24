@@ -361,6 +361,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="ε for retry_policy; falls back to --epsilon when unset",
     )
     real.add_argument(
+        "--model-route-by-fixture",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated fixture_id=P(large) pairs. Each run is randomized into a "
+            "50/50 trial or this fixture router, and both designs are logged. "
+            "Overrides --model-greedy/--model-epsilon."
+        ),
+    )
+    real.add_argument(
         "--fixtures",
         type=str,
         default=None,
