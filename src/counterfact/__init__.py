@@ -8,6 +8,7 @@ from counterfact.corpus_analyzer import CorpusReadinessReport, RubricThresholds,
 from counterfact.dag import build_dag
 from counterfact.intervene import intervene
 from counterfact.outcome import fit_outcome_model
+from counterfact.policy import Policy, PolicyRule, evaluate_policy
 from counterfact.power import PowerReport, power_analysis
 
 try:
@@ -19,12 +20,15 @@ __all__ = [
     "CorpusReadinessReport",
     "PassRateRow",
     "PassRateTable",
+    "Policy",
+    "PolicyRule",
     "PowerReport",
     "RubricThresholds",
     "__version__",
     "analyze_corpus",
     "attribute_failure",
     "build_dag",
+    "evaluate_policy",
     "fit_outcome_model",
     "intervene",
     "pass_rate_by_arm",

@@ -124,7 +124,11 @@ def randomization_gaps(data: TreatmentData, arms: tuple[str, str]) -> list[str]:
     if unlogged:
         gaps.append(f"{unlogged}/{len(data.rows)} runs do not log a propensity for this decision")
     for arm in arms:
-        mass = [_has_mass(r, arm) for r in data.rows if r.propensity is not None]
+        mass = [
+            has_mass(r.decision, r.arm, r.propensity, arm)
+            for r in data.rows
+            if r.propensity is not None
+        ]
         zero = mass.count(False)
         unknown = mass.count(None)
         if zero:
@@ -137,30 +141,29 @@ def randomization_gaps(data: TreatmentData, arms: tuple[str, str]) -> list[str]:
     return gaps
 
 
-def _has_mass(row: TreatmentRow, arm: str) -> bool | None:
+def has_mass(decision: Decision, chosen: str, propensity: float | None, arm: str) -> bool | None:
     """Whether the logged policy gave `arm` positive probability; None when unknowable."""
-    decision = row.decision
-    if row.arm == arm:
+    if chosen == arm:
         return True
     valid = decision.valid_actions or []
     if arm not in valid:
         return False
     if len(valid) == 2:
         # The other arm's probability is 1 - P(chosen).
-        return row.propensity is not None and row.propensity < 1.0
+        return propensity is not None and propensity < 1.0
     # Policy names emitted by this repo's harnesses: `uniform` (bench/synthetic)
     # and `epsilon_greedy` (bench/real/coding_agent/randomize.py). A named policy
     # counts only when the logged propensity matches what it implies; metadata
     # that contradicts itself proves nothing.
     params = decision.policy_params or {}
     n = len(valid)
-    if decision.policy == "uniform" and _matches(row.propensity, 1.0 / n):
+    if decision.policy == "uniform" and _matches(propensity, 1.0 / n):
         return True
     if decision.policy == "epsilon_greedy" and "epsilon" in params and "greedy" in params:
         epsilon = float(params["epsilon"])
-        chose_greedy = row.arm == params["greedy"]
+        chose_greedy = chosen == params["greedy"]
         expected = (1.0 - epsilon) + epsilon / n if chose_greedy else epsilon / n
-        if _matches(row.propensity, expected):
+        if _matches(propensity, expected):
             return epsilon > 0 or params["greedy"] == arm
     return None
 

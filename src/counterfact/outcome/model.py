@@ -87,11 +87,13 @@ def _featurize(runs: list[Run]) -> tuple[np.ndarray, np.ndarray, list[str], dict
     return X, y, names, index
 
 
-def fit_logistic(X: np.ndarray, y: np.ndarray) -> LogisticRegression:
+def fit_logistic(
+    X: np.ndarray, y: np.ndarray, sample_weight: np.ndarray | None = None
+) -> LogisticRegression:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=ConvergenceWarning)
         lr = LogisticRegression(max_iter=1000, solver="lbfgs", C=1.0)
-        lr.fit(X, y)
+        lr.fit(X, y, sample_weight=sample_weight)
     return lr
 
 
