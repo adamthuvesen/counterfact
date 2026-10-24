@@ -2,11 +2,11 @@
 
 The canonical `counterfact` demo is the **confounded synthetic showcase**:
 a deterministic, no-spend corpus where the descriptive `pass_rate_by_arm`
-baseline overstates what the data supports and the engine's g-formula
-adjustment recovers the true do-calculus arm gap. The synthetic SCM is the
-right surface to teach the project's product stance: ground truth, controlled
-confounding, deterministic seeds, and a structure where the marginal table
-and the causal estimate disagree on purpose.
+baseline overstates what the data supports and the engine's AIPW estimate
+recovers the true do-calculus arm gap. The synthetic SCM is the right surface
+to teach the project's product stance: ground truth, controlled confounding,
+deterministic seeds, and a structure where the marginal table and the causal
+estimate disagree on purpose.
 
 ```text
 counterfact demo: naive vs honest
@@ -18,30 +18,24 @@ arm              n  pass  rate    95% CI
 haiku          581   212 0.365  [0.327, 0.405]
 sonnet         419   302 0.721  [0.676, 0.762]
 
-intervene(model_call -> sonnet)
+intervene(model_call: haiku -> sonnet)
 identifiability: identified
-outcome_delta: 0.663 [0.617, 0.707]
-next_step: none - CI width 0.090 ≤ 0.10; no further action required.
-naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (do-calculus, g-formula) = +0.251; the marginal table overstates what the corpus supports — see DAG and assumptions.
+outcome_delta: +0.255 [+0.179, +0.330]  (AIPW, cross-fit)
+cross-check: g-formula +0.251, IPW +0.251; min propensity 0.20/0.20
+next_step: increase_n - CI width 0.150 > 0.10; ~1351 traces would tighten it.
+suggested_command: uv run counterfact bench real --n 1351 --fixture-set broad_calibration
+naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (AIPW) = +0.255; the marginal table overstates what the corpus supports — see DAG and assumptions.
 ```
 
 ## What the contrast says
 
-The naive `pass_rate_by_arm` table reports a **+0.356** arm gap between
-sonnet and haiku. The engine's g-formula adjustment, working off the same
-corpus, reports a **+0.251** causal arm gap. That number matches the
-SCM's known do-calculus headline (`HEADLINE_TRUE_EFFECT ≈ 0.233`) within the
-project's `±0.05` recovery tolerance. The marginal table is descriptive and
-limited; it does not, by itself, license the causal claim because
-`tool_choice` is a back-door confounder for the `model_choice → outcome`
-relationship and the descriptive view does not adjust for it. The engine
-does, because `tool_choice` is in the outcome model's feature set and the
-g-formula marginalizes over the empirical `(tool, retry)` distribution.
+The naive `pass_rate_by_arm` table reports a **+0.356** arm gap between sonnet and haiku. The engine reports a causal contrast of **+0.255 [+0.179, +0.330]**, and its CI contains the SCM's known do-calculus truth (`HEADLINE_TRUE_EFFECT ≈ 0.233`). The naive gap is outside that CI.
 
-That is the product stance in one comparison: when the corpus supports the
-question and the back-door variables are observed, `counterfact` returns a
-labelled estimate with a bootstrap CI; when the descriptive view and the
-causal estimate disagree, the disagreement is the diagnostic.
+The table is descriptive. It does not license the causal claim, because `tool_choice` is a back-door confounder for `model_choice → outcome`. The engine can answer because the assignment policy logs its propensities: every run records the probability of the model it got. The engine checks that on the data before it reports `identified`. It then combines an outcome model over the pre-treatment `tool_choice` with inverse-propensity weighting (AIPW). The g-formula and IPW cross-checks agree (+0.251, +0.251), so neither model is visibly misspecified.
+
+## Hide the confounder
+
+Drop the `tool_call` decision and every logged propensity from the same corpus. That is what most production agent traces look like. The engine finds no logged randomization and returns `bounded` with Manski bounds of about [-0.36, +0.64]. Before data-checked identification, this setup returned `identified` with a biased gap (0.312 against a truth of 0.233 at n=2000, seed=1). The bounds contain the truth because they assume nothing. `notebooks/demo.ipynb` section 2c runs this case, and `tests/acceptance/test_scm_recovery_confounded.py` pins it.
 
 ## The real-trace smoke test
 
@@ -52,9 +46,11 @@ Without `--confound`, `counterfact demo` runs the same flow against the committe
 | large | 65 | 50 | 0.769 | [0.654, 0.855] |
 | small | 55 | 6 | 0.109 | [0.051, 0.218] |
 
-`intervene(model_call -> large)` on the same corpus returns
-`identifiability=identified` with `outcome_delta=0.747 [0.630, 0.831]` and a
+`intervene(model_call: small -> large)` on the same corpus returns
+`identifiability=identified` with `outcome_delta=+0.656 [+0.519, +0.792]` and a
 `next_step.action="increase_n"` recommending ~830 traces to tighten the CI.
+The corpus assigns the model by a 50/50 coin flip, so the naive gap (+0.660)
+is itself unbiased here, and the AIPW contrast agrees with it.
 
 ## The single-class regression anchor
 
