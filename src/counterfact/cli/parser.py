@@ -14,6 +14,7 @@ from counterfact.cli import argparse_types
 from counterfact.cli.commands import (
     analyze_corpus,
     bench_real,
+    bench_suite,
     bench_synthetic,
     compare_cli,
     demo,
@@ -301,6 +302,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Where to write traces (default: bench/synthetic/_out)",
     )
     syn.set_defaults(func=bench_synthetic.run)
+
+    suite = bench_sub.add_parser(
+        "suite",
+        help="Score naive, adjust-all, and engine estimates across benchmark scenarios",
+    )
+    suite.add_argument("--seeds", type=positive_int, default=200, help="Seeds per scenario")
+    suite.add_argument(
+        "--scenario",
+        action="append",
+        default=None,
+        help="Run only this scenario (repeatable; default: all)",
+    )
+    suite.add_argument("--workers", type=positive_int, default=None, help="Worker processes")
+    suite.add_argument(
+        "--markdown", type=Path, default=None, help="Write the results table to this path"
+    )
+    suite.add_argument("--json", type=Path, default=None, help="Also write raw summaries as JSON")
+    suite.set_defaults(func=bench_suite.run)
 
     real = bench_sub.add_parser("real", help="Generate real-agent traces (HUMAN GATE on first run)")
     real.add_argument("--n", type=int, required=True)
