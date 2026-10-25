@@ -1,0 +1,186 @@
+{
+  "schema_version": "0.1.0",
+  "run_id": "real-date_window-000353",
+  "steps": [
+    {
+      "step_index": 0,
+      "decisions": [
+        {
+          "decision_id": "d-000353-plan",
+          "decision_type": "plan_step",
+          "chosen_action": "begin",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    },
+    {
+      "step_index": 1,
+      "decisions": [
+        {
+          "decision_id": "d-000353-inspect",
+          "decision_type": "tool_call",
+          "chosen_action": "inspect_file",
+          "policy": "epsilon_greedy",
+          "policy_params": {
+            "epsilon": 0.0,
+            "greedy": "inspect_file"
+          },
+          "valid_actions": [
+            "inspect_file",
+            "run_tests"
+          ],
+          "propensity": 1.0,
+          "context_features": {
+            "first_action": true
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000353-inspect",
+          "content": {
+            "source_chars": 615,
+            "test_chars": 771
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 2,
+      "decisions": [
+        {
+          "decision_id": "d-000353-retry",
+          "decision_type": "retry",
+          "chosen_action": "retry_once",
+          "policy": "epsilon_greedy",
+          "policy_params": {
+            "epsilon": 0.0,
+            "greedy": "retry_once"
+          },
+          "valid_actions": [
+            "no_retry",
+            "retry_once"
+          ],
+          "propensity": 1.0,
+          "context_features": {
+            "step_index": 2,
+            "upfront": true
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    },
+    {
+      "step_index": 3,
+      "decisions": [
+        {
+          "decision_id": "d-000353-model-1",
+          "decision_type": "model_call",
+          "chosen_action": "small",
+          "policy": "trial",
+          "policy_params": {
+            "p_large": 0.5
+          },
+          "valid_actions": [
+            "small",
+            "large"
+          ],
+          "propensity": 0.5,
+          "context_features": {
+            "prompt_chars": 4249,
+            "attempt": 1
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000353-model-1",
+          "content": {
+            "response_chars": 2201,
+            "cost_usd": 0.00483,
+            "finish_reason": "stop",
+            "extraction_status": "extracted",
+            "extraction_failure_reason": null,
+            "extracted_code": "\"\"\"Date-window membership for the date_window fixture.\"\"\"\n\nfrom __future__ import annotations\n\n\ndef _parse_and_validate_date(date_str: str) -> tuple[int, int, int]:\n    \"\"\"Parse and validate an ISO calendar-date string.\n    \n    Returns (year, month, day) tuple if valid.\n    Raises ValueError if malformed or impossible.\n    \"\"\"\n    parts = date_str.split('-')\n    if len(parts) != 3:\n        raise ValueError(f\"Invalid date format: {date_str}\")\n    \n    try:\n        year = int(parts[0])\n        month = int(parts[1])\n        day = int(parts[2])\n    except ValueError:\n        raise ValueError(f\"Invalid date format: {date_str}\")\n    \n    # Check zero padding\n    if parts[0] != str(year).zfill(4) or parts[1] != str(month).zfill(2) or parts[2] != str(day).zfill(2):\n        raise ValueError(f\"Date not properly zero-padded: {date_str}\")\n    \n    # Validate month\n    if month < 1 or month > 12:\n        raise ValueError(f\"Invalid month: {date_str}\")\n    \n    # Check for leap year\n    is_leap = (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)\n    \n    # Days in each month\n    days_in_month = [31, 29 if is_leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]\n    \n    # Validate day\n    if day < 1 or day > days_in_month[month - 1]:\n        raise ValueError(f\"Invalid day for month: {date_str}\")\n    \n    return (year, month, day)\n\n\ndef in_any_window(target_date: str, windows: list[tuple[str, str]]) -> bool:\n    \"\"\"Return whether target_date falls inside any date window.\"\"\"\n    # Parse and validate target date first\n    target = _parse_and_validate_date(target_date)\n    \n    # Parse and validate all windows, checking that start <= end\n    parsed_windows = []\n    for start_str, end_str in windows:\n        start = _parse_and_validate_date(start_str)\n        end = _parse_and_validate_date(end_str)\n        \n        # Check that start <= end\n        if start > end:\n            raise ValueError(f\"Invalid window: start > end ({start_str} > {end_str})\")\n        \n        parsed_windows.append((start, end))\n    \n    # Check if target is in any window\n    for start, end in parsed_windows:\n        if start <= target <= end:\n            return True\n    \n    return False\n"
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 4,
+      "decisions": [
+        {
+          "decision_id": "d-000353-runtests-1",
+          "decision_type": "tool_call",
+          "chosen_action": "run_tests",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000353-runtests-1",
+          "content": {
+            "passed": true,
+            "stdout_tail": "....                                                                     [100%]\n4 passed in 0.01s\n"
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 5,
+      "decisions": [
+        {
+          "decision_id": "d-000353-term",
+          "decision_type": "termination",
+          "chosen_action": "success",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    }
+  ],
+  "outcome": {
+    "kind": "binary",
+    "value": true,
+    "verifier": "pytest_hidden",
+    "metadata": {
+      "fixture_id": "date_window",
+      "public_pass": true,
+      "hidden_pass": true,
+      "generalization_gap": false
+    }
+  },
+  "metadata": {
+    "agent_name": null,
+    "notes": null,
+    "extra": {}
+  }
+}
