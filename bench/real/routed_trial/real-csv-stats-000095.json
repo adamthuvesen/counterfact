@@ -1,0 +1,183 @@
+{
+  "schema_version": "0.1.0",
+  "run_id": "real-csv-stats-000095",
+  "steps": [
+    {
+      "step_index": 0,
+      "decisions": [
+        {
+          "decision_id": "d-000095-plan",
+          "decision_type": "plan_step",
+          "chosen_action": "begin",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    },
+    {
+      "step_index": 1,
+      "decisions": [
+        {
+          "decision_id": "d-000095-inspect",
+          "decision_type": "tool_call",
+          "chosen_action": "inspect_file",
+          "policy": "epsilon_greedy",
+          "policy_params": {
+            "epsilon": 0.0,
+            "greedy": "inspect_file"
+          },
+          "valid_actions": [
+            "inspect_file",
+            "run_tests"
+          ],
+          "propensity": 1.0,
+          "context_features": {
+            "first_action": true
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000095-inspect",
+          "content": {
+            "source_chars": 667,
+            "test_chars": 618
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 2,
+      "decisions": [
+        {
+          "decision_id": "d-000095-retry",
+          "decision_type": "retry",
+          "chosen_action": "retry_once",
+          "policy": "epsilon_greedy",
+          "policy_params": {
+            "epsilon": 0.0,
+            "greedy": "retry_once"
+          },
+          "valid_actions": [
+            "no_retry",
+            "retry_once"
+          ],
+          "propensity": 1.0,
+          "context_features": {
+            "step_index": 2,
+            "upfront": true
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    },
+    {
+      "step_index": 3,
+      "decisions": [
+        {
+          "decision_id": "d-000095-model-1",
+          "decision_type": "model_call",
+          "chosen_action": "large",
+          "policy": "trial",
+          "policy_params": {
+            "p_large": 0.5
+          },
+          "valid_actions": [
+            "small",
+            "large"
+          ],
+          "propensity": 0.5,
+          "context_features": {
+            "prompt_chars": 1709,
+            "attempt": 1
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000095-model-1",
+          "content": {
+            "response_chars": 671,
+            "cost_usd": 0.004659,
+            "finish_reason": "stop",
+            "extraction_status": "extracted",
+            "extraction_failure_reason": null,
+            "extracted_code": "\"\"\"Numeric aggregation helpers tolerant of missing values.\"\"\"\n\nfrom __future__ import annotations\n\nimport math\nfrom collections.abc import Iterable\n\n\ndef mean_ignore_missing(values: Iterable[float | None]) -> float:\n    \"\"\"Mean of numeric values, ignoring None entries.\n\n    Returns NaN when every input is None (rather than dividing by zero).\n\n    Examples:\n        mean_ignore_missing([1, 2, 3])         -> 2.0\n        mean_ignore_missing([1, None, 3])      -> 2.0\n        mean_ignore_missing([None, None, None]) -> NaN\n    \"\"\"\n    nums = [v for v in values if v is not None]\n    if len(nums) == 0:\n        return math.nan\n    return sum(nums) / len(nums)\n"
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 4,
+      "decisions": [
+        {
+          "decision_id": "d-000095-runtests-1",
+          "decision_type": "tool_call",
+          "chosen_action": "run_tests",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000095-runtests-1",
+          "content": {
+            "passed": true,
+            "stdout_tail": "...                                                                      [100%]\n3 passed in 0.00s\n"
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 5,
+      "decisions": [
+        {
+          "decision_id": "d-000095-term",
+          "decision_type": "termination",
+          "chosen_action": "success",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    }
+  ],
+  "outcome": {
+    "kind": "binary",
+    "value": true,
+    "verifier": "pytest",
+    "metadata": {
+      "fixture_id": "csv-stats"
+    }
+  },
+  "metadata": {
+    "agent_name": null,
+    "notes": null,
+    "extra": {}
+  }
+}

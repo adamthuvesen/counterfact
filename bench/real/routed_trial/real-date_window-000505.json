@@ -1,0 +1,186 @@
+{
+  "schema_version": "0.1.0",
+  "run_id": "real-date_window-000505",
+  "steps": [
+    {
+      "step_index": 0,
+      "decisions": [
+        {
+          "decision_id": "d-000505-plan",
+          "decision_type": "plan_step",
+          "chosen_action": "begin",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    },
+    {
+      "step_index": 1,
+      "decisions": [
+        {
+          "decision_id": "d-000505-inspect",
+          "decision_type": "tool_call",
+          "chosen_action": "inspect_file",
+          "policy": "epsilon_greedy",
+          "policy_params": {
+            "epsilon": 0.0,
+            "greedy": "inspect_file"
+          },
+          "valid_actions": [
+            "inspect_file",
+            "run_tests"
+          ],
+          "propensity": 1.0,
+          "context_features": {
+            "first_action": true
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000505-inspect",
+          "content": {
+            "source_chars": 615,
+            "test_chars": 771
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 2,
+      "decisions": [
+        {
+          "decision_id": "d-000505-retry",
+          "decision_type": "retry",
+          "chosen_action": "retry_once",
+          "policy": "epsilon_greedy",
+          "policy_params": {
+            "epsilon": 0.0,
+            "greedy": "retry_once"
+          },
+          "valid_actions": [
+            "no_retry",
+            "retry_once"
+          ],
+          "propensity": 1.0,
+          "context_features": {
+            "step_index": 2,
+            "upfront": true
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    },
+    {
+      "step_index": 3,
+      "decisions": [
+        {
+          "decision_id": "d-000505-model-1",
+          "decision_type": "model_call",
+          "chosen_action": "small",
+          "policy": "trial",
+          "policy_params": {
+            "p_large": 0.5
+          },
+          "valid_actions": [
+            "small",
+            "large"
+          ],
+          "propensity": 0.5,
+          "context_features": {
+            "prompt_chars": 4249,
+            "attempt": 1
+          },
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000505-model-1",
+          "content": {
+            "response_chars": 2719,
+            "cost_usd": 0.005075,
+            "finish_reason": "stop",
+            "extraction_status": "extracted",
+            "extraction_failure_reason": null,
+            "extracted_code": "\"\"\"Date-window membership for the date_window fixture.\"\"\"\n\nfrom __future__ import annotations\n\nfrom datetime import datetime\n\n\ndef _parse_and_validate_date(date_str: str) -> datetime:\n    \"\"\"Parse and validate a date string in ISO format YYYY-MM-DD.\n    \n    Raises ValueError if the date is malformed or invalid.\n    \"\"\"\n    try:\n        # datetime.fromisoformat requires strict YYYY-MM-DD format\n        # We need to validate the format more strictly\n        if len(date_str) != 10:\n            raise ValueError(f\"Invalid date format: {date_str}\")\n        \n        # Check format: YYYY-MM-DD with proper separators\n        parts = date_str.split('-')\n        if len(parts) != 3:\n            raise ValueError(f\"Invalid date format: {date_str}\")\n        \n        year_str, month_str, day_str = parts\n        \n        # Validate that each part is the right length and contains only digits\n        if len(year_str) != 4 or not year_str.isdigit():\n            raise ValueError(f\"Invalid date format: {date_str}\")\n        if len(month_str) != 2 or not month_str.isdigit():\n            raise ValueError(f\"Invalid date format: {date_str}\")\n        if len(day_str) != 2 or not day_str.isdigit():\n            raise ValueError(f\"Invalid date format: {date_str}\")\n        \n        # Parse as integers\n        year = int(year_str)\n        month = int(month_str)\n        day = int(day_str)\n        \n        # Create datetime object (this will validate the date is valid)\n        dt = datetime(year, month, day)\n        return dt\n    except ValueError:\n        raise ValueError(f\"Invalid date: {date_str}\")\n\n\ndef in_any_window(target_date: str, windows: list[tuple[str, str]]) -> bool:\n    \"\"\"Return whether target_date falls inside any date window.\n    \n    All dates must be in strict ISO format YYYY-MM-DD. Windows are inclusive\n    on both boundaries. All dates and windows are validated before checking\n    membership.\n    \"\"\"\n    # First, validate and parse the target date\n    target_dt = _parse_and_validate_date(target_date)\n    \n    # Then, validate and parse all window endpoints\n    # We do this before checking any windows to ensure all inputs are valid\n    parsed_windows = []\n    for start, end in windows:\n        start_dt = _parse_and_validate_date(start)\n        end_dt = _parse_and_validate_date(end)\n        \n        # Check that start <= end\n        if start_dt > end_dt:\n            raise ValueError(f\"Invalid window: start {start} is after end {end}\")\n        \n        parsed_windows.append((start_dt, end_dt))\n    \n    # Now check if target falls in any window\n    for start_dt, end_dt in parsed_windows:\n        if start_dt <= target_dt <= end_dt:\n            return True\n    \n    return False\n"
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 4,
+      "decisions": [
+        {
+          "decision_id": "d-000505-runtests-1",
+          "decision_type": "tool_call",
+          "chosen_action": "run_tests",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [
+        {
+          "observation_id": "o-000505-runtests-1",
+          "content": {
+            "passed": true,
+            "stdout_tail": "....                                                                     [100%]\n4 passed in 0.01s\n"
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {}
+    },
+    {
+      "step_index": 5,
+      "decisions": [
+        {
+          "decision_id": "d-000505-term",
+          "decision_type": "termination",
+          "chosen_action": "success",
+          "policy": null,
+          "policy_params": null,
+          "valid_actions": null,
+          "propensity": null,
+          "context_features": null,
+          "metadata": {}
+        }
+      ],
+      "observations": [],
+      "metadata": {}
+    }
+  ],
+  "outcome": {
+    "kind": "binary",
+    "value": true,
+    "verifier": "pytest_hidden",
+    "metadata": {
+      "fixture_id": "date_window",
+      "public_pass": true,
+      "hidden_pass": true,
+      "generalization_gap": false
+    }
+  },
+  "metadata": {
+    "agent_name": null,
+    "notes": null,
+    "extra": {}
+  }
+}
