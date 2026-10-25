@@ -1,4 +1,4 @@
-"""The routed-trial analysis recovers the trial truth and refuses without propensities."""
+"""The routed-trial analysis matches the trial estimate and refuses without propensities."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def test_engine_matches_trial_truth_and_naive_does_not() -> None:
     assert report.naive_routed < truth - 0.1
     refusal = report.engine_without_propensities
     assert refusal.identifiability == IdentifiabilityStatus.BOUNDED
-    assert "Engine minus truth" in to_markdown(report)
+    assert "Engine minus trial" in to_markdown(report)
 
 
 def test_missing_arm_in_a_design_is_a_clear_error() -> None:

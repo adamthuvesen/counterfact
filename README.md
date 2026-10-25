@@ -18,7 +18,7 @@ Every answer carries a label, checked against the data:
 
 The benchmark scores three estimators on eight causal models built to break them, with an exact true effect for each. The naive pass-rate gap and an adjust-everything g-formula are off by up to 0.31. `counterfact` has a mean bias within 0.01, or it refuses. For whole policies over several decisions, such as "retry only when the tests fail", filtering the logs gets the answer backwards and `counterfact` stays unbiased.
 
-On 800 real coding-agent traces with a confounded model router, the naive gap says the large model adds 0.05 to the pass rate. A randomized trial in the same run says 0.25. `counterfact`, given only the routed runs, says 0.32, with a 95% CI of [0.20, 0.45] that contains the truth. The [technical report](https://github.com/adamthuvesen/counterfact/blob/main/docs/report.md) covers the method, the results, and the limits.
+On 800 real coding-agent traces with a confounded model router, the naive gap says the large model adds 0.05 to the pass rate. A randomized trial in the same run says 0.25. `counterfact`, given only the routed runs, says 0.32, with a 95% CI of [0.20, 0.45]. The two estimates agree within sampling noise. The naive gap does not. The [technical report](https://github.com/adamthuvesen/counterfact/blob/main/docs/report.md) covers the method, the results, and the limits.
 
 ## Install
 
@@ -86,7 +86,7 @@ The same functions are available from Python: `intervene`, `evaluate_policy`, `f
 - [Usage](docs/usage.md): CLI reference, adapters, and core objects.
 - [Architecture](docs/architecture.md): how the code is organized.
 - [Invariants](docs/invariants.md): the guarantees every change must keep.
-- [Real-agent harness](bench/real/README.md): a budgeted coding-agent benchmark with its own ground truth.
+- [Real-agent harness](bench/real/README.md): a budgeted coding-agent benchmark with its own randomized trial.
 
 ## Development
 
