@@ -16,6 +16,7 @@ First public release.
 - `diagnose`, `explain`, `compare`, and `analyze` commands, with a self-contained HTML report.
 - Adapters and live tracers for the Claude Agent SDK and the OpenAI Agents SDK, and a generic JSONL ingester.
 - A real-agent harness with a routed-trial design that produces its own ground truth. It is behind an approval gate and a budget cap.
+- An 800-trace routed trial on Claude Haiku 4.5 and Sonnet 4.6. The engine's interval contains the randomized truth, and the naive gap misses it by 0.20.
 - A technical report with figures: [docs/report.md](docs/report.md).
 
 ### Requirements

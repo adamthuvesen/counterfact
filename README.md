@@ -16,7 +16,9 @@ Every answer carries a label, checked against the data:
 
 ![Single-decision bias by estimator](https://raw.githubusercontent.com/adamthuvesen/counterfact/main/docs/figures/single-decision-bias.svg)
 
-The benchmark scores three estimators on eight causal models built to break them, with an exact true effect for each. The naive pass-rate gap and an adjust-everything g-formula are off by up to 0.31. `counterfact` has a mean bias within 0.01, or it refuses. For whole policies over several decisions, such as "retry only when the tests fail", filtering the logs gets the answer backwards and `counterfact` stays unbiased. The [technical report](https://github.com/adamthuvesen/counterfact/blob/main/docs/report.md) covers the method, the results, and the limits.
+The benchmark scores three estimators on eight causal models built to break them, with an exact true effect for each. The naive pass-rate gap and an adjust-everything g-formula are off by up to 0.31. `counterfact` has a mean bias within 0.01, or it refuses. For whole policies over several decisions, such as "retry only when the tests fail", filtering the logs gets the answer backwards and `counterfact` stays unbiased.
+
+On 800 real coding-agent traces with a confounded model router, the naive gap says the large model adds 0.05 to the pass rate. A randomized trial in the same run says 0.25. `counterfact`, given only the routed runs, says 0.32, with a 95% CI of [0.20, 0.45] that contains the truth. The [technical report](https://github.com/adamthuvesen/counterfact/blob/main/docs/report.md) covers the method, the results, and the limits.
 
 ## Install
 

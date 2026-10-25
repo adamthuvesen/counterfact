@@ -10,6 +10,7 @@ The harness calls LLM APIs and costs money. It refuses to start until `.counterf
 | --- | --- | --- |
 | `smoke_mixed_outcome/` | corpus | The real-trace demo corpus. |
 | `single_class_refusal/` | corpus | Checks that the engine refuses a corpus with one outcome class. |
+| `routed_trial/` | corpus | 800 traces from the routed trial. The engine recovers the trial truth. |
 | `broad_calibration` | fixture set | `date_window`, `rate_limit`, `version_range`. |
 | `stateful_calibration` | fixture set | `streaming_watermark_dedupe`, a harder stateful task. |
 
@@ -47,4 +48,4 @@ counterfact bench real --n 800 \
 python -m bench.real.analyze_routed_trial bench/real/pilot_routed_trial
 ```
 
-The analysis compares the naive gap and the engine's AIPW estimate on the routed runs against the trial truth. It then removes the propensities from the routed runs and checks that the engine refuses. The route map must name exactly the run's fixtures, with every probability strictly between 0 and 1. [Report §6](../../docs/report.md#6-real-agent-ground-truth) explains the design.
+The analysis compares the naive gap and the engine's AIPW estimate on the routed runs against the trial truth. It then removes the propensities from the routed runs and checks that the engine refuses. The route map must name exactly the run's fixtures, with every probability strictly between 0 and 1. The committed run is in `routed_trial/`, with its results in [routed_trial/RESULTS.md](routed_trial/RESULTS.md). [Report §6](../../docs/report.md#6-real-agent-ground-truth) explains the design.
