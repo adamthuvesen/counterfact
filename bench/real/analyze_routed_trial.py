@@ -4,12 +4,12 @@ A corpus from `counterfact bench real --model-route-by-fixture ...` holds two
 logged designs for the first `model_call`:
 
 * `trial`: P(large) = 0.5 on every fixture. Its difference in pass rates is an
-  unbiased estimate of the true effect, so it serves as ground truth.
+  unbiased estimate of the true effect, so it serves as the benchmark.
 * `fixture_router`: P(large) depends on the fixture, which also drives task
   difficulty. A naive comparison of these runs is confounded.
 
 The report compares, on the routed runs, the naive gap and the engine's
-estimate against the trial truth. It also strips the propensities from the
+estimate against the trial estimate. It also strips the propensities from the
 routed runs, which is what most production traces look like, and checks that
 the engine refuses.
 
@@ -147,7 +147,7 @@ def to_markdown(report: RoutedTrialReport) -> str:
         "",
         "| Estimate | Source | Effect of large vs small | 95% interval |",
         "| --- | --- | ---: | --- |",
-        f"| Ground truth | trial, difference in means | {report.trial_effect:+.3f} "
+        f"| Randomized trial | trial, difference in means | {report.trial_effect:+.3f} "
         f"| [{lo:+.3f}, {hi:+.3f}] |",
         f"| Naive | routed, pass-rate gap | {report.naive_routed:+.3f} | — |",
     ]
@@ -173,8 +173,8 @@ def to_markdown(report: RoutedTrialReport) -> str:
         z = (d.point - report.trial_effect) / math.sqrt(engine_se**2 + report.trial_se**2)
         lines += [
             "",
-            f"Engine minus truth: {d.point - report.trial_effect:+.3f} (z = {z:+.2f}, "
-            "independent samples). Naive minus truth: "
+            f"Engine minus trial: {d.point - report.trial_effect:+.3f} (z = {z:+.2f}, "
+            "independent samples). Naive minus trial: "
             f"{report.naive_routed - report.trial_effect:+.3f}.",
         ]
     return "\n".join(lines) + "\n"

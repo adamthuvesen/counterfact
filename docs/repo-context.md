@@ -51,7 +51,7 @@ Start narrow, then widen when the change crosses boundaries.
 ## Generated And Local Artifacts
 
 - Never commit `.counterfact/`, provider credentials, checkpoints, caches, or ad hoc pilot directories unless the user explicitly asks for a curated corpus artifact.
-- Keep committed corpus files intentional: `bench/real/smoke_mixed_outcome/` for the promoted demo corpus, `bench/real/single_class_refusal/` for the honest-refusal anchor, and `bench/real/routed_trial/` for the real-agent ground-truth trial that `tests/acceptance/test_routed_trial_corpus.py` checks.
+- Keep committed corpus files intentional: `bench/real/smoke_mixed_outcome/` for the promoted demo corpus, `bench/real/single_class_refusal/` for the honest-refusal anchor, and `bench/real/routed_trial/` for the real-agent routed trial that `tests/acceptance/test_routed_trial_corpus.py` checks.
 - `bench/real/*/PILOT_NOTES.md` is useful provenance for promoted or reviewed pilots; do not treat it as a substitute for analyzer output.
 
 ## Documentation Style

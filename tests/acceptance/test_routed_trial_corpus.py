@@ -1,4 +1,4 @@
-"""On the committed real-agent routed trial, the engine recovers the randomized truth."""
+"""On the committed real-agent routed trial, the engine agrees with the randomized estimate."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def report() -> RoutedTrialReport:
     return analyze(runs)
 
 
-def test_engine_interval_contains_the_trial_truth(report: RoutedTrialReport) -> None:
+def test_engine_interval_contains_the_trial_estimate(report: RoutedTrialReport) -> None:
     estimate = report.engine_routed
     assert estimate.identifiability == IdentifiabilityStatus.IDENTIFIED
     assert estimate.outcome_delta is not None

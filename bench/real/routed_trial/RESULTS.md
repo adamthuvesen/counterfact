@@ -17,14 +17,14 @@ Trial runs: 402. Routed runs: 398.
 
 | Estimate | Source | Effect of large vs small | 95% interval |
 | --- | --- | ---: | --- |
-| Ground truth | trial, difference in means | +0.252 | [+0.184, +0.320] |
+| Randomized trial | trial, difference in means | +0.252 | [+0.184, +0.320] |
 | Naive | routed, pass-rate gap | +0.053 | — |
 | Engine (identified) | routed, AIPW | +0.324 | [+0.197, +0.451] |
 | Engine (bounded) | routed, propensities removed | — | [-0.477, +0.523] (Manski) |
 
-Engine minus truth: +0.072 (z = +0.98, independent samples). Naive minus truth: -0.199.
+Engine minus trial: +0.072 (z = +0.98, independent samples). Naive minus trial: -0.199.
 
-The naive gap is too small because the router sends the large model to the hard fixtures, where every arm passes less often. The engine's interval contains the trial truth. With the propensities removed, the engine returns `bounded`.
+The naive gap is too small because the router sends the large model to the hard fixtures, where every arm passes less often. The engine's estimate is statistically compatible with the trial estimate (z = 0.98), and its interval contains it. The trial estimate is itself uncertain, so this is agreement between two independent estimates, not recovery of an exact value. With the propensities removed, the engine returns `bounded`.
 
 ## Pass counts by fixture
 

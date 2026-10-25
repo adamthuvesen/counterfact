@@ -10,7 +10,7 @@ The harness calls LLM APIs and costs money. It refuses to start until `.counterf
 | --- | --- | --- |
 | `smoke_mixed_outcome/` | corpus | The real-trace demo corpus. |
 | `single_class_refusal/` | corpus | Checks that the engine refuses a corpus with one outcome class. |
-| `routed_trial/` | corpus | 800 traces from the routed trial. The engine recovers the trial truth. |
+| `routed_trial/` | corpus | 800 traces from the routed trial. The engine agrees with the randomized estimate. |
 | `broad_calibration` | fixture set | `date_window`, `rate_limit`, `version_range`. |
 | `stateful_calibration` | fixture set | `streaming_watermark_dedupe`, a harder stateful task. |
 
@@ -33,7 +33,7 @@ python -m bench.real.analyze_pilot bench/real/pilot_stateful
 
 ## Routed trial
 
-`--model-route-by-fixture` turns one command into an experiment with its own ground truth. Each run is randomized into one of two logged designs for the first `model_call`:
+`--model-route-by-fixture` turns one command into an experiment with its own randomized benchmark. Each run is randomized into one of two logged designs for the first `model_call`:
 
 - `trial`: P(large) = 0.5 on every fixture. Its difference in pass rates is an unbiased estimate of the true effect.
 - `fixture_router`: P(large) is set per fixture. Fixtures differ in difficulty, so a naive comparison of these runs is confounded, as with a production router that escalates hard tasks.
@@ -48,4 +48,4 @@ counterfact bench real --n 800 \
 python -m bench.real.analyze_routed_trial bench/real/pilot_routed_trial
 ```
 
-The analysis compares the naive gap and the engine's AIPW estimate on the routed runs against the trial truth. It then removes the propensities from the routed runs and checks that the engine refuses. The route map must name exactly the run's fixtures, with every probability strictly between 0 and 1. The committed run is in `routed_trial/`, with its results in [routed_trial/RESULTS.md](routed_trial/RESULTS.md). [Report §6](../../docs/report.md#6-real-agent-ground-truth) explains the design.
+The analysis compares the naive gap and the engine's AIPW estimate on the routed runs against the trial estimate. It then removes the propensities from the routed runs and checks that the engine refuses. The route map must name exactly the run's fixtures, with every probability strictly between 0 and 1. The committed run is in `routed_trial/`, with its results in [routed_trial/RESULTS.md](routed_trial/RESULTS.md). [Report §6](../../docs/report.md#6-real-agent-trial) explains the design.
