@@ -1,6 +1,6 @@
 # Honest Counterfactuals for Agent Traces
 
-Technical report for `counterfact` 0.1.0. Every benchmark number below comes from `docs/benchmark-results.json` and can be reproduced with one command in about two minutes on a 10-core laptop.
+Technical report for `counterfact` 0.1.0. Every synthetic-benchmark number below comes from `docs/benchmark-results.json` and can be reproduced with one command in about two minutes on a 10-core laptop. The real-agent numbers in §6 come from the committed corpus in `bench/real/routed_trial/`.
 
 ## Summary
 
@@ -13,6 +13,8 @@ Teams that build LLM agents ask counterfactual questions of their logs. Would th
 - `unidentified`: the corpus cannot answer the question. The engine returns a concrete next step, such as the runs to collect.
 
 The engine is scored on structural causal models with exact true effects, built so that each one breaks one assumption. Over 4,000 single-decision corpora it labels every scenario correctly, and its 95% CIs cover the truth 94% to 96% of the time. For whole policies over a sequential agent, the common practice of averaging the runs that already followed the policy gets both retry policies backwards. The sequential doubly robust estimate has a mean bias of at most 0.0014.
+
+On 800 real coding-agent traces with a confounded model router, the naive gap says the large model adds 0.05 to the pass rate. A randomized trial in the same run says 0.25. The engine, given only the routed runs, says 0.32 with a 95% CI of [0.20, 0.45], which contains the truth. With the logged propensities removed, it returns `bounded`.
 
 ![Single-decision bias by estimator](figures/single-decision-bias.svg)
 
@@ -149,11 +151,24 @@ Synthetic models test the engine against processes it can describe. A real agent
 - The trial arm gives an unbiased ground-truth effect from one corpus. The router arm gives a confounded log of the same agent on the same fixtures.
 - The analysis compares the naive gap and the engine's AIPW estimate on the routed runs against the trial truth. It then removes the logged propensities from the routed runs and checks that the engine refuses.
 
-This section describes the design. It reports no routed-trial results.
+The run used `claude-haiku-4-5` as the small model and `claude-sonnet-4-6` as the large one, on `streaming_watermark_dedupe`, `date_window`, `rate_limit`, and `csv-stats`. The router gave the large model to 85%, 70%, 30%, and 15% of runs on those fixtures. 800 traces cost $6.52.
+
+| Estimate | Data | Effect of large vs small | 95% interval |
+| --- | --- | ---: | --- |
+| Ground truth | 402 trial runs, difference in means | +0.252 | [+0.184, +0.320] |
+| Naive | 398 routed runs, pass-rate gap | +0.053 | |
+| Engine, `identified` | the same routed runs, AIPW | +0.324 | [+0.197, +0.451] |
+| Engine, `bounded` | routed runs, propensities removed | | [−0.477, +0.523] |
+
+- **The naive gap understates the effect by 0.20.** The router sends the large model to the hard fixtures, where every arm passes less often, so the large model looks barely better than the small one.
+- **The engine's interval contains the trial truth.** Its point estimate is 0.07 above the truth, which is within sampling noise (z = 0.98).
+- **Without propensities, the engine refuses.** The bounds span zero, so they make no claim about which model is better.
+
+Both models pass `rate_limit` and `csv-stats` on every run, so the effect comes from the two harder fixtures. This is one trial. It shows that the engine recovers a real effect from a real confounded log. It does not measure the engine's coverage on real agents, which needs repeated trials. The corpus, per-fixture counts, and the command to rerun the analysis are in `bench/real/routed_trial/RESULTS.md`. `tests/acceptance/test_routed_trial_corpus.py` checks the three conclusions above.
 
 ## 7. Limits
 
-- Every benchmark scenario is synthetic and discrete, with one binary outcome.
+- Every synthetic scenario is discrete, with one binary outcome. The real-agent evidence is one routed trial on four fixtures.
 - `identified` needs logged propensities. Most production agents do not log them today. The engine's answer for those logs is `bounded`, which is correct and not very useful. Logging propensities, or randomizing a small share of decisions, is the practical fix.
 - Policies are deterministic rules over one history feature per decision type. Stochastic policies and rules over several features are not supported.
 - Trajectory weights grow with the number of controlled decisions. Long horizons need more runs. The reported effective sample size shows when that limit applies.
