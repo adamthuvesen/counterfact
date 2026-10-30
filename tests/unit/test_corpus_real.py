@@ -587,10 +587,16 @@ def test_empty_approval_marker_is_rejected_before_any_api_call(tmp_path: Path) -
     assert rc == 2
 
 
-def test_approval_receipt_must_match_budget_before_any_api_call(tmp_path: Path) -> None:
+def test_approval_receipt_must_match_budget_before_any_api_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bench.real.coding_agent.executor import DockerExecutor
+
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
     _write_approval(marker, n=1, budget_cap_usd=5.0, output_dir=output)
+    # A ready runtime, so only the approval gate can stop the run.
+    monkeypatch.setattr(DockerExecutor, "preflight", lambda self: None)
 
     class _ExplodingLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -605,6 +611,7 @@ def test_approval_receipt_must_match_budget_before_any_api_call(tmp_path: Path) 
     )
 
     assert rc == 2
+    assert not output.exists(), "the approval gate must refuse before any checkpoint or lock"
 
 
 def test_resume_after_partial_run(tmp_path: Path) -> None:

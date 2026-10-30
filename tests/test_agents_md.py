@@ -45,3 +45,11 @@ def test_enforced_rules_cite_existing_files_and_names() -> None:
             elif name and not _defines(ROOT / path, name):
                 problems.append(f"{citation}: {path} does not define {name!r}")
     assert rows and not problems, "Fix the AGENTS.md Enforced Rules table:\n" + "\n".join(problems)
+
+
+def test_defines_finds_a_known_name_and_rejects_a_missing_one() -> None:
+    assert _defines(ROOT / "Makefile", "check")
+    assert not _defines(ROOT / "Makefile", "chec")
+    assert _defines(ROOT / "pyproject.toml", "tool.importlinter.contracts")
+    assert not _defines(ROOT / "pyproject.toml", "tool.importlinter.missing")
+    assert not _defines(ROOT / "tests/test_agents_md.py", "_missing_definition")
