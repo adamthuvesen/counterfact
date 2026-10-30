@@ -2,7 +2,7 @@
 
 `counterfact bench real` runs a coding agent on fixed Python repair tasks and writes native traces. Model, tool, and retry policies log their assignment probabilities. Analysis still checks support before making causal claims.
 
-This command makes external provider calls and can spend money. Obtain approval for the exact command before running it. `.counterfact/approved` must cover the requested trace count and match the budget, destination, fixtures, model map, and randomization configuration. Agents must never create this receipt for the user.
+This command makes external provider calls and can spend money. Obtain approval for the exact command before running it. `.counterfact/approved` must cover the requested trace count and match the budget, destination, fixtures, model map, and randomization configuration. Agents never write this receipt; see the Enforced Rules table in [AGENTS.md](../../AGENTS.md).
 
 The wheel excludes `bench/`. Use a checkout with the `bench` extra for every command on this page.
 

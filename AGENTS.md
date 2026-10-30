@@ -16,7 +16,7 @@ make check
 make verify
 ```
 
-`make check` is the fast offline gate: lint, types, import contracts, and tests not marked `slow`, `container`, or under `tests/acceptance/`. `make verify` adds coverage over the full suite, generated artifacts, installed-wheel consumers, and Docker execution. Mark a test `slow` only when it is integration-shaped and a cheaper setup cannot replace it. Spend and approval gates stay in `make check`.
+`make check` is the fast gate and `make verify` the full one. The Makefile defines both. Mark a test `slow` only when it is integration-shaped and a cheaper setup cannot replace it. Spend and approval gates stay in `make check`.
 
 ## Enforced Rules
 
@@ -24,12 +24,14 @@ make verify
 | --- | --- | --- |
 | Scientific code does not import presentation, CLI, provider, or bench modules | `pyproject.toml::[tool.importlinter]` | 2026-11-05 |
 | Parse run files only through `corpus_io.load_run` or `load_corpus` | `pyproject.toml::banned-api` | 2026-11-06 |
+| Write run files only through `corpus_io.write_corpus` (exception: `bench/real/coding_agent/runner.py`) | `tests/test_corpus_writes.py::test_model_json_is_not_written_by_hand` | 2026-11-06 |
 | Library modules import without `bench/`, `scripts/`, or `tests/` | `tests/test_imports.py::test_library_imports_without_checkout_only_modules` | 2026-11-06 |
 | The wheel holds `src/counterfact` only and works outside the checkout | `scripts/check_wheel.py` | 2026-11-05 |
 | Generated artifacts match their builders | `Makefile::check-generated` | 2026-11-05 |
 | Generated code cannot reach the host or mutate the verifier (`make check-container`) | `tests/acceptance/test_container_executor.py::test_generated_code_cannot_reach_host_or_mutate_verifier` | 2026-11-05 |
 | Real-agent spend halts at 80% of the budget | `tests/unit/test_corpus_real.py::test_budget__halt_at_80_percent` | 2026-04-09 |
 | Unknown paid-call charges block resume | `tests/unit/test_corpus_real.py::test_unknown_paid_call_cost_blocks_resume` | 2026-11-05 |
+| Agents never create or edit `.counterfact/approved`. Stop and ask Adam to approve the spend | `.claude/settings.json::guard_approval_receipt.py`, `tests/unit/test_approval_guard.py::test_receipt_writes_are_denied` | 2026-11-06 |
 | The approval receipt must match the budget before any API call | `tests/unit/test_corpus_real.py::test_approval_receipt_must_match_budget_before_any_api_call` | 2026-05-10 |
 | Same-step decisions never enter adjustment sets | `tests/unit/test_analysis_contract.py::test_same_step_decisions_are_not_adjustment_features` | 2026-11-05 |
 | Repeated decisions of one type refuse focal localization | `tests/unit/test_causal_engine.py::test_intervene__repeated_decision_type_reports_localization_limit` | 2026-05-06 |
@@ -58,7 +60,6 @@ Mixed decision types in one step can use explicit decision IDs.
 Read [bench/real/README.md](bench/real/README.md) before touching execution, approvals, or spend accounting. The harness can make paid provider calls. Docker checks do not.
 
 - Obtain approval before generating real traces. State the exact command, fixtures, destination, and budget cap.
-- Never create or bypass `.counterfact/approved` for the user.
 - Execute generated code through the Docker verifier. Never add a host-execution fallback.
 - Keep infrastructure failures separate from graded task failures.
 

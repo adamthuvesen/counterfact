@@ -36,7 +36,8 @@ htmlcov/
 
 # Claude / agent local state
 .agents/
-.claude/
+.claude/*
+!.claude/settings.json
 .codex/
 .claude/settings.local.json
 .claude/projects/

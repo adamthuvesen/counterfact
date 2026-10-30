@@ -42,4 +42,4 @@ Documentation explains interpretation and limitations. Keep detailed numeric tab
 
 Read [the real-agent guide](../bench/real/README.md) before changing execution, approval, checkpoint identity, or spend accounting. Docker verification is local and makes no model calls. `counterfact bench real` can spend money and requires explicit approval for the command.
 
-Never create `.counterfact/approved` for the user. Never use a paid real-agent run as routine validation. Provider credentials, `.counterfact/`, checkpoints, and ad hoc pilots stay outside commits.
+The Enforced Rules table in [AGENTS.md](../AGENTS.md) governs `.counterfact/approved`. Never use a paid real-agent run as routine validation. Provider credentials, `.counterfact/`, checkpoints, and ad hoc pilots stay outside commits.
