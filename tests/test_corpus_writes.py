@@ -41,3 +41,10 @@ def test_run_json_is_not_written_by_hand() -> None:
             ):
                 hits.append(f"{relative}:{node.lineno}")
     assert not hits, "Publish runs with counterfact.corpus_io.write_corpus: " + ", ".join(hits)
+
+
+def test_detector_finds_a_known_hand_written_run() -> None:
+    written = ast.parse("path.write_text(run.model_dump_json())").body[0]
+    assert isinstance(written, ast.Expr) and isinstance(written.value, ast.Call)
+    assert _dumps_run_json(written.value.args[0])
+    assert not _dumps_run_json(ast.parse("report.model_dump_json()").body[0])

@@ -4,6 +4,7 @@
 import atexit
 import datetime as dt
 import fnmatch
+import hashlib
 import json
 import os
 import shutil
@@ -36,6 +37,27 @@ def git(*args: str) -> str:
     return subprocess.run(
         ["git", *args], cwd=ROOT, env=env, capture_output=True, text=True, check=True
     ).stdout.strip()
+
+
+def repo_writes(since_ns: int, run_dir: Path) -> list[str]:
+    """Paths in the checkout or its git dir written since `since_ns`."""
+    git_dir = Path(git("rev-parse", "--absolute-git-dir"))
+    written: list[str] = []
+    for top in (ROOT, git_dir):
+        for parent, dirs, files in os.walk(top):
+            here = Path(parent)
+            dirs[:] = [d for d in dirs if here / d not in (run_dir, git_dir)]
+            for name in [*dirs, *files]:
+                path = here / name
+                if path.lstat().st_mtime_ns >= since_ns:
+                    written.append(str(path.relative_to(top.parent)))
+    return written
+
+
+def git_config_digest() -> str:
+    common = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir"))
+    configs = sorted(common.glob("config*")) + sorted(common.glob("worktrees/*/config*"))
+    return hashlib.sha256(b"".join(path.read_bytes() for path in configs)).hexdigest()
 
 
 def cleanup() -> None:
@@ -101,15 +123,17 @@ def control() -> int:
 def execute(names: list[str], control: bool = False) -> int:
     sha = git("rev-parse", "--short=7", "HEAD")
     dirty = bool(git("status", "--porcelain"))
-    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%S%fZ")
     run_dir = ROOT / ".verify" / "runs" / f"{stamp}-{sha}{'-dirty' if dirty else ''}"
     run_dir.mkdir(parents=True)
     preflight(run_dir)
     approval_before = APPROVAL.exists() and APPROVAL.read_bytes()
+    config_before = git_config_digest()
     results = []
     for name in names:
         drive = DRIVES[name]
         started = time.monotonic()
+        since_ns = time.time_ns()
         try:
             if control:
                 detail = drive_diagnose(Run(run_dir, "control"), CONTROL_EXPECTED)
@@ -132,9 +156,16 @@ def execute(names: list[str], control: bool = False) -> int:
                 "FAIL",
                 f"{APPROVAL} changed during the drive; drives must never touch spend approval",
             )
+        written = repo_writes(since_ns, run_dir)
+        if written:
+            result, detail = "FAIL", f"drive wrote to the checkout: {', '.join(written[:5])}"
+        if git_config_digest() != config_before:
+            result, detail = "FAIL", "drive changed the git config"
         print(f"{result} {'control' if control else name} {seconds}s {detail}")
         results.append({"drive": name, "result": result, "seconds": seconds, "detail": detail})
+    exit_code = verdict(results, control)
     summary = {
+        "result": "PASS" if exit_code == 0 else "FAIL",
         "sha": git("rev-parse", "HEAD"),
         "dirty": dirty,
         "control": control,
@@ -142,6 +173,10 @@ def execute(names: list[str], control: bool = False) -> int:
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     print(f"evidence: {run_dir}")
+    return exit_code
+
+
+def verdict(results: list[dict[str, object]], control: bool) -> int:
     failed = any(r["result"] == "FAIL" for r in results)
     if control:
         failures = [str(r["detail"]) for r in results if r["result"] == "FAIL"]

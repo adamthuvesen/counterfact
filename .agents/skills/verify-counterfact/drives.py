@@ -52,6 +52,7 @@ class Run:
             "XDG_CACHE_HOME": str(self.home / "cache"),
             "XDG_DATA_HOME": str(self.home / "data"),
             "NO_COLOR": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
         }
         self.step = 0
 
