@@ -118,6 +118,7 @@ def test_import_contract_rejects_scientific_dependency_on_cli(tmp_path: Path) ->
     assert "boundary_probe" in result.stdout
 
 
+@pytest.mark.slow
 def test_subprocess_branch_coverage_excludes_fixture_inputs(tmp_path: Path) -> None:
     fixture = tmp_path / "fixture.py"
     fixture.write_text("value = 1\n")

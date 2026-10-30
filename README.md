@@ -74,11 +74,11 @@ From Python, use `AnalysisCorpus` with `intervene` for a focal decision or `cont
 ## Development
 
 ```bash
-make ci
+make check
 make verify
 ```
 
-`make ci` runs the shared offline checks. `make verify` adds generated artifacts, installed-wheel consumers, and Docker execution checks. The Docker verifier requires a running Linux-container engine and its pinned image. See the [real-agent guide](bench/real/README.md).
+`make check` runs the fast offline checks. `make verify` adds full-suite coverage, generated artifacts, installed-wheel consumers, and Docker execution checks. The Docker verifier requires a running Linux-container engine and its pinned image. See the [real-agent guide](bench/real/README.md).
 
 Synthetic benchmarks require a checkout and make no provider calls:
 

@@ -4,6 +4,7 @@ import argparse
 import sys
 
 from counterfact.cli.constants import BENCH_UNAVAILABLE_MESSAGE
+from counterfact.corpus_io import CorpusIOError
 
 
 def run(args: argparse.Namespace) -> int:
@@ -15,7 +16,7 @@ def run(args: argparse.Namespace) -> int:
 
     try:
         out = generate_corpus(n=args.n, seed=args.seed, output_dir=args.output_dir)
-    except ValueError as exc:
+    except (CorpusIOError, ValueError) as exc:
         print(f"counterfact bench synthetic: {exc}", file=sys.stderr)
         return 2
     print(f"Wrote {args.n} synthetic traces to {out}")

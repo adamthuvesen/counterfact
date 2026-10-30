@@ -64,8 +64,11 @@ dev-mode-dirs = ["src", "."]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q -ra -m 'not container'"
-markers = ["container: real Docker execution boundary checks (run with make check-container)"]
+addopts = "-q -ra --strict-markers -m 'not container'"
+markers = [
+    "container: real Docker execution boundary checks (run with make check-container)",
+    "slow: subprocess or integration checks that run in make verify, not make check",
+]
 
 [tool.ruff]
 line-length = 100

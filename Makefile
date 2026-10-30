@@ -1,6 +1,6 @@
 UV = uv run --locked --extra dev --extra bench
 
-.PHONY: install lint format typecheck imports test cov ci generated check-generated check-wheel check-container verify
+.PHONY: install lint format typecheck imports check cov generated check-generated check-wheel check-container verify
 
 install:
 	uv sync --locked --extra dev --extra bench
@@ -18,13 +18,11 @@ typecheck:
 imports:
 	$(UV) lint-imports
 
-test:
-	$(UV) pytest
+check: lint typecheck imports
+	$(UV) pytest -n auto --dist worksteal -m "not container and not slow" --ignore=tests/acceptance
 
 cov:
 	$(UV) pytest -n auto --durations=20 --cov --cov-config=$(CURDIR)/pyproject.toml --cov-report=xml --cov-report=term-missing --cov-fail-under=80
-
-ci: lint typecheck imports cov
 
 generated:
 	$(UV) python scripts/build_demo_notebook.py
@@ -44,4 +42,4 @@ check-wheel:
 check-container:
 	$(UV) python scripts/check_container.py --build
 
-verify: ci check-generated check-wheel check-container
+verify: check cov check-generated check-wheel check-container

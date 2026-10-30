@@ -5,7 +5,7 @@ on:
   push:
 
 jobs:
-  validate:
+  check:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -20,8 +20,27 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Install locked development and benchmark dependencies
         run: make install
-      - name: Check code, imports, types, and branch coverage
-        run: make ci
+      - name: Lint, types, import contracts, and fast tests
+        run: make check
+
+  verify:
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked development and benchmark dependencies
+        run: make install
+      - name: Full suite with branch coverage
+        run: make cov
       - name: Verify generated artifacts
         run: make check-generated
       - name: Verify installed wheel outside the checkout
@@ -34,6 +53,7 @@ jobs:
           path: coverage.xml
 
   container:
+    needs: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

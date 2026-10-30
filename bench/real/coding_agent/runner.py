@@ -593,6 +593,8 @@ def run_real_corpus(
                         file=sys.stderr,
                     )
                     return 8
+                # Exception to corpus_io.write_corpus: each trace is published as soon as it is
+                # graded, so a resume can count its spend from the files already written.
                 temporary = out_path.with_suffix(".json.tmp")
                 with temporary.open("w") as stream:
                     stream.write(run.model_dump_json(indent=2))

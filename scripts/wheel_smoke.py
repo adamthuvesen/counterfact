@@ -11,7 +11,7 @@ import polars as pl
 
 import counterfact
 from counterfact import AnalysisCorpus, contrast
-from counterfact.corpus_io import load_corpus
+from counterfact.corpus_io import IngestReceipt, load_corpus, write_corpus
 from counterfact.schema import Decision, Observation, Outcome, Run, Step
 
 
@@ -32,7 +32,6 @@ def main() -> None:
     assert Path(counterfact.__file__).resolve().is_relative_to(Path(sys.prefix).resolve())
     assert importlib.util.find_spec("bench") is None
     corpus_dir = root / "native"
-    corpus_dir.mkdir()
     runs = []
     for index in range(80):
         run = Run(
@@ -60,7 +59,11 @@ def main() -> None:
             outcome=Outcome(kind="binary", value=index % 5 != 0, verifier="smoke"),
         )
         runs.append(run)
-        (corpus_dir / f"{run.run_id}.json").write_text(run.model_dump_json())
+    write_corpus(
+        runs,
+        corpus_dir,
+        IngestReceipt(source_format="wheel-smoke", source_file="", generated_count=len(runs)),
+    )
     corpus = AnalysisCorpus(runs)
     estimate = contrast(
         corpus=corpus,

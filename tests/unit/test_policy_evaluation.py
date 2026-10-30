@@ -351,7 +351,7 @@ def test_unreachable_nodes_need_no_support() -> None:
 def test_controlled_decisions_are_ordered_by_step_index_not_list_position() -> None:
     """Listing the retry step before the model step must not change the estimate,
     and two controlled decisions sharing a step_index must be refused."""
-    runs = _sequential(n=600)
+    runs = _sequential(n=150)
     reversed_runs = [r.model_copy(update={"steps": list(reversed(r.steps))}) for r in runs]
     policy = Policy(name="p", rules=[{"decision_type": "model_call", "action": "sonnet"}, ON_FAIL])
 

@@ -161,6 +161,7 @@ def test_budget__rejects_non_finite_spend(cost: float) -> None:
 # --- Fixture spec scenarios -------------------------------------------------
 
 
+@pytest.mark.slow
 def test_real_corpus_has_at_least_three_fixtures() -> None:
     assert len(FIXTURES) >= 3
     for fx in FIXTURES:
@@ -1098,6 +1099,7 @@ def test_cli_real_subcommand_first_run_prints_approval(tmp_path: Path) -> None:
     assert "approved" in combined
 
 
+@pytest.mark.slow
 def test_analyze_pilot_cli_writes_notes_without_provider_calls(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
     source_dir = repo_root / "bench" / "real" / "single_class_refusal"
