@@ -874,7 +874,7 @@ def test_extract_cost__rejects_non_finite_response_cost(cost: float) -> None:
 
 def test_extract_cost__falls_back_to_completion_cost(monkeypatch: pytest.MonkeyPatch) -> None:
     """When response_cost is absent (None), derive cost via litellm.completion_cost."""
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     resp = {"choices": [{"message": {"content": "x"}}]}
     monkeypatch.setattr(litellm, "completion_cost", lambda completion_response: 0.0123)
@@ -885,7 +885,7 @@ def test_extract_cost__zero_response_cost_is_returned_not_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A real `response_cost == 0.0` is a valid zero, not a missing value."""
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     resp = {"choices": [{"message": {"content": "x"}}], "response_cost": 0.0}
 
@@ -901,7 +901,7 @@ def test_extract_cost__rejects_non_positive_or_non_finite_fallback(
     monkeypatch: pytest.MonkeyPatch,
     cost: float,
 ) -> None:
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     resp = {"choices": [{"message": {"content": "x"}}]}
     monkeypatch.setattr(litellm, "completion_cost", lambda completion_response: cost)
@@ -913,7 +913,7 @@ def test_extract_cost__raises_when_both_paths_fail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Production cost accounting fails closed if both cost paths are unavailable."""
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     resp = {"choices": [{"message": {"content": "x"}}]}
 
@@ -928,7 +928,7 @@ def test_extract_cost__raises_when_both_paths_fail(
 def test_litellm_client__raises_when_response_cost_is_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     monkeypatch.setattr(
         litellm,
@@ -948,7 +948,7 @@ def test_litellm_client__raises_when_response_cost_is_unknown(
 def test_litellm_client__requests_large_enough_patch_budget_and_records_finish_reason(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     captured: dict[str, object] = {}
 
@@ -977,7 +977,7 @@ def test_litellm_client__requests_large_enough_patch_budget_and_records_finish_r
 def test_litellm_client__normalizes_missing_content_to_extraction_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     monkeypatch.setattr(
         litellm,

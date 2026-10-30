@@ -77,7 +77,7 @@ Offline ingest creates a new destination. Live tracers explicitly append and rej
 ### Diagnose A Failed Trace
 
 ```bash
-uv run --locked counterfact diagnose bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000000.json \
+uv run --locked counterfact diagnose bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000001.json \
   --runs-dir bench/real/smoke_mixed_outcome \
   --top-k 3
 ```
@@ -124,7 +124,7 @@ Prefer `--decision-id` for precise targeting. `--step <n>` requires exactly one 
 Useful trace-level questions:
 
 - wrong model choice: `--set model_choice=small`
-- logged temperature choice: `--set temperature=0.7`. Temperature is logged as metadata, not as a randomized arm, so this returns `bounded` with Manski bounds
+- logged temperature choice: `--set temperature=0.7`. Temperature is logged as metadata, not as a randomized arm, so this returns `bounded` with Manski bounds. It needs a corpus that logs temperature; the smoke corpus does not
 - bad tool choice: `--set tool_choice=run_tests`
 - missed retry: `--set retry_policy=retry_once`
 - stopped too early: inspect the termination decision in `counterfact explain`

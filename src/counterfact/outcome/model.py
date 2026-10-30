@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 import numpy as np
-from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyped]
+from sklearn.linear_model import LogisticRegression
 
 from counterfact.analysis import AnalysisCorpus
 from counterfact.analysis.features import decision_feature_values

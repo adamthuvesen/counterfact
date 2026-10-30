@@ -29,7 +29,7 @@ def test_registry__unknown_decision_types_are_rejected() -> None:
     """WHEN a trace with Decision(decision_type="reflect") is loaded
     THEN the system raises a pydantic.ValidationError referencing the unknown type."""
     with pytest.raises(ValidationError) as exc_info:
-        Decision(decision_id="d-x", decision_type="reflect")  # type: ignore[arg-type]
+        Decision(decision_id="d-x", decision_type="reflect")  # pyright: ignore[reportArgumentType]
     assert "reflect" in str(exc_info.value)
 
 
@@ -151,4 +151,4 @@ def test_feature_extraction__unknown_decision_type_raises() -> None:
         outcome=Outcome(kind="binary", value=True, verifier="pytest"),
     )
     with pytest.raises((KeyError, UnknownDecisionTypeError)):
-        extract_features(_Stub(), run)  # type: ignore[arg-type]
+        extract_features(_Stub(), run)  # pyright: ignore[reportArgumentType]

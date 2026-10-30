@@ -7,7 +7,7 @@ def _parse(version: str) -> tuple[int, int, int]:
     parts = version.split(".")
     if len(parts) != 3:
         raise ValueError(f"malformed version: {version!r}")
-    return tuple(int(part) for part in parts)  # type: ignore[return-value]
+    return tuple(int(part) for part in parts)
 
 
 def satisfies(version: str, constraints: list[str]) -> bool:

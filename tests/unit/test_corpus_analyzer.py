@@ -27,7 +27,7 @@ def test_default_thresholds_match_v0_spec() -> None:
 
 def test_thresholds_reject_extra_fields() -> None:
     with pytest.raises(ValidationError):
-        RubricThresholds(min_pass_rate=0.3, surprise=True)  # type: ignore[call-arg]
+        RubricThresholds(min_pass_rate=0.3, surprise=True)  # pyright: ignore[reportCallIssue]
 
 
 def test_thresholds_reject_inverted_pass_rate_bounds() -> None:

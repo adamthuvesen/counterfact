@@ -182,7 +182,7 @@ def run_policy_suite(seeds: int, *, workers: int | None = None) -> list[PolicySu
         identified = [r for r in rows if r.label == "identified"]
         dr_bias, dr_rmse = _bias([r.dr for r in identified], truth)
         covered = [
-            r.ci_low <= truth <= r.ci_high  # type: ignore[operator]
+            r.ci_low <= truth <= r.ci_high  # pyright: ignore[reportOperatorIssue, reportOptionalOperand]
             for r in identified
         ]
         ess = [r.effective_n for r in identified if r.effective_n is not None]

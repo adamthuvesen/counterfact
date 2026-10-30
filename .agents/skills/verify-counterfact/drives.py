@@ -8,6 +8,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 VENV_BIN = ROOT / ".venv" / "bin"
@@ -83,8 +84,8 @@ class Run:
             )
         return proc
 
-    def cli_json(self, *args: str) -> dict:
-        payload: dict = json.loads(self.cli(*args).stdout)
+    def cli_json(self, *args: str) -> dict[str, Any]:
+        payload: dict[str, Any] = json.loads(self.cli(*args).stdout)
         return payload
 
 
@@ -100,7 +101,7 @@ EXPECTED_TOP = {
 }
 
 
-def drive_diagnose(run: Run, expected: dict | None = None) -> str:
+def drive_diagnose(run: Run, expected: dict[str, str] | None = None) -> str:
     report = run.cli_json(
         "diagnose", str(FOCAL), "--runs-dir", str(SMOKE_CORPUS), "--top-k", "3", "--json"
     )

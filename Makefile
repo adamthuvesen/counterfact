@@ -18,6 +18,7 @@ format:
 
 typecheck:
 	$(UV) basedpyright
+	$(UV) basedpyright --project .agents/skills/verify-counterfact
 
 imports:
 	$(UV) lint-imports

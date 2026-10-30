@@ -145,7 +145,7 @@ def fit_suggestion_to_corpus(
         return estimate
     fixture_ids = [run.outcome.metadata.get("fixture_id") for run in runs]
     if fixture_ids and all(isinstance(f, str) for f in fixture_ids):
-        fixtures = ",".join(sorted(set(fixture_ids)))  # type: ignore[arg-type]
+        fixtures = ",".join(sorted(set(fixture_ids)))  # pyright: ignore[reportArgumentType]
         updated = {
             **payload,
             "suggested_command": command.replace(
