@@ -14,6 +14,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 from scripts._generated import write_or_check
 
@@ -29,7 +30,7 @@ def _cell_id(kind: str, index: int) -> str:
     return hashlib.sha1(f"{kind}::{index}".encode()).hexdigest()[:12]
 
 
-def _md(text: str) -> dict:
+def _md(text: str) -> dict[str, Any]:
     return {
         "cell_type": "markdown",
         "metadata": {},
@@ -37,7 +38,7 @@ def _md(text: str) -> dict:
     }
 
 
-def _code(text: str) -> dict:
+def _code(text: str) -> dict[str, Any]:
     return {
         "cell_type": "code",
         "metadata": {},

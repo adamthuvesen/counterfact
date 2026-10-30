@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,7 +18,7 @@ from counterfact.schema import Run
 FIXTURE = Path(__file__).parent.parent / "fixtures/adapters/claude_agent_sdk/minimal.jsonl"
 
 
-def _pass_messages() -> list[dict]:
+def _pass_messages() -> list[dict[str, Any]]:
     return [
         {
             "__type__": "AssistantMessage",

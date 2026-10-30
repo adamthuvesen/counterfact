@@ -111,9 +111,11 @@ def sequential_runs() -> list[Run]:
 
 def test_rule_must_be_a_constant_or_a_lookup() -> None:
     with pytest.raises(ValidationError):
-        Policy(name="both", rules=[{"decision_type": "retry", "action": "no_retry", **ON_FAIL}])
+        Policy.model_validate(
+            {"name": "both", "rules": [{"decision_type": "retry", "action": "no_retry", **ON_FAIL}]}
+        )
     with pytest.raises(ValidationError):
-        Policy(name="neither", rules=[{"decision_type": "retry"}])
+        Policy.model_validate({"name": "neither", "rules": [{"decision_type": "retry"}]})
     with pytest.raises(ValidationError):
         Policy(name="dup", rules=[ON_FAIL, {"decision_type": "retry", "action": "no_retry"}])
 
@@ -143,7 +145,9 @@ def test_filtering_the_logs_gets_never_retry_backwards(sequential_runs: list[Run
     The engine sees that and reports that never retrying hurts."""
     estimate = evaluate_policy(
         sequential_runs,
-        Policy(name="never_retry", rules=[{"decision_type": "retry", "action": "no_retry"}]),
+        Policy.model_validate(
+            {"name": "never_retry", "rules": [{"decision_type": "retry", "action": "no_retry"}]}
+        ),
         observation_keys={"tests_passed"},
     )
     truth = policy_value(None, lambda p: "no_retry") - policy_value(None, None)
@@ -201,12 +205,14 @@ def test_two_controlled_decisions_in_one_step_are_unidentified() -> None:
             outcome=Outcome(kind="binary", value=passed, verifier="t"),
         )
 
-    policy = Policy(
-        name="both",
-        rules=[
-            {"decision_type": "model_call", "action": "sonnet"},
-            {"decision_type": "retry", "action": "retry_once"},
-        ],
+    policy = Policy.model_validate(
+        {
+            "name": "both",
+            "rules": [
+                {"decision_type": "model_call", "action": "sonnet"},
+                {"decision_type": "retry", "action": "retry_once"},
+            ],
+        }
     )
     estimate = evaluate_policy([run(0, True), run(1, False)], policy)
 
@@ -239,8 +245,12 @@ def test_single_decision_policy_contrast_agrees_with_the_aipw_contrast() -> None
     )
     policy = evaluate_policy(
         runs,
-        Policy(name="sonnet", rules=[{"decision_type": "model_call", "action": "sonnet"}]),
-        baseline=Policy(name="haiku", rules=[{"decision_type": "model_call", "action": "haiku"}]),
+        Policy.model_validate(
+            {"name": "sonnet", "rules": [{"decision_type": "model_call", "action": "sonnet"}]}
+        ),
+        baseline=Policy.model_validate(
+            {"name": "haiku", "rules": [{"decision_type": "model_call", "action": "haiku"}]}
+        ),
     )
 
     assert single.outcome_delta is not None and policy.outcome_delta is not None
@@ -285,7 +295,9 @@ def test_held_out_outcome_never_stands_in_for_its_own_outcome_model() -> None:
 
     estimate = evaluate_policy(
         [retried, no_retry_step],
-        Policy(name="never_retry", rules=[{"decision_type": "retry", "action": "no_retry"}]),
+        Policy.model_validate(
+            {"name": "never_retry", "rules": [{"decision_type": "retry", "action": "no_retry"}]}
+        ),
     )
 
     assert estimate.outcome_delta is not None
@@ -337,12 +349,14 @@ def test_unreachable_nodes_need_no_support() -> None:
                 outcome=Outcome(kind="binary", value=rng.random() < 0.5, verifier="t"),
             )
         )
-    policy = Policy(
-        name="sonnet_retry",
-        rules=[
-            {"decision_type": "model_call", "action": "sonnet"},
-            {"decision_type": "retry", "action": "retry_once"},
-        ],
+    policy = Policy.model_validate(
+        {
+            "name": "sonnet_retry",
+            "rules": [
+                {"decision_type": "model_call", "action": "sonnet"},
+                {"decision_type": "retry", "action": "retry_once"},
+            ],
+        }
     )
 
     assert evaluate_policy(runs, policy).identifiability == IdentifiabilityStatus.IDENTIFIED
@@ -353,7 +367,9 @@ def test_controlled_decisions_are_ordered_by_step_index_not_list_position() -> N
     and two controlled decisions sharing a step_index must be refused."""
     runs = _sequential(n=150)
     reversed_runs = [r.model_copy(update={"steps": list(reversed(r.steps))}) for r in runs]
-    policy = Policy(name="p", rules=[{"decision_type": "model_call", "action": "sonnet"}, ON_FAIL])
+    policy = Policy.model_validate(
+        {"name": "p", "rules": [{"decision_type": "model_call", "action": "sonnet"}, ON_FAIL]}
+    )
 
     forward = evaluate_policy(runs, policy, observation_keys={"tests_passed"})
     backward = evaluate_policy(reversed_runs, policy, observation_keys={"tests_passed"})
@@ -378,7 +394,9 @@ def test_controlled_decisions_are_ordered_by_step_index_not_list_position() -> N
 def test_policy_that_never_acts_on_the_corpus_is_unidentified(sequential_runs: list[Run]) -> None:
     estimate = evaluate_policy(
         sequential_runs,
-        Policy(name="memory", rules=[{"decision_type": "memory_read", "action": "all"}]),
+        Policy.model_validate(
+            {"name": "memory", "rules": [{"decision_type": "memory_read", "action": "all"}]}
+        ),
     )
 
     assert estimate.identifiability == IdentifiabilityStatus.UNIDENTIFIED

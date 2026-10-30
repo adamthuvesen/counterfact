@@ -1,6 +1,6 @@
 UV = uv run --locked --extra dev --extra bench
 
-.PHONY: install lint format typecheck imports check cov generated check-generated check-wheel check-container verify drive
+.PHONY: install lint format typecheck imports check cov generated check-generated check-wheel check-container fix slow verify
 
 install:
 	uv sync --locked --extra dev --extra bench
@@ -9,11 +9,16 @@ lint:
 	$(UV) ruff check .
 	$(UV) ruff format --check .
 
+fix:
+	$(UV) ruff check --fix .
+	$(UV) ruff format .
+
 format:
 	$(UV) ruff format .
 
 typecheck:
-	$(UV) mypy
+	$(UV) basedpyright
+	$(UV) python scripts/baseline_ratchet.py
 
 imports:
 	$(UV) lint-imports
@@ -45,9 +50,9 @@ check-container:
 VERIFY_APP := .agents/skills/verify-counterfact/verify
 
 # Drive the real CLI: no ARGS = drives for changed files; ARGS=all|list|control|<drive>.
-drive:
+verify:
 	$(VERIFY_APP) $(ARGS)
 
-verify: lint typecheck imports cov check-generated check-wheel check-container
+slow: lint typecheck imports cov check-generated check-wheel check-container
 	$(VERIFY_APP) all
 	$(VERIFY_APP) control

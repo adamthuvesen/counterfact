@@ -38,7 +38,7 @@ dev = [
     "pytest-cov>=7.1,<8",
     "pytest-xdist>=3.8,<4",
     "ruff==0.17.4",
-    "mypy>=2.4,<3",
+    "basedpyright==1.40.2",
     "ipykernel>=7,<8",
     "nbconvert>=7.17,<8",
     "hypothesis>=6,<7",
@@ -66,7 +66,7 @@ testpaths = ["tests"]
 addopts = "-q -ra --strict-markers -m 'not container'"
 markers = [
     "container: real Docker execution boundary checks (run with make check-container)",
-    "slow: subprocess or integration checks that run in make verify, not make check",
+    "slow: subprocess or integration checks that run in make slow, not make check",
 ]
 
 [tool.ruff]
@@ -108,15 +108,23 @@ exclude_lines = [
     "raise NotImplementedError",
 ]
 
-[tool.mypy]
-python_version = "3.14"
-files = ["src/counterfact", "bench", "scripts"]
-exclude = ["^bench/real/coding_agent/fixtures/"]
-warn_return_any = true
-warn_unused_ignores = true
-no_implicit_optional = true
-check_untyped_defs = true
-disallow_untyped_defs = true
+[tool.basedpyright]
+include = ["src/counterfact", "bench", "scripts", "tests"]
+exclude = ["bench/real/coding_agent/fixtures"]
+pythonVersion = "3.14"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "strict"
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownLambdaType = false
+
+[[tool.basedpyright.executionEnvironments]]
+root = "tests"
+extraPaths = [".", "src"]
+reportMissingParameterType = false
 
 [tool.importlinter]
 root_packages = ["counterfact", "bench"]

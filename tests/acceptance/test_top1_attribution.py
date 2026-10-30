@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from counterfact import attribute_failure, build_dag, fit_outcome_model
+from counterfact.outcome.model import OutcomeModel
 from counterfact.schema import Run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -28,7 +30,7 @@ LABELS_PATH = REPO_ROOT / "bench" / "real" / "coding_agent" / "labels.json"
 CORPUS_DIR = REPO_ROOT / "bench" / "real" / "smoke_mixed_outcome"
 
 
-def _load_labels() -> list[dict]:
+def _load_labels() -> list[dict[str, Any]]:
     if not LABELS_PATH.exists():
         return []
     payload = json.loads(LABELS_PATH.read_text())
@@ -42,7 +44,7 @@ def _load_corpus() -> list[Run]:
 
 
 @pytest.fixture(scope="module")
-def labels() -> list[dict]:
+def labels() -> list[dict[str, Any]]:
     items = _load_labels()
     if not items:
         pytest.skip(
@@ -83,7 +85,7 @@ def test_labels_file_is_present_and_well_formed() -> None:
 
 
 def test_top1_attribution_matches_hand_labeled_root_cause(
-    labels: list[dict], corpus: list[Run], fitted_model: object
+    labels: list[dict[str, Any]], corpus: list[Run], fitted_model: OutcomeModel
 ) -> None:
     """For each label, the attribution top-1 must match the hand-labeled decision."""
     failures: list[str] = []

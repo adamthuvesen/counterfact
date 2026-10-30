@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
 from counterfact.intervene import NextStep
 
 
-def _arm_row(arm: str, n: int, k: int, lo: float, hi: float) -> dict:
+def _arm_row(arm: str, n: int, k: int, lo: float, hi: float) -> dict[str, Any]:
     return {
         "arm": arm,
         "n": n,
@@ -19,7 +21,7 @@ def _arm_row(arm: str, n: int, k: int, lo: float, hi: float) -> dict:
     }
 
 
-def _full_increase_n_payload() -> dict:
+def _full_increase_n_payload() -> dict[str, Any]:
     return {
         "current_n": 30,
         "estimated_required_n": 1200,
@@ -32,7 +34,7 @@ def _full_increase_n_payload() -> dict:
     }
 
 
-def _full_broaden_payload() -> dict:
+def _full_broaden_payload() -> dict[str, Any]:
     return {
         "arm_name": "model_call",
         "missing_strata": ["large"],
@@ -41,7 +43,7 @@ def _full_broaden_payload() -> dict:
     }
 
 
-def _full_replay_payload() -> dict:
+def _full_replay_payload() -> dict[str, Any]:
     return {
         "intervention_target": "prompt_content",
         "replay_inputs_required": ["prompt_template", "latent_state_at_step"],

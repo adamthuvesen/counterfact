@@ -315,7 +315,7 @@ def run_from_trace(trace: dict[str, Any], *, outcome: bool | str | None = None) 
     that is itself one span (treated as a single-trace export).
     """
 
-    if not isinstance(trace, dict):
+    if not isinstance(trace, dict):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise IngestError(f"openai-agents trace must be a JSON object; got {type(trace).__name__}")
     spans: list[dict[str, Any]] = []
     trace_id: str | None = None

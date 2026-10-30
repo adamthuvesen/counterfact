@@ -15,6 +15,7 @@ import pytest
 from bench.synthetic import HEADLINE_TRUE_EFFECT, generate_traces
 from counterfact import build_dag, fit_outcome_model, intervene
 from counterfact.intervene import CausalEstimate, IdentifiabilityStatus
+from counterfact.outcome.model import OutcomeModel
 from counterfact.schema import Run
 
 
@@ -29,7 +30,7 @@ def fitted_corpus() -> tuple[list[Run], object]:
     return runs, model
 
 
-def _headline(model: object, runs: list[Run]) -> CausalEstimate:
+def _headline(model: OutcomeModel, runs: list[Run]) -> CausalEstimate:
     """Contrast `model_choice = sonnet` against `haiku` at the model_call step."""
     # Any run has the same step structure for the synthetic SCM; use the first.
     dag = build_dag(runs[0])

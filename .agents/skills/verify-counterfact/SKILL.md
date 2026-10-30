@@ -11,11 +11,11 @@ description: "Drives the real counterfact CLI (diagnose, explain, intervene, ing
 
 From the repo root, after `make install`:
 
-- `make drive` after a change. It runs the drives whose paths match files changed against the merge base with `main`, plus uncommitted and untracked files. With no match it runs the smoke drive.
-- `make drive ARGS=all` before handing over larger work. `make verify` (the full gate) also runs `all` and `control` at the end.
-- `make drive ARGS=list` shows each drive, what it proves, and the paths it covers.
-- `make drive ARGS="diagnose intervene"` runs named drives.
-- `make drive ARGS=control` re-drives the smoke drive against a wrong identifiability. It exits 0 only when it observes FAIL.
+- `make verify` after a change. It runs the drives whose paths match files changed against the merge base with `main`, plus uncommitted and untracked files. With no match it runs the smoke drive.
+- `make verify ARGS=all` before handing over larger work. `make slow` (the full gate) also runs `all` and `control` at the end.
+- `make verify ARGS=list` shows each drive, what it proves, and the paths it covers.
+- `make verify ARGS="diagnose intervene"` runs named drives.
+- `make verify ARGS=control` re-drives the smoke drive against a wrong identifiability. It exits 0 only when it observes FAIL.
 
 You can also call `.agents/skills/verify-counterfact/verify <args>` directly.
 

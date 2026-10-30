@@ -6,6 +6,7 @@ import asyncio
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,7 +18,7 @@ from counterfact.schema import Run
 from counterfact.tracing import ClaudeAgentTracer
 
 
-def _pass_messages() -> list[dict]:
+def _pass_messages() -> list[dict[str, Any]]:
     return [
         {
             "__type__": "AssistantMessage",
@@ -169,7 +170,7 @@ def test_tracer_rejects_non_serializable_object_with_clear_error(tmp_path: Path)
     assert "claude_agent_sdk" in str(excinfo.value) or "serialize" in str(excinfo.value)
 
 
-def _pass_messages_with_session(session_id: str) -> list[dict]:
+def _pass_messages_with_session(session_id: str) -> list[dict[str, Any]]:
     msgs = _pass_messages()
     for m in msgs:
         if "session_id" in m:

@@ -19,7 +19,7 @@ Use [architecture.md](architecture.md) for ownership and dependency direction. R
 | Real-agent execution or spend | `bench/real/coding_agent/` | Runner tests and explicit container checks |
 | Derived docs or package boundary | `scripts/`, `Makefile` | Generated checks and installed-wheel checks |
 
-Paths in the owner column are under `src/counterfact/` unless they start with `bench/` or `scripts/`. Find the matching test filename before running it. `make check` defines the fast offline validation command. `make verify` adds full-suite coverage, generated artifacts, wheel consumers, and Docker execution checks.
+Paths in the owner column are under `src/counterfact/` unless they start with `bench/` or `scripts/`. Find the matching test filename before running it. `make check` defines the fast offline validation command. `make slow` adds full-suite coverage, generated artifacts, wheel consumers, and Docker execution checks.
 
 Run focused checks while editing. Run the shared gates before reporting the whole change complete. The container gate must fail when Docker or the verifier image is unavailable. An offline test run does not prove container behavior.
 

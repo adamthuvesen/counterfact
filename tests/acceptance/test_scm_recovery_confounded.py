@@ -22,6 +22,7 @@ from bench.synthetic import (
 )
 from counterfact import build_dag, fit_outcome_model, intervene, pass_rate_by_arm
 from counterfact.intervene import IdentifiabilityStatus
+from counterfact.outcome.model import OutcomeModel
 from counterfact.schema import Run
 
 
@@ -32,7 +33,7 @@ def confounded_corpus() -> tuple[list[Run], object]:
     return runs, model
 
 
-def _arm_gap(model: object, runs: list[Run]) -> float:
+def _arm_gap(model: OutcomeModel, runs: list[Run]) -> float:
     dag = build_dag(runs[0])
     estimate = intervene(
         dag=dag, model=model, step=2, intervention={"model_choice": "sonnet"}, baseline="haiku"

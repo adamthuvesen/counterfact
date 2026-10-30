@@ -8,7 +8,7 @@ attribute_failure, stacked uncertainty, and no-silent-L3.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import numpy as np
 import pytest
@@ -21,6 +21,7 @@ from counterfact.errors import (
     UnsupportedOutcomeError,
 )
 from counterfact.intervene import IdentifiabilityStatus
+from counterfact.outcome.model import OutcomeModel
 from counterfact.schema import Decision, Outcome, Run, Step
 
 # --- shared fixtures ---------------------------------------------------------
@@ -32,7 +33,7 @@ def small_corpus() -> list[Run]:
 
 
 @pytest.fixture(scope="module")
-def fitted(small_corpus: list[Run]) -> object:
+def fitted(small_corpus: list[Run]) -> OutcomeModel:
     return fit_outcome_model(small_corpus, seed=1)
 
 
@@ -52,7 +53,7 @@ def not_run_tests_run(small_corpus: list[Run]) -> Run:
 
 
 def test_fit_outcome_model__fits_on_synthetic_corpus_and_returns_a_model(
-    fitted: object,
+    fitted: OutcomeModel,
 ) -> None:
     assert fitted.coefficients is not None
     assert callable(fitted.predict_proba)
@@ -242,7 +243,7 @@ def test_intervene_query_step_accepts_none() -> None:
 
 
 def test_intervene__adjustment_set_holds_only_pre_treatment_decisions(
-    small_corpus: list[Run], fitted: object
+    small_corpus: list[Run], fitted: OutcomeModel
 ) -> None:
     """The model_call contrast adjusts for the earlier tool_call and never for
     the later retry: conditioning on a post-treatment decision would estimate
@@ -262,7 +263,7 @@ def test_intervene__adjustment_set_holds_only_pre_treatment_decisions(
 
 
 def test_intervene__bounded_result_has_null_bounds_and_assumptions(
-    small_corpus: list[Run], fitted: object
+    small_corpus: list[Run], fitted: OutcomeModel
 ) -> None:
     # The synthetic SCM has no memory_read steps, so we synthesize a small run
     # with a memory_read step at index 1.
@@ -299,7 +300,7 @@ def test_intervene__bounded_result_has_null_bounds_and_assumptions(
 
 
 def test_intervene__unidentified_result_has_reason_and_structured_next_step(
-    small_corpus: list[Run], fitted: object
+    small_corpus: list[Run], fitted: OutcomeModel
 ) -> None:
     # synthetic SCM has a model_call at step 2
     est = intervene(
@@ -356,7 +357,7 @@ def test_intervene__temperature_without_logged_randomization_is_bounded() -> Non
 
 
 def test_intervene__invalid_intervention_for_decision_type_raises(
-    small_corpus: list[Run], fitted: object
+    small_corpus: list[Run], fitted: OutcomeModel
 ) -> None:
     with pytest.raises(InvalidInterventionError):
         intervene(
@@ -368,7 +369,7 @@ def test_intervene__invalid_intervention_for_decision_type_raises(
 
 
 def test_intervene__increase_n_uses_training_trace_count(
-    small_corpus: list[Run], fitted: object, not_run_tests_run: Run
+    small_corpus: list[Run], fitted: OutcomeModel, not_run_tests_run: Run
 ) -> None:
     est = intervene(
         dag=_dag(not_run_tests_run),
@@ -381,7 +382,7 @@ def test_intervene__increase_n_uses_training_trace_count(
 
 
 def test_intervene__increase_n_projection_reaches_the_target_width(
-    fitted: object, not_run_tests_run: Run
+    fitted: OutcomeModel, not_run_tests_run: Run
 ) -> None:
     """The suggested n comes from scaling the AIPW CI. Collecting that many
     traces from the same process must actually bring the CI near the target."""
@@ -410,7 +411,7 @@ def test_intervene__increase_n_projection_reaches_the_target_width(
     assert width < payload["target_ci_width"] * 1.15
 
 
-def test_intervene__multi_decision_step_raises_clear_error(fitted: object) -> None:
+def test_intervene__multi_decision_step_raises_clear_error(fitted: OutcomeModel) -> None:
     run = Run(
         schema_version="0.1.0",
         run_id="multi",
@@ -442,7 +443,7 @@ def test_intervene__multi_decision_step_raises_clear_error(fitted: object) -> No
         )
 
 
-def test_intervene__decision_id_disambiguates_multi_decision_step(fitted: object) -> None:
+def test_intervene__decision_id_disambiguates_multi_decision_step(fitted: OutcomeModel) -> None:
     run = Run(
         schema_version="0.1.0",
         run_id="multi-decision-id",
@@ -479,7 +480,7 @@ def test_intervene__decision_id_disambiguates_multi_decision_step(fitted: object
 
 
 def test_intervene__repeated_decision_type_reports_localization_limit(
-    fitted: object,
+    fitted: OutcomeModel,
 ) -> None:
     run = Run(
         schema_version="0.1.0",
@@ -522,7 +523,7 @@ def test_intervene__repeated_decision_type_reports_localization_limit(
 
 
 def test_intervene__repeated_replay_query_still_reports_replay_required(
-    fitted: object,
+    fitted: OutcomeModel,
 ) -> None:
     run = Run(
         schema_version="0.1.0",
@@ -569,14 +570,14 @@ def test_intervene__repeated_replay_query_still_reports_replay_required(
 
 
 def test_attribute_failure__top_k_returns_at_most_k(
-    small_corpus: list[Run], fitted: object
+    small_corpus: list[Run], fitted: OutcomeModel
 ) -> None:
     attribution = attribute_failure(dag=_dag(small_corpus[0]), model=fitted)
     assert len(attribution.top_k(5)) <= 5
 
 
 def test_attribute_failure__each_entry_carries_identifiability_label(
-    small_corpus: list[Run], fitted: object
+    small_corpus: list[Run], fitted: OutcomeModel
 ) -> None:
     attribution = attribute_failure(dag=_dag(small_corpus[0]), model=fitted)
     for entry in attribution.top_k(10):
@@ -587,7 +588,7 @@ def test_attribute_failure__each_entry_carries_identifiability_label(
         }
 
 
-def test_attribute_failure__empty_corpus_yields_empty_ranking(fitted: object) -> None:
+def test_attribute_failure__empty_corpus_yields_empty_ranking(fitted: OutcomeModel) -> None:
     empty_run = Run(
         schema_version="0.1.0",
         run_id="empty",
@@ -599,7 +600,7 @@ def test_attribute_failure__empty_corpus_yields_empty_ranking(fitted: object) ->
 
 
 def test_attribute_failure__mixed_type_step_uses_explicit_decision_ids(
-    fitted: object,
+    fitted: OutcomeModel,
 ) -> None:
     run = Run(
         schema_version="0.1.0",
@@ -634,7 +635,7 @@ def test_attribute_failure__mixed_type_step_uses_explicit_decision_ids(
 
 
 def test_stacked_uncertainty__identified_estimate_carries_ci_and_cross_checks_not_bounds(
-    small_corpus: list[Run], fitted: object, not_run_tests_run: Run
+    small_corpus: list[Run], fitted: OutcomeModel, not_run_tests_run: Run
 ) -> None:
     est = intervene(
         dag=_dag(not_run_tests_run),
@@ -649,7 +650,7 @@ def test_stacked_uncertainty__identified_estimate_carries_ci_and_cross_checks_no
 
 
 def test_stacked_uncertainty__stable_model_on_unidentified_query_stays_unidentified(
-    small_corpus: list[Run], fitted: object
+    small_corpus: list[Run], fitted: OutcomeModel
 ) -> None:
     # Even though `fitted` has tight bootstrap CIs, the prompt_content query is
     # taxonomy-unidentified.
@@ -663,7 +664,7 @@ def test_stacked_uncertainty__stable_model_on_unidentified_query_stays_unidentif
 
 
 def test_no_silent_l3__identified_estimate_names_its_adjustment(
-    small_corpus: list[Run], fitted: object, not_run_tests_run: Run
+    small_corpus: list[Run], fitted: OutcomeModel, not_run_tests_run: Run
 ) -> None:
     est = intervene(
         dag=_dag(not_run_tests_run),
@@ -677,7 +678,7 @@ def test_no_silent_l3__identified_estimate_names_its_adjustment(
 
 
 def test_no_silent_l3__bounded_estimate_explains_sensitivity_stance(
-    fitted: object,
+    fitted: OutcomeModel,
 ) -> None:
     """WHEN any bounded estimate is inspected
     THEN estimate.assumptions either names a sensitivity technique used or
@@ -716,7 +717,7 @@ def test_unsupported_outcome__non_binary_model_rejected_at_intervene(
 ) -> None:
     class _ContinuousModel:
         outcome_kind = "continuous"
-        feature_index: ClassVar[dict] = {}
+        feature_index: ClassVar[dict[str, Any]] = {}
 
     with pytest.raises(UnsupportedOutcomeError):
         intervene(
@@ -971,7 +972,7 @@ def test_intervene__same_step_decisions_are_not_adjusted_for() -> None:
     ],
 )
 def test_intervene__named_policy_with_contradicting_propensity_is_bounded(
-    policy: str, params: dict, propensity: float
+    policy: str, params: dict[str, Any], propensity: float
 ) -> None:
     """A policy name proves positivity only when the logged propensity matches
     what that policy implies; contradictory metadata is a randomization gap."""

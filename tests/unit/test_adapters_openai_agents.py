@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,7 +18,7 @@ from counterfact.schema import Run
 FIXTURE_DIR = Path(__file__).parent.parent / "fixtures/adapters/openai_agents"
 
 
-def _load(name: str) -> dict:
+def _load(name: str) -> dict[str, Any]:
     return json.loads((FIXTURE_DIR / name).read_text())
 
 

@@ -12,13 +12,15 @@
 
 ```bash
 make install
-make check
-make verify
+make check   # fast gate
+make fix     # ruff --fix and ruff format
+make verify  # drive the real CLI (ARGS=all|list|control|<drive>)
+make slow    # full gate: coverage, generated artifacts, wheel, Docker, verify all + control
 ```
 
-Prove changes with `make drive` (`verify-counterfact` skill at `.agents/skills/verify-counterfact/`).
+Prove changes with `make verify` (`verify-counterfact` skill at `.agents/skills/verify-counterfact/`).
 
-`make check` is the fast gate and `make verify` the full one. The Makefile defines both. Mark a test `slow` only when it is integration-shaped and a cheaper setup cannot replace it. Spend and approval gates stay in `make check`.
+The Makefile defines every gate. Mark a test `slow` only when it is integration-shaped and a cheaper setup cannot replace it. Spend and approval gates stay in `make check`.
 
 ## Enforced Rules
 

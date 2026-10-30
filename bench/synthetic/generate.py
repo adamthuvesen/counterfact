@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 from bench.synthetic.scm import SyntheticSCM
 from counterfact.corpus_io import IngestReceipt, write_corpus
 from counterfact.schema import Run
 
 
-def generate_traces(n: int, seed: int = 42, confound: bool = False) -> Iterator[dict]:
+def generate_traces(n: int, seed: int = 42, confound: bool = False) -> Iterator[dict[str, Any]]:
     """Yield `n` traces deterministically given the seed.
 
     `confound=True` opts into the showcase mode where `model_choice` is biased

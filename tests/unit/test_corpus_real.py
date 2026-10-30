@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -240,7 +241,7 @@ def test_agent_logs_per_decision_policy_params_with_resolved_config(
         config=cfg,
     )
 
-    by_type: dict[str, dict] = {}
+    by_type: dict[str, dict[str, Any]] = {}
     for s in run.steps:
         for d in s.decisions:
             if d.policy is None:
@@ -373,7 +374,7 @@ def test_agent_logs_all_randomization_fields(tmp_path: Path) -> None:
     assert saw_random
 
 
-def _first_model_call_observation(run: Run) -> dict:
+def _first_model_call_observation(run: Run) -> dict[str, Any]:
     """Return the observation produced by the first model_call decision in `run`.
 
     The agent loop attaches exactly one observation to each model_call step
@@ -1397,15 +1398,13 @@ def test_unknown_paid_call_cost_blocks_resume(tmp_path: Path) -> None:
             calls += 1
             raise CostUnknownError("provider response has no price")
 
-    kwargs = {
-        "n": 1,
-        "budget_cap_usd": 1,
-        "output_dir": output,
-        "marker_path": marker,
-        "llm_client_factory": Client,
-    }
-    assert run_real_corpus(**kwargs) == 5
-    assert run_real_corpus(**kwargs) == 7
+    def run() -> int:
+        return run_real_corpus(
+            n=1, budget_cap_usd=1, output_dir=output, marker_path=marker, llm_client_factory=Client
+        )
+
+    assert run() == 5
+    assert run() == 7
     assert calls == 1
 
 
@@ -1538,15 +1537,13 @@ def test_invalid_response_cost_remains_unknown_and_blocks_resume(tmp_path: Path)
         def call(self, *, role: str, prompt: str) -> LLMResponse:
             return LLMResponse(text="no patch", cost_usd=-1.0)
 
-    kwargs = {
-        "n": 1,
-        "budget_cap_usd": 1,
-        "output_dir": output,
-        "marker_path": marker,
-        "llm_client_factory": Client,
-    }
-    assert run_real_corpus(**kwargs) == 5
-    assert run_real_corpus(**kwargs) == 7
+    def run() -> int:
+        return run_real_corpus(
+            n=1, budget_cap_usd=1, output_dir=output, marker_path=marker, llm_client_factory=Client
+        )
+
+    assert run() == 5
+    assert run() == 7
 
 
 def test_pilot_output_limit_is_not_a_hidden_semantic_failure(tmp_path: Path) -> None:
