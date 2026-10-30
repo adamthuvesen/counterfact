@@ -25,7 +25,7 @@ from bench.real.coding_agent import (
 )
 from bench.real.coding_agent.agent import (
     AgentRunConfig,
-    _extract_python_block,
+    extract_python_block,
     run_one_trace,
 )
 from bench.real.coding_agent.fixtures import EASY_FIXTURES, run_pytest
@@ -335,9 +335,12 @@ def test_agent_retry_branch_includes_failure_context_in_prompt(tmp_path: Path) -
     # The trace also captures the retry decision and both model_call attempts.
     model_calls = [d for s in run.steps for d in s.decisions if d.decision_type == "model_call"]
     assert len(model_calls) == 2
-    assert model_calls[0].context_features.get("attempt") == 1
-    assert model_calls[1].context_features.get("attempt") == 2
-    assert model_calls[1].context_features.get("informed_retry") is True
+    first_call, retry_call = model_calls
+    assert first_call.context_features is not None
+    assert retry_call.context_features is not None
+    assert first_call.context_features.get("attempt") == 1
+    assert retry_call.context_features.get("attempt") == 2
+    assert retry_call.context_features.get("informed_retry") is True
 
 
 @pytest.mark.container
@@ -483,14 +486,14 @@ def test_agent_observation_records_finish_reason_and_response_chars(
 
 def test_extract_python_block_prefers_fenced_code() -> None:
     text = "notes\n```python\ndef target():\n    return 1\n```\n"
-    assert _extract_python_block(text, expected_function="target") == (
+    assert extract_python_block(text, expected_function="target") == (
         "def target():\n    return 1\n"
     )
 
 
 def test_extract_python_block_accepts_parseable_full_response() -> None:
     text = "from __future__ import annotations\n\n\ndef target() -> int:\n    return 1\n"
-    assert _extract_python_block(text, expected_function="target") == text
+    assert extract_python_block(text, expected_function="target") == text
 
 
 def test_extract_python_block_accepts_parseable_class_full_response() -> None:
@@ -513,12 +516,12 @@ def test_extract_python_block_accepts_parseable_class_full_response() -> None:
 
 def test_extract_python_block_rejects_unparseable_commentary() -> None:
     text = "Here is the fix:\n\ndef target() -> int:\n    return 1\n"
-    assert _extract_python_block(text, expected_function="target") is None
+    assert extract_python_block(text, expected_function="target") is None
 
 
 def test_extract_python_block_rejects_wrong_function() -> None:
     text = "def other() -> int:\n    return 1\n"
-    assert _extract_python_block(text, expected_function="target") is None
+    assert extract_python_block(text, expected_function="target") is None
 
 
 # --- Approval gate / resume / CLI -------------------------------------------
@@ -1254,6 +1257,7 @@ def test_routed_trial_logs_both_designs_and_runs_end_to_end(tmp_path: Path) -> N
     for path in output.glob("real-*.json"):
         run = Run.model_validate_json(path.read_text())
         first = next(d for s in run.steps for d in s.decisions if d.decision_type == "model_call")
+        assert first.policy_params is not None
         p_large = first.policy_params["p_large"]
         expected_p = 0.5 if first.policy == "trial" else route[run.outcome.metadata["fixture_id"]]
         assert p_large == expected_p
@@ -1270,7 +1274,13 @@ def test_routed_trial_logs_both_designs_and_runs_end_to_end(tmp_path: Path) -> N
         config=config,
         role_to_model=ROLE_TO_MODEL,
     )
-    assert receipt["config"]["model_route_by_fixture"] == dict(sorted(route.items()))
+    assert _receipt_config(receipt)["model_route_by_fixture"] == dict(sorted(route.items()))
+
+
+def _receipt_config(receipt: dict[str, object]) -> dict[str, object]:
+    config = receipt["config"]
+    assert isinstance(config, dict)
+    return config
 
 
 def test_unrouted_receipt_has_no_route_key() -> None:
@@ -1282,7 +1292,7 @@ def test_unrouted_receipt_has_no_route_key() -> None:
         config=AgentRunConfig(),
         role_to_model=ROLE_TO_MODEL,
     )
-    assert "model_route_by_fixture" not in receipt["config"]
+    assert "model_route_by_fixture" not in _receipt_config(receipt)
 
 
 @pytest.mark.parametrize(
@@ -1441,19 +1451,19 @@ def test_infrastructure_attempt_is_retained_outside_corpus(
     attempts = list((output / ".checkpoints" / "attempts").glob("*.json"))
     assert len(attempts) == 1
     assert json.loads(attempts[0].read_text())["outcome"]["verifier"] == "infrastructure_error"
-    from bench.real.coding_agent.runner import _ledger_spend
+    from bench.real.coding_agent.runner import ledger_spend
 
-    assert _ledger_spend(output / ".checkpoints" / "budget_ledger.jsonl") == 0.1
+    assert ledger_spend(output / ".checkpoints" / "budget_ledger.jsonl") == 0.1
 
 
 @pytest.mark.parametrize("cost", [-1, float("nan"), float("inf")])
 def test_legacy_ledger_rejects_invalid_cost(cost: float, tmp_path: Path) -> None:
-    from bench.real.coding_agent.runner import BudgetLedgerError, _ledger_spend
+    from bench.real.coding_agent.runner import BudgetLedgerError, ledger_spend
 
     ledger = tmp_path / "ledger.jsonl"
     ledger.write_text(json.dumps({"cost_usd": cost}) + "\n")
     with pytest.raises(BudgetLedgerError):
-        _ledger_spend(ledger)
+        ledger_spend(ledger)
 
 
 def test_parallel_runner_cannot_own_same_spend_ledger(tmp_path: Path) -> None:

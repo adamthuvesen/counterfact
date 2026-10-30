@@ -26,7 +26,7 @@ from counterfact.analysis.features import canonical_intervention_value, interven
 from counterfact.dag import DAG
 from counterfact.errors import InvalidInterventionError, UnsupportedOutcomeError
 from counterfact.intervene.dispatch import (
-    _STANCE_HANDLERS,
+    STANCE_HANDLERS,
     InterveneContext,
     handle_duplicate_step_refusal,
 )
@@ -155,7 +155,7 @@ def intervene(
     if duplicate_steps:
         estimate = handle_duplicate_step_refusal(ctx, duplicate_steps)
     else:
-        estimate = _STANCE_HANDLERS[stance](ctx)
+        estimate = STANCE_HANDLERS[stance](ctx)
     return fit_suggestion_to_corpus(estimate, model.facts)
 
 
@@ -203,5 +203,5 @@ def contrast(
         baseline_arm_name=baseline_arm,
         decision_type=decision_type,
     )
-    estimate = _STANCE_HANDLERS[identifiability_stance(decision_type, kind)](ctx)
+    estimate = STANCE_HANDLERS[identifiability_stance(decision_type, kind)](ctx)
     return fit_suggestion_to_corpus(estimate, model.facts)

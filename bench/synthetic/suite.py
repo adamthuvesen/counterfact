@@ -140,6 +140,8 @@ def summarize(scenario: Scenario, results: list[SeedResult], n_runs: int) -> Sce
     truth = scenario.true_effect
     identified = [r for r in results if r.label == "identified"]
     bounded = [r for r in results if r.label == "bounded" and r.bound_low is not None]
+    bound_lows = [r.bound_low for r in bounded if r.bound_low is not None]
+    bound_highs = [r.bound_high for r in bounded if r.bound_high is not None]
     naive_bias, naive_rmse = _bias_rmse([r.naive for r in results], truth)
     adjust_bias, adjust_rmse = _bias_rmse([r.adjust_all for r in results], truth)
     engine_bias, engine_rmse = _bias_rmse([r.engine for r in identified], truth)
@@ -163,8 +165,8 @@ def summarize(scenario: Scenario, results: list[SeedResult], n_runs: int) -> Sce
         ci_coverage=_share([r.ci_low <= truth <= r.ci_high for r in identified]),  # type: ignore[operator]
         mean_ci_width=float(np.mean(widths)) if widths else None,
         bound_coverage=_share([r.bound_low <= truth <= r.bound_high for r in bounded]),  # type: ignore[operator]
-        mean_bound_low=float(np.mean([r.bound_low for r in bounded])) if bounded else None,
-        mean_bound_high=float(np.mean([r.bound_high for r in bounded])) if bounded else None,
+        mean_bound_low=float(np.mean(bound_lows)) if bound_lows else None,
+        mean_bound_high=float(np.mean(bound_highs)) if bound_highs else None,
     )
 
 

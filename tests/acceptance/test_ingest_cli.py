@@ -161,7 +161,9 @@ def test_openai_agents_subcommand_handoff_uses_marker_outcome(
     run = Run.model_validate_json((out_dir / "trace-ai-handoff.json").read_text())
     assert run.outcome.value is True
     assert run.outcome.verifier == "counterfact_outcome_marker"
-    assert any(d.chosen_action.startswith("handoff:") for s in run.steps for d in s.decisions)
+    assert any(
+        (d.chosen_action or "").startswith("handoff:") for s in run.steps for d in s.decisions
+    )
 
 
 def test_openai_agents_subcommand_root_error_outcome(tmp_path: Path) -> None:

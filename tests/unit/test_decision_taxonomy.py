@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from counterfact.schema import Decision, Run
+from counterfact.schema import Decision, Outcome, Run
 
 # --- registry ---------------------------------------------------------------
 
@@ -125,7 +125,7 @@ def test_feature_extraction__tool_call_extracts_tool_name_and_step_index() -> No
         schema_version="0.1.0",
         run_id="r-feat",
         steps=[step],
-        outcome={"kind": "binary", "value": True, "verifier": "pytest"},
+        outcome=Outcome(kind="binary", value=True, verifier="pytest"),
     )
     feats = extract_features(decision, run)
     assert feats["tool_name"] == "run_tests"
@@ -148,7 +148,7 @@ def test_feature_extraction__unknown_decision_type_raises() -> None:
         schema_version="0.1.0",
         run_id="r-x",
         steps=[],
-        outcome={"kind": "binary", "value": True, "verifier": "pytest"},
+        outcome=Outcome(kind="binary", value=True, verifier="pytest"),
     )
     with pytest.raises((KeyError, UnknownDecisionTypeError)):
         extract_features(_Stub(), run)  # type: ignore[arg-type]

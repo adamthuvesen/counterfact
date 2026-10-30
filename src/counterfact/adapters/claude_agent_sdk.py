@@ -305,11 +305,10 @@ def run_from_messages(messages: list[dict[str, Any]]) -> Run:
     steps.steps.append(_terminal_step(result_msg, run_id=run_id, step_index=steps.next_step_index))
 
     metadata_extra: dict[str, Any] = {"source_format": SOURCE_FORMAT}
-    if result_msg is not None:
-        for key in ("total_cost_usd", "usage", "model_usage", "duration_ms", "duration_api_ms"):
-            value = result_msg.get(key)
-            if value is not None:
-                metadata_extra[key] = value
+    for key in ("total_cost_usd", "usage", "model_usage", "duration_ms", "duration_api_ms"):
+        value = result_msg.get(key)
+        if value is not None:
+            metadata_extra[key] = value
 
     return Run(
         schema_version=SCHEMA_VERSION,

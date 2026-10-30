@@ -362,7 +362,7 @@ def _read_ledger(ledger_path: Path) -> tuple[float, dict[str, float]]:
     return legacy, priced
 
 
-def _ledger_spend(ledger_path: Path) -> float:
+def ledger_spend(ledger_path: Path) -> float:
     legacy, calls = _read_ledger(ledger_path)
     return legacy + sum(calls.values())
 

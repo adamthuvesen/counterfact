@@ -103,7 +103,7 @@ def test_outcome_tagged_union__continuous_outcome_rejected_at_intervene_time() -
     with pytest.raises(UnsupportedOutcomeError):
         intervene(
             dag=dag,
-            model=_ContinuousModel(),
+            model=_ContinuousModel(),  # pyright: ignore[reportArgumentType]  # non-binary model on purpose
             step=1,
             intervention={"tool_choice": "inspect_file"},
         )

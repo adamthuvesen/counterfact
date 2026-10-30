@@ -19,6 +19,7 @@ from counterfact.errors import InvalidInterventionError
 from counterfact.intervene import (
     CausalEstimate,
     DistributionSummary,
+    IdentifiabilityStatus,
     IdentificationBounds,
     InterventionQuery,
     NextStep,
@@ -122,9 +123,10 @@ def test_duplicate_step_indexes_parse_but_analysis_rejects_them() -> None:
     run.steps.append(Step(step_index=10))
     round_trip = Run.model_validate_json(run.model_dump_json())
     assert len(round_trip.steps) == 4
-    for analyze in (AnalysisCorpus, build_dag):
-        with pytest.raises(ValueError, match=r"r-0.*duplicate step_index"):
-            analyze([round_trip] if analyze is AnalysisCorpus else round_trip)
+    with pytest.raises(ValueError, match=r"r-0.*duplicate step_index"):
+        AnalysisCorpus([round_trip])
+    with pytest.raises(ValueError, match=r"r-0.*duplicate step_index"):
+        build_dag(round_trip)
 
 
 def test_first_occurrence_tie_refuses_without_dropping_ambiguous_runs() -> None:
@@ -265,7 +267,8 @@ def test_result_fields_and_nested_payloads_cannot_mutate_estimate_state() -> Non
 
 
 def test_replay_query_detaches_nested_tuple_and_set_targets() -> None:
-    target = ({"content": "original", "labels": {"a", "b"}},)
+    labels = {"a", "b"}
+    target = ({"content": "original", "labels": labels},)
     result = contrast(
         corpus=_runs(),
         decision_type="model_call",
@@ -274,7 +277,7 @@ def test_replay_query_detaches_nested_tuple_and_set_targets() -> None:
     )
     original = result.model_dump()
     target[0]["content"] = "changed"
-    target[0]["labels"].add("external")
+    labels.add("external")
     assert result.model_dump() == original
     view = result.query.target
     view[0]["content"] = "changed again"
@@ -307,28 +310,32 @@ def test_label_contract_rejects_fake_identified_and_allows_bound_without_interva
     with pytest.raises(ValidationError, match="diagnostics"):
         CausalEstimate(
             query=query,
-            identifiability="identified",
+            identifiability=IdentifiabilityStatus.IDENTIFIED,
             next_step=next_step,
             outcome_delta=DistributionSummary(point=0.1, ci_low=0, ci_high=0.2),
         )
     assert (
-        CausalEstimate(query=query, identifiability="bounded", next_step=next_step).bounds is None
+        CausalEstimate(
+            query=query, identifiability=IdentifiabilityStatus.BOUNDED, next_step=next_step
+        ).bounds
+        is None
     )
     with pytest.raises(ValidationError):
         IdentificationBounds(lower=0.5, upper=-0.5)
 
 
 def test_payload_validates_types_and_detaches_constructor_input() -> None:
+    missing_arms = ["large"]
     payload = {
         "arm_name": "model_call",
         "missing_strata": ["x"],
         "observed_arms": [],
-        "missing_arms": ["large"],
+        "missing_arms": missing_arms,
     }
     next_step = NextStep(
         action="broaden_arm_support", payload=payload, human_text="Collect support."
     )
-    payload["missing_arms"].clear()
+    missing_arms.clear()
     assert next_step.payload["missing_arms"] == ["large"]
     with pytest.raises(ValidationError):
         next_step.model_copy(update={"payload": {**next_step.payload, "missing_arms": "large"}})

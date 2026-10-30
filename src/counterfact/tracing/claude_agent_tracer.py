@@ -76,8 +76,9 @@ class ClaudeAgentTracer:
         if dataclasses.is_dataclass(message) and not isinstance(message, type):
             return _ensure_type_tag(_dataclass_to_dict(message))
         # Last resort: SDK might use plain classes (BaseModel etc).
-        if hasattr(message, "model_dump"):
-            payload: dict[str, Any] = message.model_dump()
+        model_dump: Any = getattr(message, "model_dump", None)
+        if model_dump is not None:
+            payload: dict[str, Any] = model_dump()
             payload.setdefault("__type__", type(message).__name__)
             return payload
         if not self._sdk_available:

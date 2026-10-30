@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import random
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -14,9 +15,9 @@ from bench.synthetic.sequential import policy_value, sample
 from counterfact import build_dag, fit_outcome_model, intervene
 from counterfact.intervene import IdentifiabilityStatus
 from counterfact.policy import Policy, PolicyRule, evaluate_policy
-from counterfact.schema import Decision, Outcome, Run, Step
+from counterfact.schema import Decision, DecisionTypeLiteral, Outcome, Run, Step
 
-ON_FAIL = {
+ON_FAIL: dict[str, Any] = {
     "decision_type": "retry",
     "when": {"source": "observation", "key": "tests_passed"},
     "cases": {"true": "no_retry", "false": "retry_once"},
@@ -104,6 +105,10 @@ def _sequential(n: int = 2000, *, log_retry_propensity: bool = True, seed: int =
     ]
 
 
+def _policy(name: str, rules: list[dict[str, Any]]) -> Policy:
+    return Policy.model_validate({"name": name, "rules": rules})
+
+
 @pytest.fixture(scope="module")
 def sequential_runs() -> list[Run]:
     return _sequential()
@@ -117,7 +122,7 @@ def test_rule_must_be_a_constant_or_a_lookup() -> None:
     with pytest.raises(ValidationError):
         Policy.model_validate({"name": "neither", "rules": [{"decision_type": "retry"}]})
     with pytest.raises(ValidationError):
-        Policy(name="dup", rules=[ON_FAIL, {"decision_type": "retry", "action": "no_retry"}])
+        _policy("dup", [ON_FAIL, {"decision_type": "retry", "action": "no_retry"}])
 
 
 @pytest.mark.parametrize(
@@ -128,10 +133,10 @@ def test_rule_must_be_a_constant_or_a_lookup() -> None:
     ],
 )
 def test_sequential_dr_covers_the_exact_policy_value(
-    sequential_runs: list[Run], rules: list[dict], model_rule, retry_rule
+    sequential_runs: list[Run], rules: list[dict[str, Any]], model_rule, retry_rule
 ) -> None:
     estimate = evaluate_policy(
-        sequential_runs, Policy(name="p", rules=rules), observation_keys={"tests_passed"}
+        sequential_runs, _policy("p", rules), observation_keys={"tests_passed"}
     )
     truth = policy_value(model_rule, retry_rule) - policy_value(None, None)
 
@@ -161,7 +166,7 @@ def test_filtering_the_logs_gets_never_retry_backwards(sequential_runs: list[Run
 
 def test_unlogged_retry_propensity_is_bounded_and_the_bounds_hold() -> None:
     runs = _sequential(log_retry_propensity=False)
-    estimate = evaluate_policy(runs, Policy(name="retry_on_fail", rules=[ON_FAIL]))
+    estimate = evaluate_policy(runs, _policy("retry_on_fail", [ON_FAIL]))
     truth = policy_value(None, _retry_on_fail) - policy_value(None, None)
 
     assert estimate.identifiability == IdentifiabilityStatus.BOUNDED
@@ -174,7 +179,7 @@ def test_policy_undefined_on_the_logged_history_is_unidentified(
     sequential_runs: list[Run],
 ) -> None:
     rule = {**ON_FAIL, "when": {"source": "observation", "key": "lint_passed"}}
-    estimate = evaluate_policy(sequential_runs, Policy(name="lint", rules=[rule]))
+    estimate = evaluate_policy(sequential_runs, _policy("lint", [rule]))
 
     assert estimate.identifiability == IdentifiabilityStatus.UNIDENTIFIED
     assert estimate.reason is not None and "lint_passed" in estimate.reason
@@ -182,6 +187,10 @@ def test_policy_undefined_on_the_logged_history_is_unidentified(
 
 def test_two_controlled_decisions_in_one_step_are_unidentified() -> None:
     def run(i: int, passed: bool) -> Run:
+        controlled: tuple[tuple[DecisionTypeLiteral, str, list[str]], ...] = (
+            ("model_call", "haiku", ["haiku", "sonnet"]),
+            ("retry", "no_retry", ["no_retry", "retry_once"]),
+        )
         decisions = [
             Decision(
                 decision_id=f"d-{i}-{kind}",
@@ -193,10 +202,7 @@ def test_two_controlled_decisions_in_one_step_are_unidentified() -> None:
                 propensity=0.5,
                 context_features={},
             )
-            for kind, action, arms in (
-                ("model_call", "haiku", ["haiku", "sonnet"]),
-                ("retry", "no_retry", ["no_retry", "retry_once"]),
-            )
+            for kind, action, arms in controlled
         ]
         return Run(
             schema_version="0.1.0",
@@ -225,7 +231,7 @@ def test_single_class_corpus_is_unidentified(sequential_runs: list[Run]) -> None
         r.model_copy(update={"outcome": r.outcome.model_copy(update={"value": True})})
         for r in sequential_runs[:50]
     ]
-    estimate = evaluate_policy(all_pass, Policy(name="p", rules=[ON_FAIL]))
+    estimate = evaluate_policy(all_pass, _policy("p", [ON_FAIL]))
 
     assert estimate.identifiability == IdentifiabilityStatus.UNIDENTIFIED
 
@@ -304,7 +310,9 @@ def test_held_out_outcome_never_stands_in_for_its_own_outcome_model() -> None:
     assert estimate.outcome_delta.point == pytest.approx(-0.5)
 
 
-def _decision(i: int, kind: str, action: str, arms: list[str], propensity: float) -> Decision:
+def _decision(
+    i: int, kind: DecisionTypeLiteral, action: str, arms: list[str], propensity: float
+) -> Decision:
     return Decision(
         decision_id=f"d-{i}-{kind}",
         decision_type=kind,

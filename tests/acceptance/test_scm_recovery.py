@@ -24,7 +24,7 @@ def _generate_runs(n: int, seed: int) -> list[Run]:
 
 
 @pytest.fixture(scope="module")
-def fitted_corpus() -> tuple[list[Run], object]:
+def fitted_corpus() -> tuple[list[Run], OutcomeModel]:
     runs = _generate_runs(n=500, seed=42)
     model = fit_outcome_model(runs, seed=42)
     return runs, model
@@ -40,7 +40,7 @@ def _headline(model: OutcomeModel, runs: list[Run]) -> CausalEstimate:
 
 
 def test_scm_recovery__within_tolerance_on_default_seed(
-    fitted_corpus: tuple[list[Run], object],
+    fitted_corpus: tuple[list[Run], OutcomeModel],
 ) -> None:
     """WHEN the SCM-recovery acceptance test is executed with the default seed
     THEN the estimated headline effect is within ±0.05 of the known true E."""
@@ -58,7 +58,7 @@ def test_scm_recovery__within_tolerance_on_default_seed(
 
 
 def test_scm_recovery__ci_covers_true_effect(
-    fitted_corpus: tuple[list[Run], object],
+    fitted_corpus: tuple[list[Run], OutcomeModel],
 ) -> None:
     """WHEN the SCM-recovery acceptance test computes the 95% CI for the headline effect
     THEN the interval contains E."""

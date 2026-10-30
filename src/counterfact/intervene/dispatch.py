@@ -405,7 +405,7 @@ def _contrast_estimand(ctx: InterveneContext, baseline: str) -> str:
     return f"E[Y | do({family}={ctx.target_arm_name})] - E[Y | do({family}={baseline})]"
 
 
-_STANCE_HANDLERS: dict[IdentifiabilityStance, Callable[[InterveneContext], CausalEstimate]] = {
+STANCE_HANDLERS: dict[IdentifiabilityStance, Callable[[InterveneContext], CausalEstimate]] = {
     "always-replay": handle_always_replay,
     "requires-back-door-adjustment": handle_back_door_bounded,
     "requires-randomized-support": handle_randomized_support,

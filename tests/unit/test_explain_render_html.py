@@ -229,10 +229,6 @@ def _collect_data_decision_ids(html: str) -> tuple[list[str], list[str]]:
     return parser.values, parser.classes
 
 
-def _count_substring(html: str, needle: str) -> int:
-    return html.count(needle)
-
-
 def _extract_section(html: str, h2_text: str) -> str:
     """Return the substring between `<h2>{h2_text}</h2>` and the next `<h2>`.
 

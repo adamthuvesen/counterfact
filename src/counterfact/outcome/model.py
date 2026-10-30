@@ -130,7 +130,7 @@ def fit_outcome_model(
     return OutcomeModel(
         feature_names=names,
         coefficients=base.coef_[0].copy(),
-        intercept=float(base.intercept_[0]),
+        intercept=float(np.ravel(base.intercept_)[0]),
         train_X=X,
         train_y=y,
         train_n=len(runs),

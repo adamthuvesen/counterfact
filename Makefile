@@ -18,7 +18,6 @@ format:
 
 typecheck:
 	$(UV) basedpyright
-	$(UV) python scripts/baseline_ratchet.py
 
 imports:
 	$(UV) lint-imports

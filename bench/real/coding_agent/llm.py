@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 ROLE_TO_MODEL: dict[str, str] = {
     "small": "claude-haiku-4-5-20251001",
@@ -56,11 +56,8 @@ def extract_cost(resp: object) -> float:
        computes cost from token usage and the published price table.
     3. Raise if both paths fail. Production budget accounting must fail closed.
     """
-    raw = None
-    if hasattr(resp, "get"):
-        raw = resp.get("response_cost")
-    elif hasattr(resp, "response_cost"):
-        raw = resp.response_cost
+    getter = getattr(resp, "get", None)
+    raw: Any = getter("response_cost") if callable(getter) else getattr(resp, "response_cost", None)
     # Distinguish "provider didn't populate cost" (None) from "provider says
     # the call was free" (0.0). Only the former should fall through to the
     # litellm price-table fallback; a real 0.0 must round-trip as 0.0.
@@ -139,12 +136,16 @@ class LiteLLMClient:
         import litellm
 
         model = self.role_to_model[role]
-        resp = litellm.completion(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=DEFAULT_MAX_TOKENS,
-            timeout=DEFAULT_REQUEST_TIMEOUT_S,
-            num_retries=DEFAULT_NUM_RETRIES,
+        # Streaming is not requested, so the response is a ModelResponse.
+        resp = cast(
+            litellm.ModelResponse,
+            litellm.completion(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=DEFAULT_MAX_TOKENS,
+                timeout=DEFAULT_REQUEST_TIMEOUT_S,
+                num_retries=DEFAULT_NUM_RETRIES,
+            ),
         )
         choice = resp["choices"][0]
         text = _message_content_to_text(choice["message"].get("content"))

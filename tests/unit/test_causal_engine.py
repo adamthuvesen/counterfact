@@ -722,7 +722,7 @@ def test_unsupported_outcome__non_binary_model_rejected_at_intervene(
     with pytest.raises(UnsupportedOutcomeError):
         intervene(
             dag=_dag(small_corpus[0]),
-            model=_ContinuousModel(),
+            model=_ContinuousModel(),  # pyright: ignore[reportArgumentType]  # non-binary model on purpose
             step=1,
             intervention={"tool_choice": "run_tests"},
         )

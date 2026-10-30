@@ -161,7 +161,7 @@ def _extract_python_source(
     return _ExtractionResult(code=source.rstrip() + "\n", status="extracted", reason=None)
 
 
-def _extract_python_block(text: str, *, expected_function: str | None = None) -> str | None:
+def extract_python_block(text: str, *, expected_function: str | None = None) -> str | None:
     expected_symbol = (
         _ExpectedSymbol(name=expected_function, kind="function")
         if expected_function is not None
