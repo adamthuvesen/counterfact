@@ -18,8 +18,11 @@ The CausalEstimate result object is the public contract; full schema lives in
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
+from counterfact.analysis import AnalysisCorpus
+from counterfact.analysis.features import canonical_intervention_value, intervention_feature_family
 from counterfact.dag import DAG
 from counterfact.errors import InvalidInterventionError, UnsupportedOutcomeError
 from counterfact.intervene.dispatch import (
@@ -30,9 +33,8 @@ from counterfact.intervene.dispatch import (
 from counterfact.intervene.estimate import CausalEstimate, InterventionQuery
 from counterfact.intervene.estimators import logged_arm
 from counterfact.intervene.suggest import fit_suggestion_to_corpus
-from counterfact.outcome.features import canonical_intervention_value, intervention_feature_family
 from counterfact.outcome.model import OutcomeModel
-from counterfact.schema import Decision
+from counterfact.schema import Decision, Run
 from counterfact.taxonomy import identifiability_stance, is_valid_intervention
 from counterfact.trace_localization import duplicate_decision_type_steps
 
@@ -72,7 +74,7 @@ def _resolve_intervention(intervention: dict[str, Any]) -> tuple[str, Any]:
 def intervene(
     *,
     dag: DAG,
-    model: OutcomeModel,
+    model: OutcomeModel | AnalysisCorpus,
     step: int,
     intervention: dict[str, Any],
     decision_id: str | None = None,
@@ -81,12 +83,15 @@ def intervene(
     """Estimate E[Y | do(target)] - E[Y | do(baseline)] for one logged decision.
 
     `baseline` defaults to the arm the focal decision actually chose, which
-    answers "what if this run had done X instead of what it did?".
+    selects the comparison for this logged choice. The focal trace may be
+    external to the corpus. The effect always refers to the corpus population,
+    not an individualized counterfactual for the focal trace.
     """
     if model.outcome_kind != "binary":
         raise UnsupportedOutcomeError(
             f"v0 only supports binary outcomes; got model.outcome_kind={model.outcome_kind!r}"
         )
+    model = model.corpus if isinstance(model, OutcomeModel) else model
 
     intervention_kind, target_value = _resolve_intervention(intervention)
     decision = _decision_at_step(dag, step, decision_id=decision_id)
@@ -143,8 +148,60 @@ def intervene(
         if dag.run is not None and stance == "requires-randomized-support"
         else []
     )
+    if dag.run is not None and stance == "requires-randomized-support":
+        same_step = next(s for s in dag.run.steps if s.step_index == step)
+        if sum(d.decision_type == decision_type for d in same_step.decisions) > 1:
+            duplicate_steps.append(step)
     if duplicate_steps:
         estimate = handle_duplicate_step_refusal(ctx, duplicate_steps)
     else:
         estimate = _STANCE_HANDLERS[stance](ctx)
-    return fit_suggestion_to_corpus(estimate, model.runs)
+    return fit_suggestion_to_corpus(estimate, model.facts)
+
+
+def contrast(
+    *,
+    corpus: AnalysisCorpus | Iterable[Run],
+    decision_type: str,
+    intervention: dict[str, Any],
+    baseline: Any,
+    seed: int | None = 0,
+) -> CausalEstimate:
+    """Estimate the total effect of the first decision against an explicit baseline.
+
+    Later occurrences stay downstream. Runs that never reach the decision are
+    excluded. Same-step first occurrences cannot define this estimand.
+    """
+    model = corpus if isinstance(corpus, AnalysisCorpus) else AnalysisCorpus(corpus, seed=seed)
+    kind, target = _resolve_intervention(intervention)
+    if not is_valid_intervention(decision_type, kind):
+        raise InvalidInterventionError(
+            f"intervention {kind!r} is not valid on decision type {decision_type!r}"
+        )
+    if baseline is None:
+        raise InvalidInterventionError("corpus contrasts require an explicit baseline arm")
+    target_arm = canonical_intervention_value(kind, target)
+    baseline_arm = canonical_intervention_value(kind, baseline)
+    if target_arm == baseline_arm:
+        raise InvalidInterventionError("target equals the baseline arm")
+    query = InterventionQuery(
+        decision_type=decision_type,
+        intervention_kind=kind,
+        target=target,
+        baseline=baseline,
+        step=None,
+    )
+    ctx = InterveneContext(
+        dag=DAG(),
+        model=model,
+        step=None,
+        query=query,
+        intervention_kind=kind,
+        target_value=target,
+        feature_family=intervention_feature_family(decision_type, kind),
+        target_arm_name=target_arm,
+        baseline_arm_name=baseline_arm,
+        decision_type=decision_type,
+    )
+    estimate = _STANCE_HANDLERS[identifiability_stance(decision_type, kind)](ctx)
+    return fit_suggestion_to_corpus(estimate, model.facts)

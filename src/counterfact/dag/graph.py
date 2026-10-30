@@ -11,40 +11,49 @@ inspectable.
 from __future__ import annotations
 
 from collections import defaultdict
+from copy import deepcopy
 from dataclasses import dataclass, field
+from typing import Any
 
+from counterfact.analysis.timeline import ordered_steps
 from counterfact.errors import DAGCycleError
 from counterfact.schema import Decision, Run
 
 FlatDecision = tuple[int, int, Decision]
 
 
-@dataclass
+@dataclass(frozen=True)
 class DAG:
-    """A per-trace DAG. Nodes are Decision instances; edges are (parent_id, child_id)."""
+    """A per-trace graph with detached public views and stable adjacency."""
 
     nodes: list[Decision] = field(default_factory=list)
     edges: list[tuple[str, str]] = field(default_factory=list)
     run: Run | None = None
-    # Adjacency dicts built once at construction so query-time graph lookups
-    # are O(1) rather than scanning the edge list on every call.
     _adj: dict[str, list[str]] = field(default_factory=dict, init=False, repr=False)
     _radj: dict[str, list[str]] = field(default_factory=dict, init=False, repr=False)
 
+    def __getattribute__(self, name: str) -> Any:
+        value = super().__getattribute__(name)
+        return deepcopy(value) if name in {"nodes", "edges", "run"} else value
+
     def __post_init__(self) -> None:
+        for name in ("nodes", "edges", "run"):
+            object.__setattr__(self, name, deepcopy(object.__getattribute__(self, name)))
         ids = self.node_ids()
-        self._adj = {nid: [] for nid in ids}
-        self._radj = {nid: [] for nid in ids}
+        if len(ids) != len(set(ids)):
+            raise ValueError("DAG decision IDs must be unique")
+        object.__setattr__(self, "_adj", {nid: [] for nid in ids})
+        object.__setattr__(self, "_radj", {nid: [] for nid in ids})
         for parent, child in self.edges:
-            self._adj.setdefault(parent, []).append(child)
-            self._radj.setdefault(child, []).append(parent)
-        # Acyclicity check fires on every construction (including DAG(...) directly,
-        # which is what the cycle-rejection scenario uses).
+            if parent not in self._adj or child not in self._adj:
+                raise ValueError("DAG edge endpoints must name existing decisions")
+            self._adj[parent].append(child)
+            self._radj[child].append(parent)
         if self.nodes or self.edges:
             self.topological_sort()
 
     def node_ids(self) -> list[str]:
-        return [n.decision_id for n in self.nodes]
+        return [n.decision_id for n in object.__getattribute__(self, "nodes")]
 
     def parents_of(self, decision_id: str) -> list[str]:
         return list(self._radj.get(decision_id, ()))
@@ -102,7 +111,7 @@ class DAG:
 def _flatten_decisions(trace: Run) -> tuple[list[Decision], list[FlatDecision]]:
     nodes: list[Decision] = []
     flat: list[FlatDecision] = []
-    for step in trace.steps:
+    for step in ordered_steps(trace):
         for pos, decision in enumerate(step.decisions):
             flat.append((step.step_index, pos, decision))
             nodes.append(decision)
@@ -151,6 +160,7 @@ def build_dag(trace: Run) -> DAG:
     Decision-ID uniqueness is enforced by `Run._decision_ids_are_unique` at
     schema-validation time; we trust that invariant here rather than re-check.
     """
+    trace = Run.model_validate(trace.model_dump())
     nodes, flat = _flatten_decisions(trace)
     edges = _latest_parent_edges(flat)
 

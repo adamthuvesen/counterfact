@@ -95,7 +95,9 @@ def _arm_support_lines(report: CorpusReadinessReport) -> list[str]:
 def _guidance_for_criterion(criterion: RubricCriterion) -> list[str]:
     if criterion.passed:
         return []
-    if criterion.name == "outcome_balance" or "unfittable" in criterion.reason:
+    if criterion.reason_code == "imbalanced":
+        return ["  - collect a more balanced mix of pass and fail traces for corpus readiness."]
+    if criterion.name == "outcome_balance" or criterion.reason_code == "single_class":
         return [
             "  - outcome model is unfittable for counterfactual support "
             "without mixed pass/fail outcomes; collect mixed-outcome traces."

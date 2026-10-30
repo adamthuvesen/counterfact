@@ -9,9 +9,13 @@ corpus size, seed, and on-disk layout.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from counterfact.schema import Run
+
+# LiteLLM otherwise downloads its pricing map when tests first import it.
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
 
 def synthetic_corpus(n: int = 16, seed: int = 42) -> list[Run]:

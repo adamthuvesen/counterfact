@@ -13,39 +13,35 @@ jobs:
         python-version: ["3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
-
       - uses: astral-sh/setup-uv@v10.3.2
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
           cache-dependency-glob: uv.lock
-
-      - name: Install Python dependencies
-        run: uv sync --locked --extra dev
-
-      - name: Lint (ruff check)
-        run: uv run ruff check .
-
-      - name: Lint (ruff format)
-        run: uv run ruff format --check src tests
-
-      - name: Mypy
-        run: uv run mypy src/counterfact
-
-      - name: Test with coverage
-        run: uv run pytest -n auto --durations=20 --cov --cov-report=xml --cov-report=term-missing --cov-fail-under=80
-
+      - name: Install locked development and benchmark dependencies
+        run: make install
+      - name: Check code, imports, types, and branch coverage
+        run: make ci
+      - name: Verify generated artifacts
+        run: make check-generated
+      - name: Verify installed wheel outside the checkout
+        run: make check-wheel
       - name: Upload coverage artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: coverage-xml-${{ matrix.python-version }}
           path: coverage.xml
 
-      - name: Build wheel and verify bench/ excluded
-        run: |
-          uv build
-          if unzip -l dist/*.whl | grep -E '^\s*[0-9]+\s+.*bench/'; then
-              echo "ERROR: bench/ found in wheel"
-              exit 1
-          fi
-          echo "wheel excludes bench/ ✓"
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: make install
+      - name: Build and verify the generated-code boundary on Linux amd64
+        run: make check-container

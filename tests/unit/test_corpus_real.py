@@ -47,6 +47,22 @@ from bench.real.coding_agent.runner import (
 from counterfact.schema import Run
 
 
+@pytest.fixture(autouse=True)
+def _unit_executor(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    if request.node.get_closest_marker("container") is not None:
+        return
+    from bench.real.coding_agent.executor import DockerExecutor, ExecutionResult
+
+    monkeypatch.setattr(DockerExecutor, "preflight", lambda self: None)
+    monkeypatch.setattr(
+        DockerExecutor,
+        "run",
+        lambda self, *args, **kwargs: ExecutionResult(
+            status="test_failure", output_tail="fixture failed"
+        ),
+    )
+
+
 def _write_approval(
     marker: Path,
     *,
@@ -157,6 +173,7 @@ def test_real_corpus_has_at_least_three_fixtures() -> None:
         assert passed is False, f"{fx.fixture_id} should start failing"
 
 
+@pytest.mark.container
 def test_outcome_is_pytest_exit_code(tmp_path: Path) -> None:
     # Use an easy fixture (string-utils) so a known good patch makes pytest pass.
     fixture = EASY_FIXTURES[0]
@@ -189,6 +206,7 @@ def test_outcome_is_pytest_exit_code(tmp_path: Path) -> None:
     assert run.outcome.value is True
 
 
+@pytest.mark.container
 def test_agent_logs_per_decision_policy_params_with_resolved_config(
     tmp_path: Path,
 ) -> None:
@@ -233,6 +251,7 @@ def test_agent_logs_per_decision_policy_params_with_resolved_config(
     assert by_type["retry"] == {"epsilon": 0.2, "greedy": "retry_once"}
 
 
+@pytest.mark.container
 def test_agent_logs_retry_policy_on_every_trace_even_when_first_attempt_passes(
     tmp_path: Path,
 ) -> None:
@@ -278,6 +297,7 @@ def test_agent_logs_retry_policy_on_every_trace_even_when_first_attempt_passes(
     )
 
 
+@pytest.mark.container
 def test_agent_retry_branch_includes_failure_context_in_prompt(tmp_path: Path) -> None:
     """When the retry branch fires, the second model_call's prompt must
     include the failing test output (not just the same prompt as attempt 1)."""
@@ -318,6 +338,7 @@ def test_agent_retry_branch_includes_failure_context_in_prompt(tmp_path: Path) -
     assert model_calls[1].context_features.get("informed_retry") is True
 
 
+@pytest.mark.container
 def test_agent_logs_all_randomization_fields(tmp_path: Path) -> None:
     fixture = FIXTURES[1]  # date-utils — bug isn't auto-fixable by trivial regex, that's fine
 
@@ -370,6 +391,7 @@ def _first_model_call_observation(run: Run) -> dict:
     raise AssertionError("no model_call observation found")
 
 
+@pytest.mark.container
 def test_agent_observation_records_extracted_patch_text(tmp_path: Path) -> None:
     """WHEN the LLM returns a Python code block
     THEN the model_call observation's `extracted_code` field carries the
@@ -400,6 +422,7 @@ def test_agent_observation_records_extracted_patch_text(tmp_path: Path) -> None:
     assert "def add" in obs["extracted_code"]
 
 
+@pytest.mark.container
 def test_agent_observation_extracted_code_is_none_when_parse_fails(tmp_path: Path) -> None:
     """WHEN the LLM response has no code fence
     THEN `extracted_code` is None (not False), preserving the
@@ -425,6 +448,7 @@ def test_agent_observation_extracted_code_is_none_when_parse_fails(tmp_path: Pat
     assert obs["extraction_failure_reason"] == "raw_response_not_python"
 
 
+@pytest.mark.container
 def test_agent_observation_records_finish_reason_and_response_chars(
     tmp_path: Path,
 ) -> None:
@@ -1107,29 +1131,47 @@ def _write_pilot_trace(
     stdout_tail: str = "",
 ) -> None:
     run = {
+        "schema_version": "0.1.0",
+        "run_id": f"pilot-{name}",
         "steps": [
             {
-                "decisions": [{"decision_type": "model_call", "chosen_action": model}],
+                "step_index": 0,
+                "decisions": [
+                    {"decision_id": "model", "decision_type": "model_call", "chosen_action": model}
+                ],
                 "observations": [
                     {
+                        "observation_id": "response",
                         "content": {
                             "cost_usd": 0.0,
                             "extracted_code": extracted_code,
-                        }
+                        },
                     }
                 ],
             },
             {
-                "decisions": [{"decision_type": "tool_call", "chosen_action": "run_tests"}],
-                "observations": [{"content": {"stdout_tail": stdout_tail}}],
+                "step_index": 1,
+                "decisions": [
+                    {
+                        "decision_id": "tests",
+                        "decision_type": "tool_call",
+                        "chosen_action": "run_tests",
+                    }
+                ],
+                "observations": [
+                    {"observation_id": "result", "content": {"stdout_tail": stdout_tail}}
+                ],
             },
         ],
         "outcome": {
+            "kind": "binary",
+            "value": hidden_pass,
+            "verifier": "pytest_hidden",
             "metadata": {
                 "fixture_id": fixture_id,
                 "public_pass": public_pass,
                 "hidden_pass": hidden_pass,
-            }
+            },
         },
     }
     (run_dir / f"real-{name}.json").write_text(json.dumps(run))
@@ -1273,3 +1315,243 @@ def test_route_flag_rejects_a_repeated_fixture() -> None:
 
     with pytest.raises(ValueError, match="appears twice"):
         _parse_route("date-utils=0.2,date-utils=0.9")
+
+
+def test_runtime_preflight_precedes_credentials_and_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bench.real.coding_agent import runner
+    from bench.real.coding_agent.executor import DockerExecutor, ExecutorUnavailable
+
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+
+    def unavailable(self) -> None:
+        raise ExecutorUnavailable("runtime unavailable")
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("credentials/client must not run before runtime preflight")
+
+    monkeypatch.setattr(DockerExecutor, "preflight", unavailable)
+    monkeypatch.setattr(runner, "check_credentials", unexpected)
+    monkeypatch.setattr(runner, "LiteLLMClient", unexpected)
+    assert run_real_corpus(n=1, budget_cap_usd=1, output_dir=output, marker_path=marker) == 8
+    assert not output.exists()
+
+
+def test_resume_after_trace_write_does_not_double_count_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+    calls = 0
+
+    class Client:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            nonlocal calls
+            calls += 1
+            return LLMResponse(text="no patch", cost_usd=0.3)
+
+    original_open = Path.open
+
+    def fail_progress(path, *args, **kwargs):
+        if path.name == "progress.jsonl":
+            raise OSError("injected crash after durable trace write")
+        return original_open(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "open", fail_progress)
+        with pytest.raises(OSError, match="injected crash"):
+            run_real_corpus(
+                n=1,
+                budget_cap_usd=1,
+                output_dir=output,
+                marker_path=marker,
+                llm_client_factory=Client,
+            )
+    assert len(list(output.glob("real-*.json"))) == 1
+    prior_calls = calls
+    assert (
+        run_real_corpus(
+            n=1,
+            budget_cap_usd=1,
+            output_dir=output,
+            marker_path=marker,
+            llm_client_factory=Client,
+        )
+        == 0
+    )
+    assert calls == prior_calls
+
+
+def test_unknown_paid_call_cost_blocks_resume(tmp_path: Path) -> None:
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+    calls = 0
+
+    class Client:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            nonlocal calls
+            calls += 1
+            raise CostUnknownError("provider response has no price")
+
+    kwargs = dict(
+        n=1, budget_cap_usd=1, output_dir=output, marker_path=marker, llm_client_factory=Client
+    )
+    assert run_real_corpus(**kwargs) == 5
+    assert run_real_corpus(**kwargs) == 7
+    assert calls == 1
+
+
+def test_infrastructure_attempt_is_retained_outside_corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bench.real.coding_agent.executor import DockerExecutor, ExecutionResult
+
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+    monkeypatch.setattr(
+        DockerExecutor,
+        "run",
+        lambda *args, **kwargs: ExecutionResult(
+            status="infrastructure_error", output_tail="daemon lost"
+        ),
+    )
+
+    class Client:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text="no patch", cost_usd=0.1)
+
+    assert (
+        run_real_corpus(
+            n=1,
+            budget_cap_usd=1,
+            output_dir=output,
+            marker_path=marker,
+            llm_client_factory=Client,
+        )
+        == 8
+    )
+    assert not list(output.glob("real-*.json"))
+    attempts = list((output / ".checkpoints" / "attempts").glob("*.json"))
+    assert len(attempts) == 1
+    assert json.loads(attempts[0].read_text())["outcome"]["verifier"] == "infrastructure_error"
+    from bench.real.coding_agent.runner import _ledger_spend
+
+    assert _ledger_spend(output / ".checkpoints" / "budget_ledger.jsonl") == 0.1
+
+
+@pytest.mark.parametrize("cost", [-1, float("nan"), float("inf")])
+def test_legacy_ledger_rejects_invalid_cost(cost: float, tmp_path: Path) -> None:
+    from bench.real.coding_agent.runner import BudgetLedgerError, _ledger_spend
+
+    ledger = tmp_path / "ledger.jsonl"
+    ledger.write_text(json.dumps({"cost_usd": cost}) + "\n")
+    with pytest.raises(BudgetLedgerError):
+        _ledger_spend(ledger)
+
+
+def test_parallel_runner_cannot_own_same_spend_ledger(tmp_path: Path) -> None:
+    import fcntl
+
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+    checkpoint = output / ".checkpoints"
+    checkpoint.mkdir(parents=True)
+    with (checkpoint / "run.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert (
+            run_real_corpus(
+                n=1,
+                budget_cap_usd=1,
+                output_dir=output,
+                marker_path=marker,
+                llm_client_factory=lambda: pytest.fail("second runner must not construct a client"),
+            )
+            == 9
+        )
+
+
+def test_missing_canonical_fixture_fails_before_client_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bench.real.coding_agent import fixtures
+
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+    monkeypatch.setattr(fixtures, "FIXTURES_ROOT", tmp_path / "missing-fixtures")
+    assert (
+        run_real_corpus(
+            n=1,
+            budget_cap_usd=1,
+            output_dir=output,
+            marker_path=marker,
+            llm_client_factory=lambda: pytest.fail("missing fixture must not construct a client"),
+        )
+        == 8
+    )
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("cap", [math.nan, math.inf, -math.inf, -1.0, 0.0, True])
+def test_invalid_budget_cap_fails_before_runtime_or_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cap: float
+) -> None:
+    from bench.real.coding_agent.executor import DockerExecutor
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("invalid budget must fail before runtime or client creation")
+
+    monkeypatch.setattr(DockerExecutor, "preflight", unexpected)
+    assert (
+        run_real_corpus(
+            n=1, budget_cap_usd=cap, output_dir=tmp_path / "out", llm_client_factory=unexpected
+        )
+        == 2
+    )
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("spent", [math.nan, math.inf, -1.0, True])
+def test_initial_budget_spend_must_be_finite_nonnegative(spent: float) -> None:
+    with pytest.raises(ValueError, match="spent_usd"):
+        BudgetTracker(cap_usd=1.0, spent_usd=spent)
+
+
+@pytest.mark.parametrize("cost", [-1.0, True, "not-a-price"])
+def test_reported_provider_cost_must_be_valid(cost: object) -> None:
+    with pytest.raises(CostUnknownError):
+        extract_cost({"response_cost": cost})
+
+
+def test_invalid_response_cost_remains_unknown_and_blocks_resume(tmp_path: Path) -> None:
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+
+    class Client:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text="no patch", cost_usd=-1.0)
+
+    kwargs = dict(
+        n=1, budget_cap_usd=1, output_dir=output, marker_path=marker, llm_client_factory=Client
+    )
+    assert run_real_corpus(**kwargs) == 5
+    assert run_real_corpus(**kwargs) == 7
+
+
+def test_pilot_output_limit_is_not_a_hidden_semantic_failure(tmp_path: Path) -> None:
+    from bench.real.analyze_pilot import analyze
+
+    _write_pilot_trace(tmp_path, "output-limit", public_pass=True, hidden_pass=False)
+    path = tmp_path / "real-output-limit.json"
+    run = json.loads(path.read_text())
+    run["outcome"]["metadata"]["execution"] = {
+        "status": "test_failure",
+        "failure_reason": "output_limit",
+        "output_tail": "limit exceeded",
+    }
+    path.write_text(json.dumps(run))
+    report = analyze(tmp_path)
+    assert report["failure_modes"]["output_limit"] == 1
+    assert report["failure_modes"]["hidden_semantic_failure"] == 0
+    assert report["showcase_gate_passed"] is False

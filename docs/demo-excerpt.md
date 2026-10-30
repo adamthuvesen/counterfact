@@ -5,10 +5,10 @@
 ## The confounded synthetic corpus
 
 ```bash
-uv run counterfact demo --confound --synthetic-n 1000 --seed 42
+uv run --locked counterfact demo --confound --synthetic-n 1000 --seed 42
 ```
 
-The output is in the [README quickstart](../README.md#quickstart). The corpus comes from a structural causal model with a known true effect of +0.233 for sonnet against haiku.
+The corpus comes from a structural causal model with a known true effect of +0.233 for sonnet against haiku.
 
 The naive `pass_rate_by_arm` table reports a **+0.356** gap. The engine reports a causal contrast of **+0.255 [+0.179, +0.330]**, and its CI contains the truth. The naive gap is outside that CI.
 
@@ -21,7 +21,7 @@ Drop the `tool_call` decision and every logged propensity from the same corpus. 
 ## The real-trace corpus
 
 ```bash
-uv run counterfact demo
+uv run --locked counterfact demo
 ```
 
 Without `--confound`, the demo reads the committed real corpus, `bench/real/smoke_mixed_outcome/`: 120 `streaming_watermark_dedupe` traces with passes and failures in both model arms. Every failure is a valid patch that misses a hidden-test behavior, not a malformed patch. This is a check that the engine works on real traces, not a general benchmark result.
@@ -35,6 +35,6 @@ Without `--confound`, the demo reads the committed real corpus, `bench/real/smok
 
 ## The single-class corpus
 
-`bench/real/single_class_refusal/` holds three `csv_dedupe` traces that all pass. Pointed at it with `--runs-dir bench/real/single_class_refusal`, the engine refuses to fit a one-class outcome model. It returns `unidentified` with `next_step.action=broaden_arm_support`.
+`bench/real/single_class_refusal/` holds three `csv_dedupe` traces that all pass. Pointed at it with `--runs-dir bench/real/single_class_refusal`, causal analysis detects the missing outcome variation. It returns `unidentified` with `next_step.action=broaden_arm_support`.
 
 For per-trace analysis with `diagnose`, `explain`, and `intervene`, see [usage.md](usage.md).

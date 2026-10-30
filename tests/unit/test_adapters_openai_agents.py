@@ -22,6 +22,7 @@ def _load(name: str) -> dict:
 
 
 def test_minimal_trace_writes_run_with_required_outcome(tmp_path: Path) -> None:
+    tmp_path = tmp_path / "corpus"
     receipt = ingest_openai_agents(FIXTURE_DIR / "minimal.json", tmp_path, outcome=True)
 
     assert receipt.generated_count == 1
@@ -154,6 +155,7 @@ def test_metadata_extra_carries_root_name() -> None:
 
 
 def test_ingest_writes_receipt_with_randomization_warning(tmp_path: Path) -> None:
+    tmp_path = tmp_path / "corpus"
     ingest_openai_agents(FIXTURE_DIR / "with_handoff.json", tmp_path)
     receipt = json.loads((tmp_path / "ingest-receipt.json").read_text())
     assert receipt["source_format"] == "openai-agents"

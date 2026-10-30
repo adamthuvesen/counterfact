@@ -195,19 +195,13 @@ def test_tracer_receipt_count_accumulates_across_sessions(tmp_path: Path) -> Non
 
 
 def test_tracer_receipt_count_extends_existing_receipt(tmp_path: Path) -> None:
-    (tmp_path / "ingest-receipt.json").write_text(
-        json.dumps(
-            {
-                "source_format": "claude-agent-sdk",
-                "source_file": "<live-tracer>",
-                "mapping_file": "",
-                "generated_count": 3,
-                "warnings": [],
-                "dropped_fields": [],
-                "validation_errors": [],
-            }
-        )
-    )
+    async def previous_sessions() -> None:
+        for index in range(3):
+            async with ClaudeAgentTracer(output_dir=tmp_path) as tracer:
+                for msg in _pass_messages_with_session(f"previous-{index}"):
+                    tracer.observe(msg)
+
+    _run_async(previous_sessions())
 
     async def go() -> None:
         async with ClaudeAgentTracer(output_dir=tmp_path) as tracer:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from counterfact._fmt import outcome_label as _outcome_label
+from counterfact.analysis.timeline import ordered_steps
 from counterfact.diagnose import DiagnosisReport
 from counterfact.schema import Run
 
@@ -45,7 +46,7 @@ class TraceComparison(_Strict):
 
 def _decision_rows(run: Run) -> dict[tuple[int, str, int], tuple[str, str | None]]:
     rows: dict[tuple[int, str, int], tuple[str, str | None]] = {}
-    for step in run.steps:
+    for step in ordered_steps(run):
         type_counts: dict[str, int] = {}
         for decision in step.decisions:
             offset = type_counts.get(decision.decision_type, 0)
@@ -81,8 +82,8 @@ def _decision_diffs(left: Run, right: Run) -> list[DecisionDiff]:
 
 
 def _step_diffs(left: Run, right: Run) -> list[StepDiff]:
-    left_steps = {step.step_index: step for step in left.steps}
-    right_steps = {step.step_index: step for step in right.steps}
+    left_steps = {step.step_index: step for step in ordered_steps(left)}
+    right_steps = {step.step_index: step for step in ordered_steps(right)}
     diffs: list[StepDiff] = []
     for step_index in sorted(set(left_steps) | set(right_steps)):
         left_step = left_steps.get(step_index)

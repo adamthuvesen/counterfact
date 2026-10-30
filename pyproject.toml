@@ -40,9 +40,10 @@ dev = [
     "pytest-xdist>=3.8,<4",
     "ruff>=0.17.2,<0.18",
     "mypy>=2.4,<3",
-    "jupyter>=1.1,<2",
+    "ipykernel>=7,<8",
     "nbconvert>=7.17,<8",
-    "litellm>=1.106,<2",
+    "hypothesis>=6,<7",
+    "import-linter>=2,<3",
 ]
 
 [project.urls]
@@ -56,14 +57,15 @@ counterfact = "counterfact.cli:main"
 packages = ["src/counterfact"]
 
 # Editable installs only: expose the bench harness on sys.path from the repo
-# root so `uv pip install -e ".[dev]"` keeps `counterfact bench` working.
+# root so the locked development install keeps `counterfact bench` working.
 # The built wheel still contains only `src/counterfact`.
 [tool.hatch.build]
 dev-mode-dirs = ["src", "."]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -ra -m 'not container'"
+markers = ["container: real Docker execution boundary checks (run with make check-container)"]
 
 [tool.ruff]
 line-length = 100
@@ -71,24 +73,33 @@ target-version = "py313"
 extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "RUF"]
+select = ["E", "F", "I", "B", "UP", "RUF", "TID251"]
 ignore = ["B008"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"counterfact.schema.Run.model_validate_json".msg = "Read run files with counterfact.corpus_io.load_run or load_corpus."
+"counterfact.schema.models.Run.model_validate_json".msg = "Read run files with counterfact.corpus_io.load_run or load_corpus."
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/build_demo_notebook.py" = ["E501", "RUF001", "RUF002"]
+# corpus_io owns run-file parsing. AnalysisCorpus re-parses its in-memory snapshots.
+# Tests read published files directly to assert on the raw output.
+"src/counterfact/corpus_io.py" = ["TID251"]
+"src/counterfact/analysis/corpus.py" = ["TID251"]
+"tests/**" = ["TID251"]
 
 [tool.coverage.run]
-source = ["src/counterfact"]
-# Branch coverage is intentionally off: tests subprocess-invoke the
-# `counterfact` CLI, which creates non-branch coverage files that conflict
-# with branch data on combine. Statement coverage with the 80% gate is the
-# meaningful signal.
-branch = false
-omit = ["bench/*", "tests/*"]
+source_pkgs = ["counterfact", "bench", "scripts"]
+branch = true
+parallel = true
+patch = ["subprocess"]
+relative_files = true
+omit = ["*/bench/real/coding_agent/fixtures/*"]
 
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
+include_namespace_packages = true
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
@@ -97,8 +108,34 @@ exclude_lines = [
 
 [tool.mypy]
 python_version = "3.13"
-files = ["src/counterfact"]
+files = ["src/counterfact", "bench", "scripts"]
+exclude = ["^bench/real/coding_agent/fixtures/"]
 warn_return_any = true
 warn_unused_ignores = true
 no_implicit_optional = true
 check_untyped_defs = true
+disallow_untyped_defs = true
+
+[tool.importlinter]
+root_packages = ["counterfact", "bench"]
+
+[[tool.importlinter.contracts]]
+name = "Scientific code has no presentation or integration dependencies"
+type = "forbidden"
+source_modules = [
+    "counterfact.analysis", "counterfact.attribute", "counterfact.baselines",
+    "counterfact.dag", "counterfact.errors", "counterfact.intervene",
+    "counterfact.outcome", "counterfact.policy", "counterfact.schema",
+    "counterfact.stats", "counterfact.taxonomy", "counterfact.trace_localization",
+]
+forbidden_modules = [
+    "counterfact.cli", "counterfact.adapters", "counterfact.tracing",
+    "counterfact.explain", "counterfact.corpus_analyzer", "counterfact.ingest",
+    "counterfact.runrecord_export", "bench",
+]
+
+[[tool.importlinter.contracts]]
+name = "Presentation does not depend on CLI or provider integrations"
+type = "forbidden"
+source_modules = ["counterfact.explain", "counterfact.corpus_analyzer"]
+forbidden_modules = ["counterfact.cli", "counterfact.adapters", "counterfact.tracing", "bench"]

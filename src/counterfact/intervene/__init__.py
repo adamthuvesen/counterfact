@@ -1,6 +1,6 @@
 """Intervention API."""
 
-from counterfact.intervene.api import intervene
+from counterfact.intervene.api import contrast, intervene
 from counterfact.intervene.estimate import (
     CausalEstimate,
     DistributionSummary,
@@ -19,5 +19,6 @@ __all__ = [
     "IdentificationBounds",
     "InterventionQuery",
     "NextStep",
+    "contrast",
     "intervene",
 ]

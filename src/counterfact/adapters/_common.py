@@ -1,42 +1,12 @@
-"""Shared helpers used by every ingest adapter.
-
-The receipt model, the corpus-level randomization warning sentence, and the
-run-writer all live here so per-adapter modules stay focused on the shape
-mapping. Both `counterfact.ingest.ingest_generic_jsonl` and the SDK-specific
-adapters under `counterfact.adapters` reuse these primitives.
-"""
+"""Shared adapter mapping helpers and imports from the corpus IO owner."""
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
-
+from counterfact.corpus_io import CorpusIOError as IngestError
+from counterfact.corpus_io import IngestReceipt, write_corpus
 from counterfact.schema import Decision, Observation, Run, Step
-
-
-class IngestReceipt(BaseModel):
-    """Per-corpus receipt written alongside generated trace files.
-
-    Adapters that do not consume an explicit user-supplied mapping file emit
-    `mapping_file=""` so every ingest receipt has the same shape.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    source_format: str
-    source_file: str
-    mapping_file: str = ""
-    generated_count: int
-    warnings: list[str] = Field(default_factory=list)
-    dropped_fields: list[str] = Field(default_factory=list)
-    validation_errors: list[str] = Field(default_factory=list)
-
-
-class IngestError(RuntimeError):
-    """Raised when an ingest adapter cannot produce a valid native corpus."""
 
 
 class StepBuilder:
@@ -138,66 +108,12 @@ def per_decision_randomization_warnings(run: Run, *, source_index: int) -> list[
     return warnings
 
 
-def write_corpus(runs: list[Run], output_dir: Path, receipt: IngestReceipt) -> None:
-    """Write each run as `<run_id>.json` plus a single `ingest-receipt.json`.
-
-    Filenames are derived from `run_id`, so the adapter is responsible for
-    making sure run_ids are unique across the corpus.
-    """
-
-    planned: list[tuple[Run, Path]] = []
-    seen: set[str] = set()
-    base = output_dir.resolve()
-    for run in runs:
-        if run.run_id in seen:
-            raise IngestError(f"duplicate run_id in corpus: {run.run_id!r}")
-        seen.add(run.run_id)
-        if not run.run_id or run.run_id in {".", ".."} or "\\" in run.run_id:
-            raise IngestError(f"unsafe run_id for output filename: {run.run_id!r}")
-        run_id_path = Path(run.run_id)
-        if run_id_path.is_absolute() or len(run_id_path.parts) != 1:
-            raise IngestError(f"unsafe run_id for output filename: {run.run_id!r}")
-        out_path = base / f"{run.run_id}.json"
-        if base not in out_path.resolve().parents:
-            raise IngestError(f"run_id escapes output directory: {run.run_id!r}")
-        planned.append((run, out_path))
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    for run, out_path in planned:
-        out_path.write_text(run.model_dump_json(indent=2) + "\n")
-    (output_dir / "ingest-receipt.json").write_text(receipt.model_dump_json(indent=2) + "\n")
-
-
-def read_existing_receipt_count(output_dir: Path) -> int:
-    """Return `generated_count` from any pre-existing receipt, else 0.
-
-    Live tracers use this to seed their per-session counter so a new trace
-    written to a directory that already has a receipt extends the count
-    rather than overwriting it with 1. A missing or unparseable receipt is
-    treated as a fresh start; we do not raise here because the on-disk
-    state is informational, not authoritative.
-    """
-
-    receipt_path = output_dir / "ingest-receipt.json"
-    if not receipt_path.exists():
-        return 0
-    try:
-        payload = json.loads(receipt_path.read_text())
-    except (OSError, json.JSONDecodeError):
-        return 0
-    count = payload.get("generated_count")
-    if isinstance(count, int) and count >= 0:
-        return count
-    return 0
-
-
 __all__ = [
     "IngestError",
     "IngestReceipt",
     "StepBuilder",
     "per_decision_randomization_warnings",
     "randomization_warning",
-    "read_existing_receipt_count",
     "strict_bool",
     "write_corpus",
 ]

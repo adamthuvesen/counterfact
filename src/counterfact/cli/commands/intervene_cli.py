@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from counterfact.cli import formatters, helpers, loaders
-from counterfact.errors import InvalidInterventionError
+from counterfact.errors import CounterError
 from counterfact.intervene.degenerate import degenerate_estimate, outcome_classes
 from counterfact.intervene.estimate import CausalEstimate
 from counterfact.schema import Decision, Run, Step
@@ -29,7 +29,7 @@ def _estimate_for_corpus(
     seed: int,
     use_decision_id: bool,
 ) -> CausalEstimate:
-    from counterfact import fit_outcome_model, intervene
+    from counterfact import AnalysisCorpus, intervene
     from counterfact.dag import build_dag
 
     if len(outcome_classes(corpus)) == 1:
@@ -40,7 +40,7 @@ def _estimate_for_corpus(
             target=target_value,
         )
 
-    model = fit_outcome_model(corpus, seed=seed)
+    model = AnalysisCorpus(corpus, seed=seed)
     return intervene(
         dag=build_dag(focal),
         model=model,
@@ -91,7 +91,7 @@ def run(args: argparse.Namespace) -> int:
             seed=args.seed,
             use_decision_id=use_decision_id,
         )
-    except InvalidInterventionError as exc:
+    except (CounterError, ValueError) as exc:
         print(f"counterfact intervene: {exc}", file=sys.stderr)
         return 2
     estimate = add_cli_diagnostics(

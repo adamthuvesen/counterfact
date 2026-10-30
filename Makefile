@@ -1,22 +1,47 @@
-.PHONY: install lint format typecheck test cov ci
+UV = uv run --locked --extra dev --extra bench
+
+.PHONY: install lint format typecheck imports test cov ci generated check-generated check-wheel check-container verify
 
 install:
-	uv pip install -e ".[dev]"
+	uv sync --locked --extra dev --extra bench
 
 lint:
-	uv run ruff check .
-	uv run ruff format --check .
+	$(UV) ruff check .
+	$(UV) ruff format --check .
 
 format:
-	uv run ruff format .
+	$(UV) ruff format .
 
 typecheck:
-	uv run mypy src/counterfact
+	$(UV) mypy
+
+imports:
+	$(UV) lint-imports
 
 test:
-	uv run pytest
+	$(UV) pytest
 
 cov:
-	uv run pytest --cov --cov-report=term-missing --cov-fail-under=80
+	$(UV) pytest -n auto --durations=20 --cov --cov-config=$(CURDIR)/pyproject.toml --cov-report=xml --cov-report=term-missing --cov-fail-under=80
 
-ci: lint typecheck cov
+ci: lint typecheck imports cov
+
+generated:
+	$(UV) python scripts/build_demo_notebook.py
+	$(UV) python scripts/build_benchmark_docs.py
+	$(UV) python scripts/build_figures.py
+	$(UV) python scripts/build_routed_results.py
+
+check-generated:
+	$(UV) python scripts/build_demo_notebook.py --check
+	$(UV) python scripts/build_benchmark_docs.py --check
+	$(UV) python scripts/build_figures.py --check
+	$(UV) python scripts/build_routed_results.py --check
+
+check-wheel:
+	$(UV) python scripts/check_wheel.py
+
+check-container:
+	$(UV) python scripts/check_container.py --build
+
+verify: ci check-generated check-wheel check-container

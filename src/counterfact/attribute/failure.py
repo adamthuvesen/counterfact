@@ -19,18 +19,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict, model_validator
 
+from counterfact.analysis import AnalysisCorpus
+from counterfact.analysis.timeline import ordered_steps
 from counterfact.dag import DAG
 from counterfact.intervene.api import intervene as _intervene
-from counterfact.intervene.estimate import CausalEstimate, IdentifiabilityStatus
+from counterfact.intervene.estimate import CausalEstimate, IdentifiabilityStatus, ResultModel
 from counterfact.outcome.model import OutcomeModel
-from counterfact.schema import Decision, Run, Step
+from counterfact.schema import Decision, Step
 from counterfact.taxonomy import attribution_intervention_kind, valid_interventions
-from counterfact.trace_localization import decision_type_repeats_elsewhere
 
 
-class AttributionEntry(BaseModel):
+class AttributionEntry(ResultModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     decision_id: str
@@ -39,6 +40,12 @@ class AttributionEntry(BaseModel):
     influence: float
     identifiability: IdentifiabilityStatus
     estimate: CausalEstimate | None = None
+
+    @model_validator(mode="after")
+    def _consistent_label(self) -> AttributionEntry:
+        if self.estimate is not None and self.identifiability != self.estimate.identifiability:
+            raise ValueError("attribution label must match its causal estimate")
+        return self
 
 
 @dataclass
@@ -49,7 +56,9 @@ class FailureAttribution:
         return self.entries[:k]
 
 
-def _sibling_actions(model: OutcomeModel, decision_type: str, chosen_action: str) -> list[str]:
+def _sibling_actions(
+    model: OutcomeModel | AnalysisCorpus, decision_type: str, chosen_action: str
+) -> list[str]:
     """Return every observed sibling arm for `decision_type`, in feature-index order.
 
     The caller picks among them. We deliberately do not preselect here —
@@ -77,12 +86,6 @@ def _unidentified_entry(
     )
 
 
-def _is_step_localizable(run: Run, step: Step, decision: Decision) -> bool:
-    if len(step.decisions) > 1:
-        return False
-    return not decision_type_repeats_elsewhere(run, step.step_index, decision.decision_type)
-
-
 _LABEL_RANK = {
     IdentifiabilityStatus.IDENTIFIED: 0,
     IdentifiabilityStatus.BOUNDED: 1,
@@ -99,7 +102,7 @@ def _influence(estimate: CausalEstimate) -> float:
 def _entry_for_decision(
     *,
     dag: DAG,
-    model: OutcomeModel,
+    model: OutcomeModel | AnalysisCorpus,
     step: Step,
     decision: Decision,
     intervention_kind: str,
@@ -110,16 +113,12 @@ def _entry_for_decision(
     if not siblings:
         # No alternative arm with support: nothing to counterfact-factualize against.
         return _unidentified_entry(decision)
-    if not _is_step_localizable(dag.run, step, decision):
-        # The v0 engine cannot answer "intervene only here" for multi-decision
-        # or repeated-type traces. Surface that uncertainty instead of scoring.
-        return _unidentified_entry(decision)
-
     estimates = [
         _intervene(
             dag=dag,
             model=model,
             step=step.step_index,
+            decision_id=decision.decision_id,
             intervention={intervention_kind: sibling},
         )
         for sibling in siblings
@@ -139,15 +138,17 @@ def _entry_for_decision(
 def attribute_failure(
     *,
     dag: DAG,
-    model: OutcomeModel,
+    model: OutcomeModel | AnalysisCorpus,
     outcome: str = "failed",
 ) -> FailureAttribution:
     """Rank decisions in `dag.run` by their estimated causal influence on the outcome."""
-    if dag.run is None or not dag.nodes:
+    run = dag.run
+    model = model.corpus if isinstance(model, OutcomeModel) else model
+    if run is None or not dag.nodes:
         return FailureAttribution(entries=[])
 
     entries: list[AttributionEntry] = []
-    for step in dag.run.steps:
+    for step in ordered_steps(run):
         for d in step.decisions:
             kinds = valid_interventions(d.decision_type)
             if not kinds or d.chosen_action is None:

@@ -142,6 +142,7 @@ def test_metadata_carries_cost_and_usage() -> None:
 
 
 def test_fixture_ingest_writes_two_runs(tmp_path: Path) -> None:
+    tmp_path = tmp_path / "corpus"
     receipt = ingest_claude_agent_sdk(FIXTURE, tmp_path)
 
     assert receipt.source_format == "claude-agent-sdk"
@@ -211,6 +212,7 @@ def test_missing_session_id_is_rejected() -> None:
 
 
 def test_receipt_warnings_appear_in_written_file(tmp_path: Path) -> None:
+    tmp_path = tmp_path / "corpus"
     ingest_claude_agent_sdk(FIXTURE, tmp_path)
     receipt = json.loads((tmp_path / "ingest-receipt.json").read_text())
     assert any("randomization" in w for w in receipt["warnings"])

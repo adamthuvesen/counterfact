@@ -4,7 +4,7 @@
 * adjust-all: the pre-identification engine. It fits one logistic model on
   every logged decision, including ones after the treatment, then applies the
   g-formula. It always returns a number.
-* engine: `counterfact.intervene`. It returns a label, and a cross-fitted AIPW
+* engine: `counterfact.contrast`. It returns a label, and a cross-fitted AIPW
   contrast only when the corpus identifies it.
 
 Scores per scenario: bias and RMSE of each estimator against the exact truth,
@@ -27,7 +27,7 @@ import numpy as np
 
 from bench.synthetic.policy_suite import N_RUNS, PolicySummary, policy_markdown
 from bench.synthetic.scenarios import BASELINE, SCENARIOS, TARGET, Scenario, by_name
-from counterfact import build_dag, fit_outcome_model, intervene, pass_rate_by_arm
+from counterfact import AnalysisCorpus, contrast, fit_outcome_model, pass_rate_by_arm
 from counterfact.errors import InsufficientOutcomeSupportError
 from counterfact.outcome.model import OutcomeModel
 from counterfact.schema import Run
@@ -96,18 +96,17 @@ def run_seed(scenario_name: str, seed: int) -> SeedResult:
     scenario = by_name(scenario_name)
     rng = random.Random(f"{scenario.name}:{seed}")
     runs = [Run.model_validate(scenario.sample(rng, i, None)) for i in range(scenario.n)]
-    empty = {"engine": None, "ci_low": None, "ci_high": None, "bound_low": None, "bound_high": None}
+    corpus = AnalysisCorpus(runs, seed=seed)
+    adjust_all: float | None = None
     try:
         model = fit_outcome_model(runs, seed=seed)
     except InsufficientOutcomeSupportError:
-        return SeedResult(scenario.name, seed, _naive(runs), None, "unidentified", **empty)
-
-    focal = runs[0]
-    step = next(s.step_index for s in focal.steps if s.decisions[0].decision_type == "model_call")
-    estimate = intervene(
-        dag=build_dag(focal),
-        model=model,
-        step=step,
+        pass
+    else:
+        adjust_all = _adjust_all(model)
+    estimate = contrast(
+        corpus=corpus,
+        decision_type="model_call",
         intervention={"model_choice": TARGET},
         baseline=BASELINE,
     )
@@ -116,7 +115,7 @@ def run_seed(scenario_name: str, seed: int) -> SeedResult:
         scenario=scenario.name,
         seed=seed,
         naive=_naive(runs),
-        adjust_all=_adjust_all(model),
+        adjust_all=adjust_all,
         label=estimate.identifiability.value,
         engine=delta.point if delta else None,
         ci_low=delta.ci_low if delta else None,

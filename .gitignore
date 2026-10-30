@@ -14,7 +14,10 @@ dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-.coverage
+.coverage*
+coverage.xml
+.hypothesis/
+.import_linter_cache/
 htmlcov/
 .tox/
 

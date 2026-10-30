@@ -15,7 +15,8 @@ table, not edits to algorithm code.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, Literal
+from dataclasses import dataclass
+from typing import Any, Literal, get_args
 
 from counterfact.errors import UnknownDecisionTypeError
 from counterfact.schema import Decision, DecisionTypeLiteral, Run
@@ -26,66 +27,53 @@ IdentifiabilityStance = Literal[
     "always-replay",
 ]
 
-DECISION_TYPES: tuple[str, ...] = (
-    "plan_step",
-    "model_call",
-    "tool_call",
-    "memory_read",
-    "retry",
-    "termination",
-)
+DECISION_TYPES: tuple[str, ...] = get_args(DecisionTypeLiteral)
 
-# Per-type interventions. Keys are decision types; values are the intervention
-# kinds valid for that type.
-_VALID_INTERVENTIONS: dict[str, frozenset[str]] = {
-    "plan_step": frozenset(),
-    "model_call": frozenset({"model_choice", "prompt_template", "prompt_content", "temperature"}),
-    "tool_call": frozenset({"tool_choice"}),
-    "memory_read": frozenset({"memory_content"}),
-    "retry": frozenset({"retry_policy"}),
-    "termination": frozenset(),
-}
 
-# Per (decision_type, intervention_kind) identifiability stance. Stances drive
-# the dispatch in `intervene`: randomized-support paths to identified estimates,
-# back-door-adjustment paths to bounded estimates, and always-replay paths to
-# `unidentified` with `next_step="replay"`.
-_IDENTIFIABILITY_STANCE: dict[tuple[str, str], IdentifiabilityStance] = {
-    ("model_call", "model_choice"): "requires-randomized-support",
-    ("model_call", "temperature"): "requires-randomized-support",
-    ("model_call", "prompt_template"): "always-replay",
-    ("model_call", "prompt_content"): "always-replay",
-    ("tool_call", "tool_choice"): "requires-randomized-support",
-    ("memory_read", "memory_content"): "requires-back-door-adjustment",
-    ("retry", "retry_policy"): "requires-randomized-support",
-}
+@dataclass(frozen=True)
+class DecisionSpec:
+    parents: tuple[str, ...]
+    action_field: str
+    interventions: tuple[tuple[str, IdentifiabilityStance], ...] = ()
+    default_intervention: str | None = None
 
-# DAG parent declarations. A decision of type `t` may have edges from any
-# decision whose type is in `_PARENT_TYPES[t]` and whose step index is earlier.
-_PARENT_TYPES: dict[str, tuple[str, ...]] = {
-    "plan_step": ("plan_step", "model_call", "tool_call", "memory_read"),
-    "model_call": ("plan_step", "memory_read"),
-    "tool_call": ("plan_step", "model_call"),
-    "memory_read": ("plan_step",),
-    "retry": ("tool_call", "model_call"),
-    "termination": ("plan_step", "model_call", "tool_call"),
-}
 
-# v0 default intervention kind per decision type for demo/explain surfaces.
-_DEFAULT_INTERVENTION_KIND: dict[str, str] = {
-    "model_call": "model_choice",
-    "tool_call": "tool_choice",
-    "retry": "retry_policy",
+_SPECS: dict[str, DecisionSpec] = {
+    "plan_step": DecisionSpec(
+        ("plan_step", "model_call", "tool_call", "memory_read"), "plan_action"
+    ),
+    "model_call": DecisionSpec(
+        ("plan_step", "memory_read"),
+        "model_name",
+        (
+            ("model_choice", "requires-randomized-support"),
+            ("temperature", "requires-randomized-support"),
+            ("prompt_template", "always-replay"),
+            ("prompt_content", "always-replay"),
+        ),
+        "model_choice",
+    ),
+    "tool_call": DecisionSpec(
+        ("plan_step", "model_call"),
+        "tool_name",
+        (("tool_choice", "requires-randomized-support"),),
+        "tool_choice",
+    ),
+    "memory_read": DecisionSpec(
+        ("plan_step",),
+        "memory_action",
+        (("memory_content", "requires-back-door-adjustment"),),
+    ),
+    "retry": DecisionSpec(
+        ("tool_call", "model_call"),
+        "retry_action",
+        (("retry_policy", "requires-randomized-support"),),
+        "retry_policy",
+    ),
+    "termination": DecisionSpec(("plan_step", "model_call", "tool_call"), "termination_action"),
 }
-
-_ACTION_FEATURE_FIELD: dict[str, str] = {
-    "tool_call": "tool_name",
-    "model_call": "model_name",
-    "retry": "retry_action",
-    "memory_read": "memory_action",
-    "plan_step": "plan_action",
-    "termination": "termination_action",
-}
+if set(_SPECS) != set(DECISION_TYPES):
+    raise RuntimeError("decision taxonomy must cover exactly the schema's decision types")
 
 
 def _ensure_known(decision_type: str) -> None:
@@ -98,40 +86,42 @@ def _ensure_known(decision_type: str) -> None:
 def valid_interventions(decision_type: str) -> frozenset[str]:
     """Return the intervention kinds accepted on this decision type."""
     _ensure_known(decision_type)
-    return _VALID_INTERVENTIONS[decision_type]
+    return frozenset(kind for kind, _ in _SPECS[decision_type].interventions)
 
 
 def is_valid_intervention(decision_type: str, intervention_kind: str) -> bool:
     """True iff `intervention_kind` is a valid intervention on this decision type."""
     if decision_type not in DECISION_TYPES:
         return False
-    return intervention_kind in _VALID_INTERVENTIONS[decision_type]
+    return intervention_kind in valid_interventions(decision_type)
 
 
 def identifiability_stance(decision_type: str, intervention_kind: str) -> IdentifiabilityStance:
     """Return the declared stance for the (decision_type, intervention_kind) pair."""
     _ensure_known(decision_type)
-    key = (decision_type, intervention_kind)
-    if key not in _IDENTIFIABILITY_STANCE:
-        raise UnknownDecisionTypeError(f"no identifiability stance declared for {key!r}")
-    return _IDENTIFIABILITY_STANCE[key]
+    stances = dict(_SPECS[decision_type].interventions)
+    if intervention_kind not in stances:
+        raise UnknownDecisionTypeError(
+            f"no identifiability stance declared for {(decision_type, intervention_kind)!r}"
+        )
+    return stances[intervention_kind]
 
 
 def parent_types(decision_type: str) -> tuple[str, ...]:
     """Return the decision types that may causally precede this type within a trace."""
     _ensure_known(decision_type)
-    return _PARENT_TYPES.get(decision_type, ())
+    return _SPECS[decision_type].parents
 
 
 def default_intervention_kind(decision_type: str) -> str:
     """Return the v0 default intervention kind for CLI/demo/explain surfaces."""
     _ensure_known(decision_type)
-    try:
-        return _DEFAULT_INTERVENTION_KIND[decision_type]
-    except KeyError as exc:
+    kind = _SPECS[decision_type].default_intervention
+    if kind is None:
         raise UnknownDecisionTypeError(
             f"no default intervention kind for decision_type={decision_type!r}"
-        ) from exc
+        )
+    return kind
 
 
 def attribution_intervention_kind(decision_type: str) -> str | None:
@@ -152,8 +142,10 @@ def attribution_intervention_kind(decision_type: str) -> str | None:
 
 def first_observed_arm(runs: Iterable[Run], decision_type: str) -> str | None:
     """Return the first non-empty `chosen_action` for `decision_type` in corpus order."""
+    from counterfact.analysis.timeline import ordered_steps
+
     for run in runs:
-        for step in run.steps:
+        for step in ordered_steps(run):
             for decision in step.decisions:
                 if decision.decision_type == decision_type and decision.chosen_action:
                     return decision.chosen_action
@@ -178,7 +170,7 @@ def extract_features(decision: Decision, run: Run) -> dict[str, Any]:
     step_index = _step_index_for(decision, run)
     chosen = decision.chosen_action
     feature_key: str | None = None
-    if chosen is not None and _VALID_INTERVENTIONS[dt]:
+    if chosen is not None and _SPECS[dt].interventions:
         feature_key = f"{dt}::{chosen}"
 
     base: dict[str, Any] = {
@@ -186,7 +178,7 @@ def extract_features(decision: Decision, run: Run) -> dict[str, Any]:
         "step_index": step_index,
         "feature_key": feature_key,
     }
-    base[_ACTION_FEATURE_FIELD[dt]] = chosen or "<none>"
+    base[_SPECS[dt].action_field] = chosen or "<none>"
     return base
 
 

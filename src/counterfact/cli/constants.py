@@ -8,8 +8,8 @@ DEFAULT_DEMO_RUNS_DIR = Path("bench/real/smoke_mixed_outcome")
 
 BENCH_UNAVAILABLE_MESSAGE = (
     "counterfact bench: the bench harness is not included in the wheel. "
-    "Install the development extras with `pip install counterfact[bench]` "
-    'or use an editable dev install (`uv pip install -e ".[dev]"`).'
+    "Run benchmarks from a source checkout after "
+    "`uv sync --locked --extra dev --extra bench`. Installing wheel extras does not include bench/."
 )
 
 DEMO_CONTRAST_THRESHOLD = 0.05

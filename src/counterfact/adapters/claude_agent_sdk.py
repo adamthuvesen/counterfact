@@ -24,6 +24,7 @@ from counterfact.adapters._common import (
     strict_bool,
     write_corpus,
 )
+from counterfact.corpus_io import read_text
 from counterfact.schema import Decision, Metadata, Observation, Outcome, Run, Step
 from counterfact.schema.models import SCHEMA_VERSION
 
@@ -258,6 +259,8 @@ def run_from_messages(messages: list[dict[str, Any]]) -> Run:
         raise IngestError("claude-agent-sdk message stream is empty")
 
     for idx, msg in enumerate(messages):
+        if not isinstance(msg, dict):
+            raise IngestError(f"record {idx}: message must be a JSON object")
         if _message_type(msg) not in _KNOWN_MESSAGE_TYPES:
             raise IngestError(
                 f"record {idx}: unknown message type {_message_type(msg)!r}; "
@@ -332,7 +335,7 @@ def ingest_claude_agent_sdk(
     output directory.
     """
 
-    text = source_path.read_text()
+    text = read_text(source_path)
     runs: list[Run] = []
     warnings = [randomization_warning(SOURCE_FORMAT)]
 
@@ -367,8 +370,7 @@ def ingest_claude_agent_sdk(
         generated_count=len(runs),
         warnings=warnings,
     )
-    write_corpus(runs, output_dir, receipt)
-    return receipt
+    return write_corpus(runs, output_dir, receipt)
 
 
 __all__ = [

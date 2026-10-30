@@ -8,31 +8,16 @@ from typing import Any
 from pydantic import ValidationError
 
 from counterfact.cli import formatters
+from counterfact.cli.loaders import load_corpus_dir
 from counterfact.corpus_analyzer import RubricThresholds
+from counterfact.errors import CounterError
 from counterfact.schema import Run
 
 format_report = formatters.format_report
 
 
 def _load_runs(runs_dir: Path) -> list[Run] | None:
-    if not runs_dir.exists() or not runs_dir.is_dir():
-        print(
-            f"counterfact analyze corpus: directory not found: {runs_dir}",
-            file=sys.stderr,
-        )
-        return None
-
-    runs: list[Run] = []
-    for path in sorted(runs_dir.glob("*.json")):
-        try:
-            runs.append(Run.model_validate_json(path.read_text()))
-        except (ValidationError, ValueError) as exc:
-            print(
-                f"counterfact analyze corpus: failed to parse {path}: {exc}",
-                file=sys.stderr,
-            )
-            return None
-    return runs
+    return load_corpus_dir(runs_dir, command="analyze corpus")
 
 
 def _threshold_overrides(args: argparse.Namespace) -> dict[str, Any]:
@@ -68,6 +53,10 @@ def run(args: argparse.Namespace) -> int:
     if thresholds is None:
         return 2
 
-    report = analyze(runs, thresholds=thresholds)
+    try:
+        report = analyze(runs, thresholds=thresholds)
+    except (CounterError, ValueError) as exc:
+        print(f"counterfact analyze corpus: {exc}", file=sys.stderr)
+        return 2
     print(format_report(report, runs_dir))
     return 0 if report.promote else 1

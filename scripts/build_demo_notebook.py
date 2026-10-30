@@ -10,9 +10,12 @@ Run from the repo root:
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 from pathlib import Path
+
+from scripts._generated import write_or_check
 
 NB_PATH = Path(__file__).resolve().parents[1] / "notebooks" / "demo.ipynb"
 
@@ -462,7 +465,7 @@ CELLS = [
 ]
 
 
-def main() -> None:
+def notebook_text() -> str:
     cells = []
     for i, cell in enumerate(CELLS):
         cell_with_id = {"cell_type": cell["cell_type"], "id": _cell_id(cell["cell_type"], i)}
@@ -481,9 +484,15 @@ def main() -> None:
         "nbformat": 4,
         "nbformat_minor": 5,
     }
-    NB_PATH.write_text(json.dumps(nb, indent=1) + "\n")
-    print(f"wrote {NB_PATH} ({len(cells)} cells)")
+    return json.dumps(nb, indent=1) + "\n"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args(argv)
+    return 0 if write_or_check(NB_PATH, notebook_text(), check=args.check) else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

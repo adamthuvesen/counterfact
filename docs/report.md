@@ -1,6 +1,6 @@
 # Honest Counterfactuals for Agent Traces
 
-Technical report for `counterfact` 0.1.0. Every synthetic-benchmark number below comes from `docs/benchmark-results.json` and can be reproduced with one command in about two minutes on a 10-core laptop. The real-agent numbers in §6 come from the committed corpus in `bench/real/routed_trial/`.
+Technical report for `counterfact` 0.1.0. Synthetic results derive from `docs/benchmark-results.json`. The generated [benchmark tables](benchmark-results.md) hold the complete numeric results. The real-agent numbers in §6 come from the committed corpus in `bench/real/routed_trial/`.
 
 ## Summary
 
@@ -12,9 +12,9 @@ Teams that build LLM agents ask counterfactual questions of their logs. Would th
 - `bounded`: both arms occur, but the log does not prove how they were assigned. The engine returns Manski bounds, which assume nothing, or no interval when the data cannot support one.
 - `unidentified`: the corpus cannot answer the question. The engine returns a concrete next step, such as the runs to collect.
 
-The engine is scored on structural causal models with exact true effects, built so that each one breaks one assumption. Over 4,000 single-decision corpora it labels every scenario correctly, and its 95% CIs cover the truth 94% to 96% of the time. For whole policies over a sequential agent, the common practice of averaging the runs that already followed the policy gets both retry policies backwards. The sequential doubly robust estimate has a mean bias of at most 0.0014.
+The engine is scored on structural causal models with exact true effects. Each scenario challenges an identification or estimation assumption. The generated tables report labels, bias, and coverage. Sequential scenarios also compare policy estimation with the descriptive average over matching runs.
 
-On 800 real coding-agent traces with a confounded model router, the naive gap says the large model adds 0.05 to the pass rate. A randomized trial in the same run says 0.25. The engine, given only the routed runs, says 0.32 with a 95% CI of [0.20, 0.45]. The two estimates agree within sampling noise, and the naive gap does not. With the logged propensities removed, it returns `bounded`.
+The committed real-agent experiment compares a confounded model router with an independent randomized arm. The [current reanalysis](../bench/real/routed_trial/RESULTS.md) reports estimates and interval methods. Removing logged propensities produces `bounded`.
 
 ![Single-decision bias by estimator](figures/single-decision-bias.svg)
 
@@ -26,7 +26,9 @@ The question for one decision is a contrast between two interventions:
 
 $$\Delta = E[Y \mid do(A = a)] - E[Y \mid do(A = b)]$$
 
-Here $A$ is the first occurrence of a decision type in the run, $a$ is the target action, and $b$ is a named baseline. The default baseline is the action the focal trace actually chose.
+Here $A$ is the first occurrence of a decision type, $a$ is the target action, and $b$ is a named baseline. The corpus `contrast` API estimates this total effect and keeps later occurrences downstream.
+
+Focal `intervene` queries require an unambiguous decision type in the focal trace. Their baseline defaults to the logged action. The answer remains a population contrast, without conditioning on focal covariates. An explicit decision ID supports mixed-type steps but cannot localize repeated occurrences of one type. Policy evaluation defines a separate sequential estimand.
 
 The question for a policy $\pi$ is the change in success if the agent followed $\pi$ at every decision it controls, and acted as logged everywhere else:
 
@@ -59,7 +61,7 @@ The engine fits outcome models with 5-fold cross-fitting and forms the augmented
 
 $$\psi_i(a) = \hat\mu_a(X_i) + \frac{1\{A_i = a\}}{e_i}\,(Y_i - \hat\mu_a(X_i))$$
 
-Here $e_i$ is the logged propensity of the chosen action and $\hat\mu_a$ is the held-out outcome model. The contrast is the mean of $\psi_i(a) - \psi_i(b)$, and the 95% CI uses the sample variance of those scores. The logged propensity is the true assignment probability, so the estimate stays unbiased even when the outcome model is wrong or a confounder is missing from $X$.
+Here $e_i$ is the logged propensity of the chosen action and $\hat\mu_a$ is the held-out outcome model. The contrast is the mean of $\psi_i(a) - \psi_i(b)$. Its 95% CI uses the sample variance of those scores and remains unclipped. The logged propensity is the true assignment probability, so the estimate stays unbiased even when the outcome model is wrong or a confounder is missing from $X$.
 
 Two cross-checks are reported next to it: the g-formula with the same outcome model, and the Hajek IPW estimate. A large gap between them is a diagnostic, not a correction.
 
@@ -102,46 +104,19 @@ The sequential scenario in `bench/synthetic/sequential.py` adds a time-varying c
 
 ## 5. Results
 
-500 seeds per scenario. Bias is the mean error against the exact truth. Engine bias and coverage use only seeds labeled `identified`. The Monte Carlo standard error of each coverage figure is about 1 percentage point. The full tables are in [benchmark-results.md](benchmark-results.md).
+The generated [benchmark tables](benchmark-results.md) report the run count, truth, bias, identification labels, and interval coverage. Bias compares each estimate with the scenario's exact truth. Engine bias and coverage include only `identified` estimates.
 
-| Scenario | Truth | Naive bias | Adjust-all bias | Engine label | Engine bias | 95% CI coverage |
-| --- | ---: | ---: | ---: | --- | ---: | ---: |
-| `randomized` | +0.234 | +0.002 | +0.000 | 100% identified | +0.002 | 95% |
-| `small_n` | +0.234 | -0.011 | -0.033 | 100% identified | -0.009 | 94% |
-| `logged_confounding` | +0.234 | +0.106 | +0.001 | 100% identified | +0.002 | 94% |
-| `interaction` | -0.042 | +0.310 | +0.009 | 100% identified | +0.001 | 96% |
-| `unlogged_confounder_logged_propensity` | +0.217 | +0.160 | +0.157 | 100% identified | +0.002 | 94% |
-| `unlogged_confounder` | +0.217 | +0.159 | +0.156 | 100% bounded | | |
-| `post_treatment_retry` | +0.199 | +0.001 | -0.091 | 100% identified | +0.001 | 95% |
-| `positivity_violation` | +0.234 | +0.192 | +0.011 | 100% bounded | | |
+The scenarios separate several failure modes. An interaction can reverse the naive comparison. Logged propensities can recover an effect despite an unlogged confounder. Removing those propensities prevents point identification. Conditioning on a downstream retry can bias an otherwise useful outcome model.
 
-Four findings stand out:
-
-- **The naive table can get the sign wrong.** In `interaction` the true effect is -0.042 and the naive gap is about +0.27.
-- **Logged propensities beat a hidden confounder.** With difficulty hidden, naive and adjust-all are both off by about +0.16. The engine is off by +0.002, because inverse weighting by the true assignment probability does not need the confounder.
-- **Remove the propensity and the engine refuses.** The same process without the propensity returns `bounded` on every seed. The other two estimators still report a gap that is +0.16 too high.
-- **Adjusting for everything is a real failure.** Conditioning on a retry that the treatment caused biases adjust-all by -0.091. The engine adjusts only for earlier steps.
-
-Two baselines held up better than the scenario names suggest, and the table keeps them. The main-effects g-formula absorbed the interaction. Under the positivity violation it extrapolated correctly because its model happened to be the true model. Nothing in the data proves that, so the engine returns `bounded`.
+The adjust-all baseline sometimes performs well because its model matches the data-generating process. The identification check does not treat that agreement as evidence of support.
 
 ### Policies
 
 ![Policy evaluation bias by estimator](figures/policy-bias.svg)
 
-2,000 runs per corpus, 500 seeds.
+The [policy results](benchmark-results.md) compare matched-run averages, ICE, sequential doubly robust estimates, and refusals. Matching runs can reverse the apparent benefit of retrying because initial success determines whether a retry occurs.
 
-| Policy | Truth | Matched-runs bias | ICE bias | DR bias (RMSE) | 95% CI coverage |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| always retry, outcome model blind to `tests_passed` | +0.040 | -0.193 | -0.177 | +0.000 (0.018) | 94% |
-| always retry | +0.040 | -0.193 | -0.001 | +0.000 (0.003) | 94% |
-| never retry | -0.093 | +0.238 | +0.008 | +0.000 (0.006) | 96% |
-| retry on fail | +0.040 | +0.025 | -0.004 | +0.000 (0.003) | 94% |
-| sonnet, then retry on fail | +0.172 | +0.024 | -0.005 | +0.001 (0.012) | 97% |
-| retry on fail, retry propensity not logged | +0.040 | | | 100% bounded | |
-
-- **Filtering the logs reverses both retry policies.** The matched-runs average says never retrying raises success by 0.145 and always retrying lowers it by 0.154. The truths are -0.093 and +0.040. Runs that skipped the retry mostly passed first time.
-- **Double robustness shows up where the theory says it should.** When the outcome models cannot see `tests_passed`, ICE is off by -0.177 and DR stays unbiased. Giving the models the confounder cuts DR's RMSE from 0.018 to 0.003.
-- **The two estimators agree where they should.** With one controlled decision, the policy contrast matches the single-decision AIPW contrast within 0.02 (`tests/unit/test_policy_evaluation.py`).
+The hidden-confounder scenario removes `tests_passed` from the outcome models while retaining assignment probabilities. It tests the estimator's protection against outcome-model misspecification. The missing-propensity scenario separately tests refusal behavior.
 
 ## 6. Real-agent trial
 
@@ -153,12 +128,7 @@ Synthetic models test the engine against processes it can describe. A real agent
 
 The run used `claude-haiku-4-5` as the small model and `claude-sonnet-4-6` as the large one, on `streaming_watermark_dedupe`, `date_window`, `rate_limit`, and `csv-stats`. The router gave the large model to 85%, 70%, 30%, and 15% of runs on those fixtures. 800 traces cost $6.52.
 
-| Estimate | Data | Effect of large vs small | 95% interval |
-| --- | --- | ---: | --- |
-| Randomized trial | 402 trial runs, difference in means | +0.252 | [+0.184, +0.320] |
-| Naive | 398 routed runs, pass-rate gap | +0.053 | |
-| Engine, `identified` | the same routed runs, AIPW | +0.324 | [+0.197, +0.451] |
-| Engine, `bounded` | routed runs, propensities removed | | [−0.477, +0.523] |
+The [generated routed-trial results](../bench/real/routed_trial/RESULTS.md#results) hold the estimates and intervals. The randomized difference in means uses a Newcombe-Wilson interval. AIPW uses its influence-function interval.
 
 - **The naive gap is 0.20 below the trial estimate and outside its interval.** The router sends the large model to the hard fixtures, where every arm passes less often, so the large model looks barely better than the small one.
 - **The engine agrees with the trial.** Its estimate is 0.07 above the trial estimate, and the difference is within sampling noise (z = 0.98). The trial estimate is itself uncertain, so this is agreement between two independent estimates, not recovery of an exact value.
@@ -177,8 +147,9 @@ Both models pass `rate_limit` and `csv-stats` on every run, so the effect comes 
 ## Reproduce
 
 ```bash
-uv run counterfact bench suite --seeds 500 --markdown docs/benchmark-results.md --json docs/benchmark-results.json
-uv run python scripts/build_figures.py
+uv run --locked counterfact bench suite --seeds 500 --json docs/benchmark-results.json
+make generated
+make check-generated
 ```
 
 The suite is deterministic by seed and makes no API calls. The figures are drawn from `docs/benchmark-results.json`. The identification guarantees are in [invariants.md](invariants.md).

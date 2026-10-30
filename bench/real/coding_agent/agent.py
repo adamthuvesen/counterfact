@@ -20,22 +20,22 @@ from __future__ import annotations
 
 import ast
 import json
+import math
+import os
 import random
 import re
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 from bench.real.coding_agent.budget import BudgetTracker
+from bench.real.coding_agent.executor import DockerExecutor, ExecutionResult
 from bench.real.coding_agent.fixtures import (
     FixtureSpec,
-    build_hidden_eval_workspace,
     is_hidden_fixture,
-    run_pytest,
-    run_pytest_hidden,
-    run_pytest_public,
     snapshot_fixture,
 )
-from bench.real.coding_agent.llm import LLMClient
+from bench.real.coding_agent.llm import CostUnknownError, LLMClient, LLMResponse
 from bench.real.coding_agent.randomize import EpsilonGreedy
 from counterfact.schema import Decision, Observation, Outcome, Run, Step
 
@@ -186,17 +186,31 @@ def _model_observation_content(
     }
 
 
-def _charge(budget: BudgetTracker, cost_usd: float, ledger_path: Path | None) -> None:
-    """Record `cost_usd` to the resume ledger, then add it to the live budget.
-
-    The ledger entry is written *before* `budget.add` so a `BudgetExceeded`
-    raise still leaves an on-disk record of the paid call. Resume includes this
-    ledger alongside completed trace spend.
-    """
+def _ledger_entry(ledger_path: Path | None, entry: dict[str, object]) -> None:
     if ledger_path is not None:
-        with ledger_path.open("a") as f:
-            f.write(json.dumps({"cost_usd": cost_usd}) + "\n")
-    budget.add(cost_usd)
+        with ledger_path.open("a") as stream:
+            stream.write(json.dumps({"schema_version": 2, **entry}) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+
+
+def _paid_call(
+    llm: LLMClient, *, role: str, prompt: str, budget: BudgetTracker, ledger_path: Path | None
+) -> tuple[LLMResponse, str]:
+    call_id = uuid.uuid4().hex
+    _ledger_entry(ledger_path, {"call_id": call_id, "state": "pending"})
+    response = llm.call(role=role, prompt=prompt)
+    if (
+        isinstance(response.cost_usd, bool)
+        or not math.isfinite(response.cost_usd)
+        or response.cost_usd < 0
+    ):
+        raise CostUnknownError(f"invalid response cost: {response.cost_usd!r}")
+    _ledger_entry(
+        ledger_path, {"call_id": call_id, "state": "priced", "cost_usd": response.cost_usd}
+    )
+    budget.add(response.cost_usd)
+    return response, call_id
 
 
 def build_fix_prompt(fixture: FixtureSpec, sandbox: Path) -> str:
@@ -296,8 +310,11 @@ def run_one_trace(
     sandbox_root: Path,
     config: AgentRunConfig,
     ledger_path: Path | None = None,
+    executor: DockerExecutor | None = None,
 ) -> Run:
     """Run the agent against one fixture sandbox; return a counterfact-native Run."""
+    executor = executor or DockerExecutor()
+    executor.preflight()
     tool_eps = config.resolved_tool_epsilon()
     model_eps = config.resolved_model_epsilon()
     retry_eps = config.resolved_retry_epsilon()
@@ -312,8 +329,9 @@ def run_one_trace(
     hidden = is_hidden_fixture(fixture)
     expected_symbol = _first_public_symbol(src_path.read_text())
 
-    def _run_tests_in_loop() -> tuple[bool, str]:
-        return run_pytest_public(sandbox) if hidden else run_pytest(sandbox)
+    def _run_tests_in_loop() -> ExecutionResult:
+        target = "tests_public" if hidden else "tests"
+        return executor.run(sandbox / "src", fixture.root / target, target=target)
 
     steps: list[Step] = []
     step_index = 0
@@ -404,8 +422,9 @@ def run_one_trace(
             config.model_route_by_fixture[fixture.fixture_id], design_rng
         )
     prompt = build_fix_prompt(fixture, sandbox)
-    resp = llm.call(role=model_action, prompt=prompt)
-    _charge(budget, resp.cost_usd, ledger_path)
+    resp, call_id = _paid_call(
+        llm, role=model_action, prompt=prompt, budget=budget, ledger_path=ledger_path
+    )
     extraction = _extract_python_source(resp.text, expected_symbol=expected_symbol)
     patched = extraction.code
     steps.append(
@@ -416,6 +435,7 @@ def run_one_trace(
                     decision_id=f"d-{run_index:06d}-model-1",
                     decision_type="model_call",
                     chosen_action=model_action,
+                    metadata={"model_id": resp.model_id} if resp.model_id else {},
                     policy=model_policy,
                     policy_params=model_params,
                     valid_actions=list(MODEL_ARMS),
@@ -426,12 +446,15 @@ def run_one_trace(
             observations=[
                 Observation(
                     observation_id=f"o-{run_index:06d}-model-1",
-                    content=_model_observation_content(
-                        resp.text,
-                        resp.cost_usd,
-                        extraction,
-                        resp.finish_reason,
-                    ),
+                    content={
+                        "call_id": call_id,
+                        **_model_observation_content(
+                            resp.text,
+                            resp.cost_usd,
+                            extraction,
+                            resp.finish_reason,
+                        ),
+                    },
                 )
             ],
         )
@@ -442,7 +465,8 @@ def run_one_trace(
         src_path.write_text(patched)
 
     # ----- Step 4: tool_call run_tests (deterministic) -----
-    passed, tail = _run_tests_in_loop()
+    execution = _run_tests_in_loop()
+    passed, tail = execution.passed, execution.output_tail
     steps.append(
         Step(
             step_index=step_index,
@@ -456,13 +480,28 @@ def run_one_trace(
             observations=[
                 Observation(
                     observation_id=f"o-{run_index:06d}-runtests-1",
-                    content={"passed": passed, "stdout_tail": tail[-500:]},
+                    content={
+                        "passed": passed,
+                        "stdout_tail": tail[-500:],
+                        "execution": execution.model_dump(),
+                    },
                 )
             ],
         )
     )
     step_index += 1
     attempts_remaining -= 1
+
+    if execution.status == "infrastructure_error":
+        return _finalize_run(
+            run_index,
+            fixture,
+            steps,
+            sandbox,
+            public_pass=False,
+            executor=executor,
+            infrastructure_error=execution.output_tail,
+        )
 
     if passed:
         steps.append(
@@ -477,7 +516,9 @@ def run_one_trace(
                 ],
             )
         )
-        return _finalize_run(run_index, fixture, steps, sandbox, sandbox_root, public_pass=True)
+        return _finalize_run(
+            run_index, fixture, steps, sandbox, public_pass=True, executor=executor
+        )
 
     if attempts_remaining <= 0:
         # no_retry was chosen; we ran the one allotted attempt and it failed
@@ -493,14 +534,17 @@ def run_one_trace(
                 ],
             )
         )
-        return _finalize_run(run_index, fixture, steps, sandbox, sandbox_root, public_pass=False)
+        return _finalize_run(
+            run_index, fixture, steps, sandbox, public_pass=False, executor=executor
+        )
 
     # ----- Step 5: model_call retry, with failure context -----
     retry_prompt = build_fix_prompt(fixture, sandbox) + _RETRY_PROMPT_SUFFIX.format(
         test_output=tail[-1000:]
     )
-    resp2 = llm.call(role=model_action, prompt=retry_prompt)
-    _charge(budget, resp2.cost_usd, ledger_path)
+    resp2, call_id2 = _paid_call(
+        llm, role=model_action, prompt=retry_prompt, budget=budget, ledger_path=ledger_path
+    )
     extraction2 = _extract_python_source(resp2.text, expected_symbol=expected_symbol)
     patched2 = extraction2.code
     steps.append(
@@ -511,6 +555,7 @@ def run_one_trace(
                     decision_id=f"d-{run_index:06d}-model-2",
                     decision_type="model_call",
                     chosen_action=model_action,
+                    metadata={"model_id": resp2.model_id} if resp2.model_id else {},
                     policy=model_policy,
                     policy_params=model_params,
                     valid_actions=list(MODEL_ARMS),
@@ -525,12 +570,15 @@ def run_one_trace(
             observations=[
                 Observation(
                     observation_id=f"o-{run_index:06d}-model-2",
-                    content=_model_observation_content(
-                        resp2.text,
-                        resp2.cost_usd,
-                        extraction2,
-                        resp2.finish_reason,
-                    ),
+                    content={
+                        "call_id": call_id2,
+                        **_model_observation_content(
+                            resp2.text,
+                            resp2.cost_usd,
+                            extraction2,
+                            resp2.finish_reason,
+                        ),
+                    },
                 )
             ],
         )
@@ -541,7 +589,8 @@ def run_one_trace(
         src_path.write_text(patched2)
 
     # ----- Step 6: tool_call run_tests (second attempt) -----
-    passed2, tail2 = _run_tests_in_loop()
+    execution2 = _run_tests_in_loop()
+    passed2, tail2 = execution2.passed, execution2.output_tail
     steps.append(
         Step(
             step_index=step_index,
@@ -555,7 +604,11 @@ def run_one_trace(
             observations=[
                 Observation(
                     observation_id=f"o-{run_index:06d}-runtests-2",
-                    content={"passed": passed2, "stdout_tail": tail2[-500:]},
+                    content={
+                        "passed": passed2,
+                        "stdout_tail": tail2[-500:],
+                        "execution": execution2.model_dump(),
+                    },
                 )
             ],
         )
@@ -574,7 +627,15 @@ def run_one_trace(
             ],
         )
     )
-    return _finalize_run(run_index, fixture, steps, sandbox, sandbox_root, public_pass=passed2)
+    return _finalize_run(
+        run_index,
+        fixture,
+        steps,
+        sandbox,
+        public_pass=passed2,
+        executor=executor,
+        infrastructure_error=tail2 if execution2.status == "infrastructure_error" else None,
+    )
 
 
 def _finalize_run(
@@ -582,17 +643,33 @@ def _finalize_run(
     fixture: FixtureSpec,
     steps: list[Step],
     sandbox: Path,
-    sandbox_root: Path,
     *,
     public_pass: bool,
+    executor: DockerExecutor,
+    infrastructure_error: str | None = None,
 ) -> Run:
     """Build the final Run, branching on whether `fixture` is hidden.
 
     For v0 fixtures, `Outcome.value` is the in-loop pytest result and
     `verifier="pytest"`. For hidden fixtures, the in-loop pytest result is
-    `public_pass`; the harness then runs `tests_hidden/` once in a separate
-    workspace, and `Outcome.value` is the hidden-test result.
+    `public_pass`; the harness then runs `tests_hidden/` once in a fresh
+    container, and `Outcome.value` is the hidden-test result.
     """
+    if infrastructure_error is not None:
+        return Run(
+            schema_version="0.1.0",
+            run_id=f"real-{fixture.fixture_id}-{run_index:06d}",
+            steps=steps,
+            outcome=Outcome(
+                kind="binary",
+                value=False,
+                verifier="infrastructure_error",
+                metadata={
+                    "fixture_id": fixture.fixture_id,
+                    "infrastructure_error": infrastructure_error,
+                },
+            ),
+        )
     if not is_hidden_fixture(fixture):
         return Run(
             schema_version="0.1.0",
@@ -606,8 +683,10 @@ def _finalize_run(
             ),
         )
 
-    eval_workspace = build_hidden_eval_workspace(fixture, sandbox, sandbox_root / "_hidden_eval")
-    hidden_pass, _ = run_pytest_hidden(eval_workspace)
+    hidden_execution = executor.run(
+        sandbox / "src", fixture.root / "tests_hidden", target="tests_hidden"
+    )
+    hidden_pass = hidden_execution.passed
     return Run(
         schema_version="0.1.0",
         run_id=f"real-{fixture.fixture_id}-{run_index:06d}",
@@ -615,9 +694,12 @@ def _finalize_run(
         outcome=Outcome(
             kind="binary",
             value=hidden_pass,
-            verifier="pytest_hidden",
+            verifier="infrastructure_error"
+            if hidden_execution.status == "infrastructure_error"
+            else "pytest_hidden",
             metadata={
                 "fixture_id": fixture.fixture_id,
+                "execution": hidden_execution.model_dump(),
                 "public_pass": public_pass,
                 "hidden_pass": hidden_pass,
                 "generalization_gap": public_pass and not hidden_pass,

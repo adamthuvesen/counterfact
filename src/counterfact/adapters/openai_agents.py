@@ -12,7 +12,6 @@ reuses `run_from_trace` here.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -26,10 +25,16 @@ from counterfact.adapters._common import (
     strict_bool,
     write_corpus,
 )
+from counterfact.corpus_io import read_json
 from counterfact.schema import Decision, Metadata, Observation, Outcome, Run
 from counterfact.schema.models import SCHEMA_VERSION
 
 SOURCE_FORMAT = "openai-agents"
+
+
+class MissingOutcomeError(IngestError):
+    """The trace is valid but has no recorded outcome."""
+
 
 _OUTCOME_MARKER_NAME = "counterfact.outcome"
 
@@ -242,7 +247,9 @@ def _outcome_marker_value(spans: list[dict[str, Any]]) -> bool | None:
         sdata = span["span_data"]
         if sdata.get("name") != _OUTCOME_MARKER_NAME:
             continue
-        data = sdata.get("data") or {}
+        data = sdata.get("data")
+        if not isinstance(data, dict) or "value" not in data:
+            raise IngestError("counterfact.outcome marker requires an object with a boolean value")
         if "value" in data:
             return strict_bool(
                 data["value"],
@@ -293,7 +300,7 @@ def _outcome_for_trace(spans: list[dict[str, Any]], *, override: bool | str | No
             metadata={"error": root.get("error")},
         )
 
-    raise IngestError(
+    raise MissingOutcomeError(
         "openai-agents trace has no explicit outcome: pass --outcome pass|fail, "
         f"include a CustomSpanData named {_OUTCOME_MARKER_NAME!r}, or surface "
         "an error on the root span"
@@ -377,7 +384,7 @@ def ingest_openai_agents(
       - a JSON array of such objects (corpus of traces).
     """
 
-    payload = json.loads(source_path.read_text())
+    payload = read_json(source_path)
     traces: list[dict[str, Any]]
     if isinstance(payload, list):
         traces = payload
@@ -403,8 +410,7 @@ def ingest_openai_agents(
         generated_count=len(runs),
         warnings=warnings,
     )
-    write_corpus(runs, output_dir, receipt)
-    return receipt
+    return write_corpus(runs, output_dir, receipt)
 
 
 __all__ = [

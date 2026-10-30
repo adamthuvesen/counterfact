@@ -10,6 +10,7 @@ from counterfact.schema.models import (
     Run,
     Step,
 )
+from counterfact.schema.validation import require_focal, validate_runs
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -20,4 +21,6 @@ __all__ = [
     "Outcome",
     "Run",
     "Step",
+    "require_focal",
+    "validate_runs",
 ]

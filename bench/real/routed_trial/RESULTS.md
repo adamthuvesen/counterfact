@@ -10,19 +10,25 @@ Models: `claude-haiku-4-5-20251001` (small) and `claude-sonnet-4-6` (large). Run
 ## Results
 
 ```bash
-uv run python -m bench.real.analyze_routed_trial bench/real/routed_trial
+uv run --locked python -m bench.real.analyze_routed_trial bench/real/routed_trial
 ```
+
+<!-- BEGIN GENERATED ROUTED RESULTS -->
 
 Trial runs: 402. Routed runs: 398.
 
 | Estimate | Source | Effect of large vs small | 95% interval |
 | --- | --- | ---: | --- |
-| Randomized trial | trial, difference in means | +0.252 | [+0.184, +0.320] |
+| Randomized trial | trial, difference in means (Newcombe-Wilson CI) | +0.252 | [+0.183, +0.320] |
 | Naive | routed, pass-rate gap | +0.053 | — |
 | Engine (identified) | routed, AIPW | +0.324 | [+0.197, +0.451] |
 | Engine (bounded) | routed, propensities removed | — | [-0.477, +0.523] (Manski) |
 
 Engine minus trial: +0.072 (z = +0.98, independent samples). Naive minus trial: -0.199.
+
+<!-- END GENERATED ROUTED RESULTS -->
+
+Current reanalysis uses a Newcombe-Wilson interval for the randomized difference in means. It replaces the original Wald interval. The recorded run, pass counts, and point estimates remain unchanged.
 
 The naive gap is too small because the router sends the large model to the hard fixtures, where every arm passes less often. The engine's estimate is statistically compatible with the trial estimate (z = 0.98), and its interval contains it. The trial estimate is itself uncertain, so this is agreement between two independent estimates, not recovery of an exact value. With the propensities removed, the engine returns `bounded`.
 

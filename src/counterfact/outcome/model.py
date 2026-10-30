@@ -13,17 +13,16 @@ which counterfactual queries are meaningful.
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 import numpy as np
-from sklearn.exceptions import ConvergenceWarning  # type: ignore[import-untyped]
 from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyped]
 
+from counterfact.analysis import AnalysisCorpus
+from counterfact.analysis.features import decision_feature_values
+from counterfact.analysis.outcomes import binary_outcome_value
 from counterfact.errors import InsufficientOutcomeSupportError, UnsupportedOutcomeError
-from counterfact.outcome.binary import binary_outcome_value
-from counterfact.outcome.features import decision_feature_values
 from counterfact.schema import Run
 
 
@@ -41,6 +40,10 @@ class OutcomeModel:
     seed: int | None = 0
     feature_index: dict[str, int] = field(default_factory=dict)
     outcome_kind: str = "binary"
+    corpus: AnalysisCorpus = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.corpus = AnalysisCorpus(self.runs, seed=self.seed)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Sigmoid of (X @ coef + intercept). Shape: (n,)."""
@@ -90,10 +93,8 @@ def _featurize(runs: list[Run]) -> tuple[np.ndarray, np.ndarray, list[str], dict
 def fit_logistic(
     X: np.ndarray, y: np.ndarray, sample_weight: np.ndarray | None = None
 ) -> LogisticRegression:
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=ConvergenceWarning)
-        lr = LogisticRegression(max_iter=1000, solver="lbfgs", C=1.0)
-        lr.fit(X, y, sample_weight=sample_weight)
+    lr = LogisticRegression(max_iter=1000, solver="lbfgs", C=1.0)
+    lr.fit(X, y, sample_weight=sample_weight)
     return lr
 
 
@@ -103,7 +104,7 @@ def fit_outcome_model(
     seed: int | None = 0,
 ) -> OutcomeModel:
     """Fit a corpus-wide logistic regression; `seed` drives intervene's cross-fit folds."""
-    runs = list(traces)
+    runs = AnalysisCorpus(traces, seed=seed).runs
     _assert_binary(runs)
     if not runs:
         raise ValueError("fit_outcome_model requires at least one trace")

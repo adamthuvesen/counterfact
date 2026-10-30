@@ -16,12 +16,12 @@ from __future__ import annotations
 import dataclasses
 import importlib.util
 from pathlib import Path
+from types import TracebackType
 from typing import Any
 
 from counterfact.adapters._common import (
     IngestReceipt,
     randomization_warning,
-    read_existing_receipt_count,
     write_corpus,
 )
 from counterfact.adapters.claude_agent_sdk import SOURCE_FORMAT, run_from_messages
@@ -40,33 +40,29 @@ class ClaudeAgentTracer:
         self.output_dir = Path(output_dir)
         self._messages: list[dict[str, Any]] = []
         self._sdk_available = importlib.util.find_spec("claude_agent_sdk") is not None
-        # Track traces written by this tracer instance; seeded from any
-        # pre-existing receipt on first write so a restarted session keeps
-        # extending the count rather than overwriting it with 1.
-        self._cumulative_count = 0
-        self._seeded_from_disk = False
 
     async def __aenter__(self) -> ClaudeAgentTracer:
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         # Flush even on exception so partial sessions aren't silently lost.
         # If the message stream never produced a ResultMessage, run_from_messages
         # raises IngestError; let that bubble up.
         if not self._messages:
             return None
         run = run_from_messages(self._messages)
-        if not self._seeded_from_disk:
-            self._cumulative_count = read_existing_receipt_count(self.output_dir)
-            self._seeded_from_disk = True
-        self._cumulative_count += 1
         receipt = IngestReceipt(
             source_format=SOURCE_FORMAT,
             source_file="<live-tracer>",
-            generated_count=self._cumulative_count,
+            generated_count=0,
             warnings=[randomization_warning(SOURCE_FORMAT)],
         )
-        write_corpus([run], self.output_dir, receipt)
+        write_corpus([run], self.output_dir, receipt, append=True)
         return None
 
     def observe(self, message: Any) -> None:

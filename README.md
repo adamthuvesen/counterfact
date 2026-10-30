@@ -16,14 +16,14 @@ Every answer carries a label, checked against the data:
 
 ![Single-decision bias by estimator](https://raw.githubusercontent.com/adamthuvesen/counterfact/main/docs/figures/single-decision-bias.svg)
 
-The benchmark scores three estimators on eight causal models built to break them, with an exact true effect for each. The naive pass-rate gap and an adjust-everything g-formula are off by up to 0.31. `counterfact` has a mean bias within 0.01, or it refuses. For whole policies over several decisions, such as "retry only when the tests fail", filtering the logs gets the answer backwards and `counterfact` stays unbiased.
+The benchmark compares three estimators on causal models with exact true effects. It tests confounding, downstream adjustment, missing propensities, and whole policies. The [generated results](docs/benchmark-results.md) show estimation error, interval coverage, and refusals.
 
-On 800 real coding-agent traces with a confounded model router, the naive gap says the large model adds 0.05 to the pass rate. A randomized trial in the same run says 0.25. `counterfact`, given only the routed runs, says 0.32, with a 95% CI of [0.20, 0.45]. The two estimates agree within sampling noise. The naive gap does not. The [technical report](https://github.com/adamthuvesen/counterfact/blob/main/docs/report.md) covers the method, the results, and the limits.
+The committed real-agent experiment compares a confounded router with an independent randomized arm. Its [current reanalysis](bench/real/routed_trial/RESULTS.md) shows agreement within sampling uncertainty. The [technical report](https://github.com/adamthuvesen/counterfact/blob/main/docs/report.md) covers the method, the results, and the limits.
 
 ## Install
 
 ```bash
-uv pip install -e ".[dev]"
+uv sync --locked --extra dev --extra bench
 ```
 
 Requires Python 3.13 or later. The wheel ships only the library. The real-agent harness under `bench/` needs a checkout and the `bench` extra.
@@ -33,52 +33,34 @@ Requires Python 3.13 or later. The wheel ships only the library. The real-agent 
 The demo runs on synthetic traces with a known true effect. It needs no API keys:
 
 ```bash
-uv run counterfact demo --confound --synthetic-n 1000 --seed 42
+uv run --locked counterfact demo --confound --synthetic-n 1000 --seed 42
 ```
 
-```text
-counterfact demo: naive vs honest
-data: synthetic SCM (confounded, n=1000, seed=42)
-outcomes: 514 pass / 486 fail
-
-pass_rate_by_arm(model_call)
-arm              n  pass  rate    95% CI
-haiku          581   212 0.365  [0.327, 0.405]
-sonnet         419   302 0.721  [0.676, 0.762]
-
-intervene(model_call: haiku -> sonnet)
-identifiability: identified
-outcome_delta: +0.255 [+0.179, +0.330]  (AIPW, cross-fit)
-cross-check: g-formula +0.251, IPW +0.251; min propensity 0.20/0.20
-next_step: increase_n - CI width 0.150 > 0.10; ~2264 traces would tighten it.
-naive_vs_causal_contrast: naive arm gap = +0.356; causal arm gap (AIPW) = +0.255; the marginal table overstates what the corpus supports — see DAG and assumptions.
-```
-
-The table reports a gap of +0.356 between the models. The true effect is +0.233. The causal estimate is +0.255, and its CI contains the truth. The table is descriptive. It says what happened in the logs, not what switching models would do.
+The demo prints a descriptive pass-rate table, an identified causal contrast, and concrete next-step guidance. The synthetic model provides a known truth for comparison. [The demo guide](docs/demo-excerpt.md) explains the results and the confounding example.
 
 ## Use it on your agent
 
 Capture traces live with `ClaudeAgentTracer` (Claude Agent SDK) or `CounterfactSpanProcessor` (OpenAI Agents SDK), or ingest an export:
 
 ```bash
-uv run counterfact ingest claude-agent-sdk traces.jsonl --output-dir corpus/
+uv run --locked counterfact ingest claude-agent-sdk traces.jsonl --output-dir corpus/
 ```
 
 Then ask questions of the corpus:
 
 ```bash
 # Rank the decisions most likely to explain a failed run
-uv run counterfact diagnose corpus/<run-id>.json --runs-dir corpus/ --html report.html
+uv run --locked counterfact diagnose corpus/<run-id>.json --runs-dir corpus/ --html report.html
 
 # Estimate the effect of one decision
-uv run counterfact intervene corpus/<run-id>.json --runs-dir corpus/ \
+uv run --locked counterfact intervene corpus/<run-id>.json --runs-dir corpus/ \
   --decision-id <decision-id> --set model_choice=small
 
 # Evaluate a whole policy, such as "use sonnet and retry only when tests fail"
-uv run counterfact evaluate-policy corpus/ --policy policy.json --observation-key tests_passed
+uv run --locked counterfact evaluate-policy corpus/ --policy policy.json --observation-key tests_passed
 ```
 
-The same functions are available from Python: `intervene`, `evaluate_policy`, `fit_outcome_model`, and `pass_rate_by_arm`. [docs/usage.md](docs/usage.md) documents the analysis commands, the trace adapters, the policy format, and the core objects.
+From Python, use `AnalysisCorpus` with `intervene` for a focal decision or `contrast` for a first-occurrence total effect. `evaluate_policy` handles sequential rules. `fit_outcome_model` remains an optional descriptive fit. [docs/usage.md](docs/usage.md) documents the analysis commands, the trace adapters, the policy format, and the core objects.
 
 ## Documentation
 
@@ -86,18 +68,20 @@ The same functions are available from Python: `intervene`, `evaluate_policy`, `f
 - [Usage](docs/usage.md): CLI reference, adapters, and core objects.
 - [Architecture](docs/architecture.md): how the code is organized.
 - [Invariants](docs/invariants.md): the guarantees every change must keep.
+- [Migration](docs/migration.md): analysis snapshots, corpus recovery, and versioned exports.
 - [Real-agent harness](bench/real/README.md): a budgeted coding-agent benchmark with its own randomized trial.
 
 ## Development
 
 ```bash
-uv sync --extra dev
-uv run pre-commit install
 make ci
+make verify
 ```
 
-`make ci` runs lint, type checks, and tests with coverage. The benchmark suite runs locally and makes no API calls:
+`make ci` runs the shared offline checks. `make verify` adds generated artifacts, installed-wheel consumers, and Docker execution checks. The Docker verifier requires a running Linux-container engine and its pinned image. See the [real-agent guide](bench/real/README.md).
+
+Synthetic benchmarks require a checkout and make no provider calls:
 
 ```bash
-uv run counterfact bench suite --seeds 500
+uv run --locked counterfact bench suite --seeds 500
 ```

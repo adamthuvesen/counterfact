@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.fixtures.coding_agent import REFERENCES_ROOT
+
 # --- Phase A: csv_dedupe fixture content + registry ------------------------
 
 
@@ -177,9 +179,9 @@ def test_csv_dedupe_reference_implementation_passes_both_sets(tmp_path: Path) ->
     shutil.copytree(csv_dedupe.root, workspace)
 
     # Reference implementation lives next to the buggy one for review purposes.
-    reference = csv_dedupe.root / "src" / "_dedupe_reference.py"
+    reference = REFERENCES_ROOT / "_dedupe_reference.py"
     assert reference.is_file(), (
-        "csv_dedupe must ship a reference implementation at src/_dedupe_reference.py "
+        "tests must retain a trusted csv_dedupe reference implementation "
         "so the fixture's hidden tests are demonstrably satisfiable"
     )
     # Replace buggy module with reference.
@@ -865,10 +867,7 @@ def _stub_llm_returning(text: str) -> object:
 
 def _csv_dedupe_reference_fence() -> str:
     """The reference implementation source, fenced for the prompt protocol."""
-    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
-
-    csv = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
-    ref = (csv.root / "src" / "_dedupe_reference.py").read_text()
+    ref = (REFERENCES_ROOT / "_dedupe_reference.py").read_text()
     return f"```python\n{ref}```"
 
 
@@ -891,6 +890,7 @@ def _csv_dedupe_buggy_fence() -> str:
     )
 
 
+@pytest.mark.container
 def test_hidden_outcome_when_reference_passes_both(tmp_path: Path) -> None:
     """Req: Hidden-test verifier runs once after the loop and defines Outcome
     Req: Outcome metadata records public, hidden, and generalization gap
@@ -922,6 +922,7 @@ def test_hidden_outcome_when_reference_passes_both(tmp_path: Path) -> None:
     assert md["generalization_gap"] is False
 
 
+@pytest.mark.container
 def test_stateful_raw_class_response_is_extracted_and_evaluated(
     tmp_path: Path,
 ) -> None:
@@ -935,7 +936,7 @@ def test_stateful_raw_class_response_is_extracted_and_evaluated(
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe")
-    reference = (fixture.root / "src" / "_watermark_dedupe_reference.py").read_text()
+    reference = (REFERENCES_ROOT / "_watermark_dedupe_reference.py").read_text()
     run = run_one_trace(
         fixture,
         run_index=0,
@@ -957,6 +958,7 @@ def test_stateful_raw_class_response_is_extracted_and_evaluated(
     assert run.outcome.metadata["hidden_pass"] is True
 
 
+@pytest.mark.container
 def test_hidden_outcome_records_generalization_gap(tmp_path: Path) -> None:
     """Req: Outcome metadata records public, hidden, and generalization gap
     Req: Hidden-test verifier runs once after the loop and defines Outcome
@@ -984,6 +986,7 @@ def test_hidden_outcome_records_generalization_gap(tmp_path: Path) -> None:
     assert md["generalization_gap"] is True
 
 
+@pytest.mark.container
 def test_hidden_outcome_when_no_patch_extracted(tmp_path: Path) -> None:
     """When the model returns no fenced block, src/ stays buggy. Public tests
     still pass on the buggy src (by fixture invariant), so we must still see
@@ -1009,6 +1012,7 @@ def test_hidden_outcome_when_no_patch_extracted(tmp_path: Path) -> None:
     assert run.outcome.value is False
 
 
+@pytest.mark.container
 def test_hidden_eval_runs_exactly_once_per_trace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1021,16 +1025,16 @@ def test_hidden_eval_runs_exactly_once_per_trace(
 
     csv = next(fx for fx in fixtures_mod.HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
     calls: list[Path] = []
-    real_hidden = fixtures_mod.run_pytest_hidden
+    from bench.real.coding_agent.executor import DockerExecutor
 
-    def _spy(workspace: Path, *, timeout_s: int = 30) -> tuple[bool, str]:
-        calls.append(workspace)
-        return real_hidden(workspace, timeout_s=timeout_s)
+    real_run = DockerExecutor.run
 
-    # Patch the symbol that agent.py imports so the spy is observed there.
-    import bench.real.coding_agent.agent as agent_mod
+    def _spy(self, source: Path, tests: Path, *, target: str, timeout_s: int = 30):
+        if target == "tests_hidden":
+            calls.append(tests)
+        return real_run(self, source, tests, target=target, timeout_s=timeout_s)
 
-    monkeypatch.setattr(agent_mod, "run_pytest_hidden", _spy, raising=True)
+    monkeypatch.setattr(DockerExecutor, "run", _spy)
     budget = BudgetTracker(cap_usd=1.0)
     run_one_trace(
         csv,
@@ -1043,6 +1047,7 @@ def test_hidden_eval_runs_exactly_once_per_trace(
     assert len(calls) == 1, f"expected hidden eval to run once, got {len(calls)}"
 
 
+@pytest.mark.container
 def test_retry_prompt_tail_comes_from_public_not_hidden(tmp_path: Path) -> None:
     """Req: Public-test verifier runs only public tests during the agent loop
     WHEN the agent's first run_tests step on a hidden-fixture reports a failure
@@ -1088,6 +1093,7 @@ def test_retry_prompt_tail_comes_from_public_not_hidden(tmp_path: Path) -> None:
 # --- Phase E: single-suite fixture layout ----------------------------------
 
 
+@pytest.mark.container
 def test_v0_fixture_outcome_unchanged(tmp_path: Path) -> None:
     """Req: Hidden-fixture traces use a distinct verifier label
     Req: MODIFIED Real-agent family generates traces from a coding-agent loop
@@ -1134,6 +1140,7 @@ def test_v0_fixture_outcome_unchanged(tmp_path: Path) -> None:
 # --- Phase F: CLI --fixtures flag ------------------------------------------
 
 
+@pytest.mark.container
 def test_run_real_corpus_with_fixtures_csv_dedupe(tmp_path: Path) -> None:
     """Req: Pilot gate before scaling to additional hidden fixtures
     WHEN the corpus generator is invoked with --fixtures csv_dedupe
@@ -1275,7 +1282,7 @@ def test_streaming_watermark_dedupe_reference_passes_hidden(
     workspace = tmp_path / "streaming_watermark_dedupe"
     shutil.copytree(fixture.root, workspace)
 
-    reference = fixture.root / "src" / "_watermark_dedupe_reference.py"
+    reference = REFERENCES_ROOT / "_watermark_dedupe_reference.py"
     assert reference.is_file()
     target = workspace / "src" / fixture.source_relpath
     target.write_text(reference.read_text())

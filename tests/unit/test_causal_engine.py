@@ -598,7 +598,7 @@ def test_attribute_failure__empty_corpus_yields_empty_ranking(fitted: object) ->
     assert attribution.top_k(5) == []
 
 
-def test_attribute_failure__multi_decision_step_is_unidentified(
+def test_attribute_failure__mixed_type_step_uses_explicit_decision_ids(
     fitted: object,
 ) -> None:
     run = Run(
@@ -625,8 +625,9 @@ def test_attribute_failure__multi_decision_step_is_unidentified(
     )
     entries = attribute_failure(dag=build_dag(run), model=fitted).top_k(10)
     assert entries
-    assert {e.identifiability for e in entries} == {IdentifiabilityStatus.UNIDENTIFIED}
-    assert all(e.influence == 0.0 for e in entries)
+    assert {e.identifiability for e in entries} == {IdentifiabilityStatus.IDENTIFIED}
+    assert all(e.estimate is not None for e in entries)
+    assert all(e.estimate.query.step == 0 for e in entries if e.estimate is not None)
 
 
 # --- Stacked uncertainty / no-silent-L3 -------------------------------------

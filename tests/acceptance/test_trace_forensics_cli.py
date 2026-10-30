@@ -137,7 +137,11 @@ def test_diagnose_cli__missing_run_exits_2(
     rc = main(["diagnose", str(tmp_path / "missing.json")])
 
     assert rc == 2
-    assert "run JSON not found" in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "counterfact diagnose: cannot read" in captured.err
+    assert str(tmp_path / "missing.json") in captured.err
+    assert "Traceback" not in captured.err
 
 
 def test_diagnose_cli__focal_not_in_corpus_exits_2(
@@ -153,8 +157,11 @@ def test_diagnose_cli__focal_not_in_corpus_exits_2(
     rc = main(["diagnose", str(paths[0]), "--runs-dir", str(other_dir)])
 
     assert rc == 2
-    err = capsys.readouterr().err
-    assert "not found" in err
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "focal run 'intruder-run' is not present in the supplied corpus" in captured.err
+    assert str(other_dir) in captured.err
+    assert "Traceback" not in captured.err
     assert other_paths[0].exists()
 
 

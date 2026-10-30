@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import json
 import math
 import os
 import sys
 import tempfile
+import uuid
 from collections.abc import Callable
 from pathlib import Path
+from typing import TextIO
 
 from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
 from bench.real.coding_agent.budget import BudgetExceeded, BudgetTracker
+from bench.real.coding_agent.executor import DockerExecutor, ExecutorUnavailable
 from bench.real.coding_agent.fixtures import (
     BROAD_CALIBRATION_FIXTURES,
     EASY_FIXTURES,
@@ -91,17 +95,19 @@ def _approval_error(marker_path: Path, expected: dict[str, object]) -> str | Non
     if approved_at == "<ISO-8601 timestamp>":
         return "approval receipt approved_at still contains the template placeholder"
 
+    expected_traces = expected["max_traces"]
+    expected_budget = expected["budget_cap_usd"]
+    assert isinstance(expected_traces, int)
+    assert isinstance(expected_budget, int | float)
     max_traces = receipt.get("max_traces")
-    if not isinstance(max_traces, int) or max_traces < int(expected["max_traces"]):
+    if not isinstance(max_traces, int) or max_traces < expected_traces:
         return (
             "approval receipt max_traces is lower than this invocation "
             f"({max_traces!r} < {expected['max_traces']!r})"
         )
 
     budget = receipt.get("budget_cap_usd")
-    if not isinstance(budget, int | float) or not math.isclose(
-        float(budget), float(expected["budget_cap_usd"])
-    ):
+    if not isinstance(budget, int | float) or not math.isclose(float(budget), expected_budget):
         return (
             "approval receipt budget_cap_usd does not match this invocation "
             f"({budget!r} != {expected['budget_cap_usd']!r})"
@@ -165,7 +171,7 @@ def print_approval_prompt(
     marker_path: Path | None = None,
     expected_receipt: dict[str, object] | None = None,
     reason: str | None = None,
-    stream=sys.stderr,
+    stream: TextIO = sys.stderr,
 ) -> None:
     """Render the first-run prompt the user sees before any API call."""
     marker = marker_path or APPROVAL_MARKER
@@ -264,7 +270,7 @@ def _completed_indices(output_dir: Path) -> set[int]:
     return out
 
 
-def _completed_spend(output_dir: Path) -> float:
+def _completed_spend(output_dir: Path, *, ledger_calls: dict[str, float] | None = None) -> float:
     """Sum cost observations from already-written traces."""
     spent = 0.0
     for path in output_dir.glob("real-*.json"):
@@ -297,42 +303,74 @@ def _completed_spend(output_dir: Path) -> float:
                     )
                 cost = content.get("cost_usd")
                 if cost is not None:
-                    spent += _spend_value(cost, source=f"{path}: observation cost_usd")
+                    parsed_cost = _spend_value(cost, source=f"{path}: observation cost_usd")
+                    call_id = content.get("call_id")
+                    if (
+                        isinstance(call_id, str)
+                        and ledger_calls is not None
+                        and call_id in ledger_calls
+                    ):
+                        if parsed_cost != ledger_calls[call_id]:
+                            raise BudgetLedgerError(
+                                f"{path}: cost conflicts with ledger for {call_id}"
+                            )
+                    else:
+                        spent += parsed_cost
     return spent
+
+
+def _read_ledger(ledger_path: Path) -> tuple[float, dict[str, float]]:
+    """Read legacy costs and v2 calls. Pending calls fail closed on resume."""
+    legacy = 0.0
+    pending: set[str] = set()
+    priced: dict[str, float] = {}
+    try:
+        lines = ledger_path.read_text().splitlines()
+    except FileNotFoundError:
+        return legacy, priced
+    for line_number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+            if not isinstance(entry, dict):
+                raise ValueError("entry must be an object")
+            if "schema_version" not in entry:
+                legacy += _spend_value(entry["cost_usd"], source=str(ledger_path))
+                continue
+            if entry["schema_version"] != 2:
+                raise ValueError("unsupported ledger schema_version")
+            call_id = entry["call_id"]
+            if not isinstance(call_id, str) or not call_id:
+                raise ValueError("call_id must be a non-empty string")
+            if entry["state"] == "pending" and call_id not in pending:
+                pending.add(call_id)
+            elif entry["state"] == "priced" and call_id in pending and call_id not in priced:
+                priced[call_id] = _spend_value(entry["cost_usd"], source=str(ledger_path))
+            else:
+                raise ValueError("invalid call state transition")
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            raise BudgetLedgerError(
+                f"{ledger_path}:{line_number}: cannot read cost_usd safely: {exc}"
+            ) from exc
+    unresolved = pending - priced.keys()
+    if unresolved:
+        raise BudgetLedgerError(
+            f"{ledger_path}: unknown cost for pending calls {sorted(unresolved)}; "
+            "reconcile before resume"
+        )
+    return legacy, priced
 
 
 def _ledger_spend(ledger_path: Path) -> float:
-    """Sum unflushed spend from the budget ledger.
-
-    The agent appends each priced LLM response to this file *before* calling
-    `budget.add`. After a trace JSON is successfully written, the runner
-    truncates the ledger — so any entries that survive represent costs that
-    never made it into a committed trace (typically because `BudgetExceeded`
-    fired). Resume initializes spend from `_completed_spend() + _ledger_spend()`
-    so the budget gate cannot be re-crossed for free.
-    """
-    spent = 0.0
-    try:
-        with ledger_path.open() as f:
-            for line_number, line in enumerate(f, start=1):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    spent += float(json.loads(line)["cost_usd"])
-                except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-                    raise BudgetLedgerError(
-                        f"{ledger_path}:{line_number}: cannot read cost_usd; "
-                        "refusing to resume because prior spend cannot be "
-                        "accounted safely"
-                    ) from exc
-    except FileNotFoundError:
-        return 0.0
-    return spent
+    legacy, calls = _read_ledger(ledger_path)
+    return legacy + sum(calls.values())
 
 
 def _spend_value(value: object, *, source: str) -> float:
     try:
+        if isinstance(value, bool) or not isinstance(value, int | float | str):
+            raise ValueError("expected a number")
         cost = float(value)
     except (TypeError, ValueError) as exc:
         raise BudgetLedgerError(f"{source} is not a number: {value!r}") from exc
@@ -407,7 +445,7 @@ def run_real_corpus(
     config: AgentRunConfig | None = None,
     sandbox_root: Path | None = None,
     marker_path: Path | None = None,
-    write_to_stream=sys.stdout,
+    write_to_stream: TextIO = sys.stdout,
     fixture_ids: tuple[str, ...] | None = None,
     fixture_set: str | None = None,
 ) -> int:
@@ -418,6 +456,11 @@ def run_real_corpus(
     call.
     """
     config = config or AgentRunConfig()
+    try:
+        BudgetTracker(cap_usd=budget_cap_usd)
+    except ValueError as exc:
+        print(f"counterfact bench real: {exc}", file=sys.stderr)
+        return 2
     fixtures = resolve_fixtures(fixture_ids, fixture_set)
     route_error = _route_error(config, fixtures)
     if route_error is not None:
@@ -442,6 +485,27 @@ def run_real_corpus(
         )
         return 2
 
+    for fixture in fixtures:
+        required = [
+            fixture.source_path,
+            fixture.test_path,
+            fixture.public_test_path,
+            fixture.hidden_test_path,
+        ]
+        if fixture.public_tests_relpath is not None:
+            required.append(fixture.root / "spec.md")
+        missing = [str(path) for path in required if path is not None and not path.is_file()]
+        if missing:
+            print(f"Fixture prerequisites missing: {missing}", file=sys.stderr)
+            return 8
+
+    executor = DockerExecutor()
+    try:
+        executor.preflight()
+    except ExecutorUnavailable as exc:
+        print(f"counterfact bench real: {exc}", file=sys.stderr)
+        return 8
+
     # Credential pre-flight. Catches the missing-key case before any agent
     # work starts — otherwise the first model_call dies mid-trace and you
     # wake up to a half-written corpus. Skipped when a custom client factory
@@ -453,39 +517,50 @@ def run_real_corpus(
             return 4
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_dir = _checkpoint_dir(output_dir)
-    done = _completed_indices(output_dir)
-    identity = _run_identity(fixtures=fixtures, config=config, role_to_model=ROLE_TO_MODEL)
-    identity_error = _identity_error(
-        checkpoint_dir,
-        identity,
-        has_completed_traces=bool(done),
-    )
-    if identity_error is not None:
-        print(identity_error, file=sys.stderr)
-        return 6
-
-    ledger_path = checkpoint_dir / "budget_ledger.jsonl"
-    try:
-        spent_usd = _completed_spend(output_dir) + _ledger_spend(ledger_path)
-    except BudgetLedgerError as exc:
-        print(f"Budget accounting failed: {exc}", file=sys.stderr)
-        return 7
-    budget = BudgetTracker(cap_usd=budget_cap_usd, spent_usd=spent_usd)
-    if budget.spent_usd >= budget.halt_threshold:
-        print(
-            f"Budget cap {int(budget.halt_fraction * 100)}% reached: "
-            f"${budget.spent_usd:.4f} of ${budget.cap_usd:.2f}\n"
-            "Wrote 0 traces; resume to continue.",
-            file=sys.stderr,
-        )
-        return 3
-    llm = (llm_client_factory or LiteLLMClient)()
-
-    progress_path = checkpoint_dir / "progress.jsonl"
-
-    written = 0
     with contextlib.ExitStack() as stack:
+        checkpoint_dir = _checkpoint_dir(output_dir)
+        lock = stack.enter_context((checkpoint_dir / "run.lock").open("a"))
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("Another runner owns this output directory", file=sys.stderr)
+            return 9
+        done = _completed_indices(output_dir)
+        identity = _run_identity(fixtures=fixtures, config=config, role_to_model=ROLE_TO_MODEL)
+        identity_error = _identity_error(
+            checkpoint_dir,
+            identity,
+            has_completed_traces=bool(done),
+        )
+        if identity_error is not None:
+            print(identity_error, file=sys.stderr)
+            return 6
+
+        ledger_path = checkpoint_dir / "budget_ledger.jsonl"
+        try:
+            legacy_spend, ledger_calls = _read_ledger(ledger_path)
+            spent_usd = (
+                _completed_spend(output_dir, ledger_calls=ledger_calls)
+                + legacy_spend
+                + sum(ledger_calls.values())
+            )
+        except BudgetLedgerError as exc:
+            print(f"Budget accounting failed: {exc}", file=sys.stderr)
+            return 7
+        budget = BudgetTracker(cap_usd=budget_cap_usd, spent_usd=spent_usd)
+        if budget.spent_usd >= budget.halt_threshold:
+            print(
+                f"Budget cap {int(budget.halt_fraction * 100)}% reached: "
+                f"${budget.spent_usd:.4f} of ${budget.cap_usd:.2f}\n"
+                "Wrote 0 traces; resume to continue.",
+                file=sys.stderr,
+            )
+            return 3
+        llm = (llm_client_factory or LiteLLMClient)()
+
+        progress_path = checkpoint_dir / "progress.jsonl"
+
+        written = 0
         if sandbox_root is None:
             sandbox = Path(
                 stack.enter_context(tempfile.TemporaryDirectory(prefix="counterfact-real-"))
@@ -505,12 +580,25 @@ def run_real_corpus(
                     sandbox_root=sandbox,
                     config=config,
                     ledger_path=ledger_path,
+                    executor=executor,
                 )
                 out_path = output_dir / f"real-{fixture.fixture_id}-{i:06d}.json"
-                out_path.write_text(run.model_dump_json(indent=2))
-                # Trace owns its costs now; drop the unflushed-spend ledger so
-                # the next iteration starts with a clean slate.
-                ledger_path.unlink(missing_ok=True)
+                if run.outcome.verifier == "infrastructure_error":
+                    attempts = checkpoint_dir / "attempts"
+                    attempts.mkdir(exist_ok=True)
+                    attempt_path = attempts / f"{run.run_id}-{uuid.uuid4().hex}.json"
+                    attempt_path.write_text(run.model_dump_json(indent=2))
+                    print(
+                        f"Verifier infrastructure failure. Attempt retained at {attempt_path}",
+                        file=sys.stderr,
+                    )
+                    return 8
+                temporary = out_path.with_suffix(".json.tmp")
+                with temporary.open("w") as stream:
+                    stream.write(run.model_dump_json(indent=2))
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                temporary.replace(out_path)
                 written += 1
                 with progress_path.open("a") as f:
                     f.write(json.dumps({"index": i, "fixture": fixture.fixture_id}) + "\n")
@@ -526,5 +614,5 @@ def run_real_corpus(
             print(f"Cost accounting failed: {exc}", file=sys.stderr)
             return 5
 
-    print(f"Wrote {written} new traces to {output_dir}", file=write_to_stream)
-    return 0
+        print(f"Wrote {written} new traces to {output_dir}", file=write_to_stream)
+        return 0

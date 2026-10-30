@@ -13,10 +13,11 @@ from typing import Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from counterfact.analysis import AnalysisCorpus
+from counterfact.analysis.outcomes import binary_outcome_value
 from counterfact.attribute import FailureAttribution, attribute_failure
 from counterfact.baselines import PassRateTable, pass_rate_by_arm
 from counterfact.dag import DAG, build_dag
-from counterfact.errors import InsufficientOutcomeSupportError
 from counterfact.intervene.degenerate import degenerate_estimate, outcome_classes
 from counterfact.intervene.estimate import (
     CausalEstimate,
@@ -24,9 +25,7 @@ from counterfact.intervene.estimate import (
     InterventionQuery,
     NextStep,
 )
-from counterfact.outcome import fit_outcome_model
-from counterfact.outcome.binary import binary_outcome_value
-from counterfact.schema import DecisionTypeLiteral, Run
+from counterfact.schema import DecisionTypeLiteral, Run, require_focal
 from counterfact.taxonomy import default_intervention_kind, first_observed_arm
 
 
@@ -147,14 +146,16 @@ def build_report(
 
     Single-class corpora (no outcome variation) skip `fit_outcome_model`
     entirely and surface the shared degenerate refusal. Mixed-outcome
-    corpora fit the outcome model once and run `attribute_failure` over the
+    corpora validate analysis facts and run `attribute_failure` over the
     focal run's DAG; the resulting `FailureAttribution.entries` carry their
     own `CausalEstimate`s and `IdentifiabilityStatus`.
     """
     if not corpus:
         raise ValueError("build_report requires a non-empty corpus")
-    if focal_run.run_id not in {r.run_id for r in corpus}:
-        raise ValueError(f"focal run {focal_run.run_id!r} is not present in the supplied corpus")
+    analysis = AnalysisCorpus(corpus, seed=seed)
+    corpus = analysis.runs
+    focal_run = Run.model_validate(focal_run.model_dump())
+    require_focal(focal_run, corpus)
 
     intervention_kind = default_intervention_kind(decision_type)
     table = pass_rate_by_arm(corpus, decision_type)
@@ -191,15 +192,13 @@ def build_report(
             target_arm=target,
         )
 
-    try:
-        model = fit_outcome_model(corpus, seed=seed)
-    except InsufficientOutcomeSupportError as exc:
+    if not analysis.feature_index:
         target = first_observed_arm(corpus, decision_type)
         estimate = _no_feature_estimate(
             decision_type=decision_type,
             intervention_kind=intervention_kind,
             target=target,
-            reason=str(exc),
+            reason="the corpus has no intervenable decision features",
         )
         return _report_shell(
             focal_run,
@@ -208,10 +207,10 @@ def build_report(
             attribution=FailureAttribution(entries=[]),
             degenerate_estimate=estimate,
             target_arm=target,
-            notes=[str(exc)],
+            notes=["the corpus has no intervenable decision features"],
         )
 
-    attribution = attribute_failure(dag=dag, model=model)
+    attribution = attribute_failure(dag=dag, model=analysis)
     return _report_shell(
         focal_run,
         corpus,

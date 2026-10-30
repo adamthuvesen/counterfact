@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from counterfact.analysis.facts import RunFact
 from counterfact.errors import UnsupportedOutcomeError
 from counterfact.schema import Run
 
 
-def binary_outcome_value(run: Run) -> bool:
+def binary_outcome_value(run: Run | RunFact) -> bool:
     """Return `Outcome.value` for binary runs; reject other outcome kinds."""
     if run.outcome.kind != "binary":
         raise UnsupportedOutcomeError(

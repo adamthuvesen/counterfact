@@ -48,7 +48,7 @@ def test_build_report__never_calls_fit_outcome_model_on_single_class(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The honesty contract: no model fit on single-class corpora."""
-    import counterfact.explain.report as report_module
+    import counterfact.outcome.model as model_module
 
     calls = {"n": 0}
 
@@ -56,7 +56,7 @@ def test_build_report__never_calls_fit_outcome_model_on_single_class(
         calls["n"] += 1
         raise AssertionError("fit_outcome_model must not be called on a single-class corpus")
 
-    monkeypatch.setattr(report_module, "fit_outcome_model", fail_if_called)
+    monkeypatch.setattr(model_module, "fit_outcome_model", fail_if_called)
 
     corpus = single_class_refusal_corpus()
     focal = corpus[0]

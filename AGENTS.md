@@ -1,76 +1,55 @@
 # AGENTS.md - counterfact
 
-`counterfact` is a Python research library for understanding agent decision traces through counterfactual questions: if the agent had called a different model, used a different tool, retried, or stopped later, would it have been more likely to complete the task? Make causal claims only when the logged data, graph, support, and assumptions can support them. A useful `unidentified` result is better than a confident fake counterfactual.
+`counterfact` answers causal questions about agent traces. Missing support must remain visible. A useful `unidentified` result is better than a fabricated counterfactual.
 
-User-level guidance (tone, principles, git etiquette, Python defaults) lives in `~/.claude/CLAUDE.md` and `~/dotfiles/agents/AGENTS.md` and is *not* duplicated here. This file is for project-specific facts.
+## Start here
 
-## Layout
-
-```
-src/counterfact/
-├── schema/      strict trace schema, the producer/consumer contract for CounterBench and adapters
-├── dag/         inspectable per-trace graph construction
-├── outcome/     transparent outcome modeling
-├── intervene/   intervention API, identifiability labels, estimators and bounds, next_step guidance
-├── attribute/   failure attribution ranking
-├── explain/     per-trace narrative: ExplainReport model + stdlib HTML renderer (`counterfact explain`)
-├── adapters/    SDK adapters and live tracers
-└── baselines.py descriptive baselines such as pass-rate tables
-
-bench/synthetic/  deterministic SCM benchmark, safe for CI and local work
-bench/real/       real-agent harness (gated, can spend money) + committed demo/anchor corpora
-notebooks/        demo.ipynb (keep aligned with docs/demo-excerpt.md)
-docs/             deeper subsystem docs, see Index
-```
-
-## Quickstart
+- [docs/repo-context.md](docs/repo-context.md) routes changes to owners and checks.
+- [docs/architecture.md](docs/architecture.md) defines dependency direction and estimands.
+- [docs/invariants.md](docs/invariants.md) governs causal and statistical behavior.
+- [docs/migration.md](docs/migration.md) records analysis and corpus format compatibility.
+- [docs/usage.md](docs/usage.md) documents public commands and APIs.
 
 ```bash
-uv pip install -e ".[dev]"   # install
-uv run ruff check .          # lint
-uv run ruff format --check src tests
-uv run mypy src/counterfact  # types
-uv run pytest                # tests (CI gates at --cov-fail-under=80)
-make ci                      # lint + test in one shot
+make install
+make ci
+make verify
 ```
 
-Local demos:
+`make ci` is the shared offline gate. `make verify` also checks generated artifacts, installed-wheel consumers, and Docker execution. Read the Makefile for their exact commands.
 
-```bash
-uv run counterfact demo --confound --synthetic-n 1000 --seed 42  # canonical showcase
-uv run counterfact demo                                           # real-trace smoke test
-uv run counterfact bench synthetic --n 500 --seed 42 --output-dir /tmp/counterfact-syn
-```
+## Design boundaries
 
-## Critical Conventions
+- Keep pure trace validation in `schema/`. Put immutable analysis facts, chronology, and features in `analysis/`.
+- Use `AnalysisCorpus` for causal inputs. Keep `fit_outcome_model` descriptive and optional.
+- Preserve the distinction between a focal `intervene` query, a first-occurrence `contrast`, and a sequential policy estimand.
+- Route native corpus reads and writes through `corpus_io.py`. CLI loaders only add user-facing errors.
+- Read `docs/invariants.md` before changing estimation, attribution, outcomes, or explanation.
+- Keep the project narrow. Name a concrete caller before adding compatibility shims or abstractions.
+- Ask before adding runtime dependencies. Broad causal or agent frameworks are outside this library's scope.
 
-- **Causal honesty is the product.** Never paper over missing support, single-class outcomes, or replay-only interventions with optimistic estimates. The full guarantees live in [docs/invariants.md](docs/invariants.md). Read it before touching `intervene/`, `outcome/`, or `explain/`.
-- **Smallest coherent change.** Keep this repo sharp and narrow. Do not turn it into a platform. No backward-compat shims, dual paths, or deprecated interfaces unless a concrete caller is named.
-- **Public APIs stay typed and inspectable.** Favor strict Pydantic schemas (`extra="forbid"`) and structured result objects over strings consumers must parse. Use explicit domain names: `decision_type`, `chosen_action`, `identifiability`, `outcome_delta`, `next_step`.
-- **No new runtime dependencies without asking.** The acceptance gate rejects broad causal/agent frameworks: `dowhy`, `causalml`, `pyro`, `langchain`, `langgraph`, `networkx`.
-- **`pass_rate_by_arm()` is descriptive, not causal.** Keep that distinction visible in demos, docs, tests, and CLI output.
-- **Never commit secrets, `.env`, provider credentials, AI-attribution lines, or `.counterfact/` artifacts.**
+The wheel contains `src/counterfact` only. `bench/`, notebook generation, and real-agent execution require a checkout. Do not make installed library commands import checkout-only modules unconditionally.
 
-## Safety Rules For Real-Agent Benchmarks
+## Causal honesty
 
-- `uv run counterfact bench real ...` can make external LLM API calls and incur USD spend. Do not run it casually as a validation step.
-- The harness is protected by `.counterfact/approved`. Do not create that marker for the user, bypass the first-run gate, or commit `.counterfact/` artifacts.
-- If real traces must be generated, ask first and state the exact command, fixture set, output directory, and budget cap.
-- Keep budget behavior conservative. `BudgetTracker` halts at 80% of the cap by design; do not relax that without an explicit requirement.
-- Treat `bench/real/pilot/`, `bench/real/pilot_*`, `bench/synthetic/_out/`, checkpoints, and ad hoc generated corpora as local artifacts unless the task explicitly says to curate and commit a corpus.
+`pass_rate_by_arm()` is descriptive. `identified` requires logged assignment probabilities and checked support. Sampling intervals and identification bounds are separate. A `bounded` result may have no justified interval. AIPW intervals must not be clipped to probability limits.
 
-## Read The Docs First
+Mixed decision types in one step can use explicit decision IDs. Repeated decisions of one type still refuse focal localization. Same-step decisions never enter adjustment sets.
 
-Before editing a subsystem, read the matching `docs/*.md`:
+## Real-agent work
 
-- **Task routing, sync points, validation ladder** → [repo-context.md](docs/repo-context.md)
-- **Causal/statistical invariants** → [invariants.md](docs/invariants.md)
-- **System architecture** → [architecture.md](docs/architecture.md)
-- **Method and results write-up** → [report.md](docs/report.md) (benchmark numbers must match `docs/benchmark-results.json`)
-- **Naive-vs-honest demo surface** → [demo-excerpt.md](docs/demo-excerpt.md) (keep aligned with `notebooks/demo.ipynb`)
+Read [bench/real/README.md](bench/real/README.md) before touching execution, approvals, or spend accounting. The harness can make paid provider calls. Docker checks do not.
 
-[repo-context.md](docs/repo-context.md) owns which tests and corpus checks to run for a given change; pick the narrowest meaningful set there before falling back to full `uv run pytest`. Keep `README.md`, docs, and `notebooks/demo.ipynb` aligned with the real CLI and API, not aspirational features. Do not claim Pearl L3 structural counterfactuals, DAG learning, provider replay guarantees, an observability UI, or calibrated universal success probabilities unless they are actually implemented. If a doc disagrees with code, fix the doc in the same change.
+- Obtain approval before generating real traces. State the exact command, fixtures, destination, and budget cap.
+- Never create or bypass `.counterfact/approved` for the user.
+- Preserve the 80% spend halt and the refusal to resume with unknown charges.
+- Execute generated code through the Docker verifier. Never add a host-execution fallback.
+- Keep infrastructure failures separate from graded task failures.
 
-## Index
+Never commit credentials, `.env`, `.counterfact/`, checkpoints, or ad hoc pilot outputs. Keep corpus promotion explicit.
 
-Start in [repo-context.md](docs/repo-context.md) for the task-routing map, then follow the subsystem docs above.
+## Documentation and artifacts
+
+Use the Makefile's generation targets for derived artifacts. Keep numeric tables in their generated owners and link them from prose. Document interpretation and limitations where judgment is required.
+
+Do not claim structural counterfactuals, learned DAGs, provider replay guarantees, calibrated universal probabilities, or a verifier that prevents candidate cheating. Docker limits host exposure. Candidate code and tests still share the verifier workload.

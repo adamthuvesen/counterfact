@@ -17,16 +17,17 @@ from dataclasses import dataclass
 import numpy as np
 
 from bench.synthetic.sequential import policy_value, sample
-from counterfact.policy import Policy, evaluate_policy
+from counterfact.policy import Policy, PolicyRule, evaluate_policy
+from counterfact.policy.model import HistoryFeature
 from counterfact.schema import Run
 
 N_RUNS = 2000
 
-_ON_FAIL = {
-    "decision_type": "retry",
-    "when": {"source": "observation", "key": "tests_passed"},
-    "cases": {"true": "no_retry", "false": "retry_once"},
-}
+_ON_FAIL = PolicyRule(
+    decision_type="retry",
+    when=HistoryFeature(source="observation", key="tests_passed"),
+    cases={"true": "no_retry", "false": "retry_once"},
+)
 
 
 def _retry_on_fail(passed: bool) -> str:
@@ -51,7 +52,7 @@ class PolicyCase:
 CASES: tuple[PolicyCase, ...] = (
     PolicyCase(
         "always_retry, outcome model blind to tests_passed",
-        Policy(name="always_retry", rules=[{"decision_type": "retry", "action": "retry_once"}]),
+        Policy(name="always_retry", rules=[PolicyRule(decision_type="retry", action="retry_once")]),
         None,
         lambda passed: "retry_once",
         frozenset(),
@@ -60,7 +61,7 @@ CASES: tuple[PolicyCase, ...] = (
     ),
     PolicyCase(
         "always_retry",
-        Policy(name="always_retry", rules=[{"decision_type": "retry", "action": "retry_once"}]),
+        Policy(name="always_retry", rules=[PolicyRule(decision_type="retry", action="retry_once")]),
         None,
         lambda passed: "retry_once",
         frozenset({"tests_passed"}),
@@ -69,7 +70,7 @@ CASES: tuple[PolicyCase, ...] = (
     ),
     PolicyCase(
         "never_retry",
-        Policy(name="never_retry", rules=[{"decision_type": "retry", "action": "no_retry"}]),
+        Policy(name="never_retry", rules=[PolicyRule(decision_type="retry", action="no_retry")]),
         None,
         lambda passed: "no_retry",
         frozenset({"tests_passed"}),
@@ -89,7 +90,7 @@ CASES: tuple[PolicyCase, ...] = (
         "sonnet_then_retry_on_fail",
         Policy(
             name="sonnet_then_retry_on_fail",
-            rules=[{"decision_type": "model_call", "action": "sonnet"}, _ON_FAIL],
+            rules=[PolicyRule(decision_type="model_call", action="sonnet"), _ON_FAIL],
         ),
         "sonnet",
         _retry_on_fail,

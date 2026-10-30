@@ -1,62 +1,45 @@
-# Counterfact Agent Context
+# Repository context
 
-This file is the deeper routing map for agents. `AGENTS.md` stays short; this file tells you what to read, what to keep synchronized, and what to validate when work touches a specific part of the repo.
+Use [architecture.md](architecture.md) for ownership and dependency direction. Read [invariants.md](invariants.md) before changing analysis, estimation, or result presentation. [migration.md](migration.md) records compatibility changes.
 
-## Product Posture
+## Find the owner
 
-`counterfact` should make agent decision traces understandable through honest counterfactual questions: if a logged decision had been different, would the run have been more likely to complete the task? A descriptive pass-rate table can look decisive while still failing to support a causal claim. Every change should preserve the distinction between observed associations, model predictions under declared interventions, support gaps, identification bounds, and replay requirements.
+| Change | Start here | Focused evidence |
+| --- | --- | --- |
+| Trace contract or identities | `schema/models.py`, `schema/validation.py` | `test_trace_schema.py`, `test_analysis_contract.py` |
+| Analysis snapshots, chronology, features | `analysis/` | `test_analysis_contract.py`, causal-engine tests |
+| Decision semantics or graph | `taxonomy/types.py`, `dag/graph.py` | Taxonomy, DAG, and causal-engine tests |
+| Focal intervention or corpus contrast | `intervene/api.py`, `intervene/dispatch.py`, `intervene/estimators.py` | Causal-engine, next-step, and ship-gate tests |
+| Descriptive outcome fit | `outcome/model.py` | Outcome-model and benchmark tests |
+| Policy estimand | `policy/evaluate.py`, `bench/synthetic/sequential.py` | Policy-evaluation and policy-suite tests |
+| Corpus files, receipts, export | `corpus_io.py`, `runrecord_export.py` | Corpus-IO, export, and adapter round-trip tests |
+| Provider shape mapping | `adapters/`, `tracing/` | Adapter, parity, shape-drift, and live-tracer tests |
+| Analysis readiness | `corpus_analyzer/` | Analyzer, CLI-analyze, and analyzer-self-test tests |
+| Diagnosis or explanation | `attribute/`, `diagnose.py`, `explain/` | Diagnosis, explain, and HTML-render tests |
+| Real-agent execution or spend | `bench/real/coding_agent/` | Runner tests and explicit container checks |
+| Derived docs or package boundary | `scripts/`, `Makefile` | Generated checks and installed-wheel checks |
 
-## Start Here By Task
+Paths in the owner column are under `src/counterfact/` unless they start with `bench/` or `scripts/`. Find the matching test filename before running it. `make ci` defines the shared offline validation command. `make verify` adds generated artifacts, wheel consumers, and Docker execution checks.
 
-| Task touches | Read first | Usually update | Usually validate |
-| --- | --- | --- | --- |
-| Trace schema | `src/counterfact/schema/models.py`, `tests/unit/test_trace_schema.py` | Schema tests and any fixture JSON that intentionally exercises the contract | `uv run pytest tests/unit/test_trace_schema.py` |
-| DAG construction | `src/counterfact/dag/graph.py`, `tests/unit/test_dag.py` | DAG tests and explain fixtures if graph output changes | `uv run pytest tests/unit/test_dag.py` |
-| Outcome modeling or intervention semantics | `src/counterfact/outcome/`, `src/counterfact/intervene/` (`api.py`, `dispatch.py`, `support.py`), `src/counterfact/taxonomy/`, `tests/unit/test_causal_engine.py`, `tests/unit/test_next_step.py` | Causal engine tests, next-step tests, acceptance gates if labels or bounds change | `uv run pytest tests/unit/test_causal_engine.py tests/unit/test_next_step.py tests/acceptance/test_v0_ship_gate.py` |
-| Corpus analyzer | `src/counterfact/corpus_analyzer/`, `tests/unit/test_corpus_analyzer.py`, `tests/unit/test_cli_analyze.py`, `tests/acceptance/test_analyzer_self_test.py` | Analyzer tests and `bench/real/README.md` when promotion rules change | `uv run pytest tests/unit/test_corpus_analyzer.py tests/unit/test_cli_analyze.py tests/acceptance/test_analyzer_self_test.py` |
-| Demo CLI | `src/counterfact/cli/commands/demo.py`, `tests/unit/test_cli_demo.py`, `tests/acceptance/test_demo_executes.py`, `docs/demo-excerpt.md` | README, demo excerpt, notebook builder, rebuilt notebook if displayed output changes | `uv run pytest tests/unit/test_cli_demo.py tests/acceptance/test_demo_executes.py` |
-| Explain report | `src/counterfact/explain/`, `tests/unit/test_explain_report.py`, `tests/unit/test_explain_render_html.py`, `tests/acceptance/test_explain_cli.py` | Demo excerpt if the narrative or hidden-value policy changes | `uv run pytest tests/unit/test_explain_report.py tests/unit/test_explain_render_html.py tests/acceptance/test_explain_cli.py` |
-| Synthetic benchmark | `bench/synthetic/`, `tests/unit/test_corpus_synthetic.py`, `tests/unit/test_scm_confounded.py`, `tests/acceptance/test_scm_recovery*.py` | README/demo docs if headline examples change | `uv run pytest tests/unit/test_corpus_synthetic.py tests/unit/test_scm_confounded.py tests/acceptance/test_scm_recovery.py tests/acceptance/test_scm_recovery_confounded.py` |
-| Policy evaluation | `src/counterfact/policy/`, `bench/synthetic/sequential.py`, `bench/synthetic/policy_suite.py`, `tests/unit/test_policy_evaluation.py`, `tests/acceptance/test_policy_suite.py` | Regenerate the benchmark results and update the policy results in `docs/report.md` when estimator behavior changes | `uv run pytest tests/unit/test_policy_evaluation.py tests/unit/test_sequential_scenario.py tests/acceptance/test_policy_suite.py` |
-| Estimator benchmark | `bench/synthetic/scenarios.py`, `bench/synthetic/suite.py`, `docs/report.md`, `tests/unit/test_benchmark_scenarios.py`, `tests/acceptance/test_benchmark_suite.py` | Regenerate `docs/benchmark-results.md` and `.json` with the command in `docs/report.md` whenever estimator or scenario behavior changes; rebuild `docs/figures/` with `uv run python scripts/build_figures.py`; update the numbers quoted in `docs/report.md` and `README.md` | `uv run pytest tests/unit/test_benchmark_scenarios.py tests/acceptance/test_benchmark_suite.py` |
-| Real harness | `bench/real/coding_agent/`, `bench/real/coding_agent/fixtures/README.md`, `tests/unit/test_corpus_real.py`, `tests/unit/test_corpus_real_hidden.py` | Fixture docs and analyzer docs when fixture sets or failure modes change | `uv run pytest tests/unit/test_corpus_real.py tests/unit/test_corpus_real_hidden.py` |
-| SDK adapters and live tracers | `src/counterfact/adapters/`, `src/counterfact/tracing/`, `tests/unit/test_adapters_*.py`, `tests/unit/test_tracing_*.py`, `tests/acceptance/test_ingest_cli.py`, `tests/acceptance/test_adapter_diagnose_round_trip.py`, `tests/fixtures/adapters/` | The adapter section of `docs/usage.md` when subcommands or live helpers change | `uv run pytest tests/unit/test_adapters_claude_agent_sdk.py tests/unit/test_adapters_openai_agents.py tests/unit/test_adapters_shape_drift.py tests/unit/test_tracing_claude_agent.py tests/unit/test_tracing_openai_processor.py tests/acceptance/test_ingest_cli.py tests/acceptance/test_adapter_diagnose_round_trip.py` |
-| Committed real corpus | `bench/real/README.md`, `bench/real/smoke_mixed_outcome/PILOT_NOTES.md`, `tests/acceptance/test_analyzer_self_test.py`, `tests/acceptance/test_v0_ship_gate.py` | README, demo excerpt, notebook builder, rebuilt notebook, acceptance thresholds | `uv run counterfact analyze corpus bench/real/smoke_mixed_outcome` and `uv run python -m bench.real.analyze_pilot bench/real/smoke_mixed_outcome` |
+Run focused checks while editing. Run the shared gates before reporting the whole change complete. The container gate must fail when Docker or the verifier image is unavailable. An offline test run does not prove container behavior.
 
-## Demo And Corpus Contract
+## Corpus roles
 
-- `uv run counterfact demo` defaults to `bench/real/smoke_mixed_outcome/`. It must read committed traces only and must not import or run the paid real-agent harness.
-- `bench/real/smoke_mixed_outcome/` is the promoted real demo corpus: 120 `streaming_watermark_dedupe` traces from the tightened `stateful_calibration` fixture set. The expected shape is mixed pass/fail outcomes in both `small` and `large` model arms, dominant hidden-semantic failures, zero patch-format dominance, and an `identified` demo result.
-- `bench/real/single_class_refusal/` is the degenerate anchor. It is intentionally tiny and single-class; it should drive `unidentified`, not model fitting.
-- Demo behavior changes must keep `README.md`, `docs/demo-excerpt.md`, `scripts/build_demo_notebook.py`, and `notebooks/demo.ipynb` aligned. Rebuild the notebook through the script rather than hand-editing notebook JSON.
-- A strong demo should show the difference between a naive descriptive table and an honest causal estimate. Do not make the README claim the real corpus is a universal statistical headline.
+- `bench/real/smoke_mixed_outcome/` is the committed real demo corpus. The default demo reads it without provider calls.
+- `bench/real/single_class_refusal/` is the single-class refusal anchor.
+- `bench/real/routed_trial/` contains the committed routed experiment. Its analysis compares routed estimates with an independent randomized arm.
+- `bench/synthetic/` defines deterministic causal models and known truths. It requires a checkout.
 
-## Real-Agent Benchmark Rules
+Keep pilot outputs and checkpoints local unless Adam explicitly asks to curate a corpus. The analyzer reports readiness and never promotes or renames a directory.
 
-- Paid runs require a `.counterfact/approved` JSON receipt matching the exact trace count, fixture set, output directory, budget cap, model map, and randomization config.
-- Do not create `.counterfact/approved`, bypass the approval receipt, relax budget halting, or commit secrets.
-- Ad hoc pilots belong in dated `bench/real/pilot_*` directories and are local artifacts unless the user explicitly asks to curate and commit a corpus.
-- Promotion is human-gated. The analyzer reports; it does not rename directories. Use `bench/real/README.md` and `bench/real/coding_agent/fixtures/README.md` for the full promotion convention.
-- Showcase quality depends on the failure mode as well as sample size. The strongest signal is runnable hidden-semantic failure rather than extraction failure or unparseable patches.
+## Derived artifacts
 
-## Validation Ladder
+Use the generation and check targets in `Makefile`. Benchmark tables derive from `docs/benchmark-results.json`. Figures derive from that JSON. The notebook derives from `scripts/build_demo_notebook.py`. Update their owners and regenerate outputs instead of editing generated files.
 
-Start narrow, then widen when the change crosses boundaries.
+Documentation explains interpretation and limitations. Keep detailed numeric tables in generated outputs. Link those outputs where a repeated table would require manual synchronization.
 
-1. Run the focused unit or acceptance tests from the routing table.
-2. Run `uv run ruff check .` after Python changes.
-3. Run `uv run pytest` before claiming completion for cross-module behavior, public API changes, demo/corpus changes, or anything that affects acceptance tests.
-4. For committed corpus changes, also run `uv run counterfact analyze corpus bench/real/smoke_mixed_outcome`, `uv run python -m bench.real.analyze_pilot bench/real/smoke_mixed_outcome`, and `uv run counterfact demo`.
+## Paid runs
 
-## Generated And Local Artifacts
+Read [the real-agent guide](../bench/real/README.md) before changing execution, approval, checkpoint identity, or spend accounting. Docker verification is local and makes no model calls. `counterfact bench real` can spend money and requires explicit approval for the command.
 
-- Never commit `.counterfact/`, provider credentials, checkpoints, caches, or ad hoc pilot directories unless the user explicitly asks for a curated corpus artifact.
-- Keep committed corpus files intentional: `bench/real/smoke_mixed_outcome/` for the promoted demo corpus, `bench/real/single_class_refusal/` for the honest-refusal anchor, and `bench/real/routed_trial/` for the real-agent routed trial that `tests/acceptance/test_routed_trial_corpus.py` checks.
-- `bench/real/*/PILOT_NOTES.md` is useful provenance for promoted or reviewed pilots; do not treat it as a substitute for analyzer output.
-
-## Documentation Style
-
-- Prefer short, direct prose with no arbitrary hard wrapping. Markdown is prose, not Python.
-- Keep command blocks copy-pasteable.
-- Avoid inflated claims. Say what the repo actually does today.
-- When removing detail from `README.md`, point to the deeper repo doc that now owns that detail.
+Never create `.counterfact/approved` for the user. Never use a paid real-agent run as routine validation. Provider credentials, `.counterfact/`, checkpoints, and ad hoc pilots stay outside commits.

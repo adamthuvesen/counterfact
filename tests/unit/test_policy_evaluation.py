@@ -3,6 +3,7 @@ agreement with the single-decision AIPW contrast."""
 
 from __future__ import annotations
 
+import json
 import random
 
 import pytest
@@ -12,7 +13,7 @@ from bench.synthetic.scenarios import by_name
 from bench.synthetic.sequential import policy_value, sample
 from counterfact import build_dag, fit_outcome_model, intervene
 from counterfact.intervene import IdentifiabilityStatus
-from counterfact.policy import Policy, evaluate_policy
+from counterfact.policy import Policy, PolicyRule, evaluate_policy
 from counterfact.schema import Decision, Outcome, Run, Step
 
 ON_FAIL = {
@@ -20,6 +21,75 @@ ON_FAIL = {
     "when": {"source": "observation", "key": "tests_passed"},
     "cases": {"true": "no_retry", "false": "retry_once"},
 }
+
+
+@pytest.mark.parametrize("missing", ["target", "baseline", None])
+def test_snis_unavailable_without_target_or_baseline_matches(missing: str | None) -> None:
+    from counterfact.cli.commands.evaluate_policy_cli import _format
+
+    actions = ["small"] * 4 if missing is not None else ["small", "large"] * 2
+    runs = [
+        Run(
+            schema_version="0.1.0",
+            run_id=f"support-{index}",
+            steps=[
+                Step(
+                    step_index=0,
+                    decisions=[
+                        Decision(
+                            decision_id=f"model-{index}",
+                            decision_type="model_call",
+                            chosen_action=action,
+                            policy="uniform",
+                            policy_params={},
+                            valid_actions=["small", "large"],
+                            propensity=0.5,
+                            context_features={},
+                        )
+                    ],
+                )
+            ],
+            outcome=Outcome(kind="binary", value=bool(index % 2), verifier="test"),
+        )
+        for index, action in enumerate(actions)
+    ]
+    policy = Policy(
+        name="target",
+        rules=[
+            PolicyRule(
+                decision_type="model_call",
+                action="small" if missing == "baseline" else "large",
+            )
+        ],
+    )
+    baseline = (
+        None
+        if missing == "target"
+        else Policy(
+            name="baseline",
+            rules=[
+                PolicyRule(
+                    decision_type="model_call",
+                    action="large" if missing == "baseline" else "small",
+                )
+            ],
+        )
+    )
+    estimate = evaluate_policy(runs, policy, baseline=baseline)
+    assert estimate.identifiability == "identified"
+    assert estimate.outcome_delta is not None
+    assert estimate.diagnostics is not None
+    payload = json.loads(estimate.model_dump_json())
+    assert payload["diagnostics"]["snis_delta"] == estimate.diagnostics.snis_delta
+    rendered = _format(estimate)
+    if missing:
+        assert estimate.diagnostics.snis_delta is None
+        assert "SNIS unavailable" in rendered
+        assert any(f"policy '{missing}'" in warning for warning in estimate.warnings)
+    else:
+        assert estimate.diagnostics.snis_delta is not None
+        assert "SNIS +1.000" in rendered
+        assert not estimate.warnings
 
 
 def _retry_on_fail(passed: bool) -> str:
@@ -301,9 +371,8 @@ def test_controlled_decisions_are_ordered_by_step_index_not_list_position() -> N
         )
         for r in runs
     ]
-    refused = evaluate_policy(split, policy)
-    assert refused.identifiability == IdentifiabilityStatus.UNIDENTIFIED
-    assert "cannot be ordered" in (refused.reason or "")
+    with pytest.raises(ValueError, match=r"sequential-000000.*duplicate step_index"):
+        evaluate_policy(split, policy)
 
 
 def test_policy_that_never_acts_on_the_corpus_is_unidentified(sequential_runs: list[Run]) -> None:

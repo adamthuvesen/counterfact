@@ -25,12 +25,13 @@ from counterfact.explain.report import ExplainReport
 from counterfact.intervene.estimate import (
     CausalEstimate,
     DistributionSummary,
+    EstimatorDiagnostics,
     IdentifiabilityStatus,
     IdentificationBounds,
     InterventionQuery,
     NextStep,
 )
-from counterfact.schema import Decision, Metadata, Outcome, Run
+from counterfact.schema import Decision, Metadata, Observation, Outcome, Run
 from tests.conftest import single_class_refusal_corpus, synthetic_corpus
 
 # ---------------------------------------------------------------------------
@@ -82,11 +83,25 @@ def _identified_estimate() -> CausalEstimate:
             decision_type="model_call",
             intervention_kind="model_choice",
             target="small",
+            baseline="large",
             step=1,
         ),
         identifiability=IdentifiabilityStatus.IDENTIFIED,
         estimand="E[Y | do(model=small)]",
         outcome_delta=DistributionSummary(point=0.332, ci_low=0.179, ci_high=0.493),
+        diagnostics=EstimatorDiagnostics(
+            n_used=30,
+            n_excluded=0,
+            n_target=10,
+            n_baseline=20,
+            n_folds=5,
+            g_formula_delta=0.332,
+            ipw_delta=0.332,
+            min_propensity_target=0.5,
+            min_propensity_baseline=0.5,
+            effective_n_target=10,
+            effective_n_baseline=20,
+        ),
         assumptions=["positivity holds for model_call"],
         warnings=[],
         next_step=NextStep(
@@ -349,10 +364,10 @@ def test_render__timeline_omits_raw_observation_content() -> None:
                 step.model_copy(
                     update={
                         "observations": [
-                            {
-                                "observation_id": "o-secret",
-                                "content": {"stdout_tail": "RAW_OBSERVATION_SECRET"},
-                            }
+                            Observation(
+                                observation_id="o-secret",
+                                content={"stdout_tail": "RAW_OBSERVATION_SECRET"},
+                            )
                         ]
                     }
                 )
@@ -805,15 +820,10 @@ def test_render_field__escapes_plain_strings_and_passes_raw_through() -> None:
     ["badge ident-identified", "badge ident-unidentified", "Descriptive baseline"],
 )
 def test_render__sentinel_strings_present(field: str) -> None:
-    report = _build_synthetic_report()
-    html = render_html(report, now=FIXED_NOW)
     if field == "badge ident-unidentified":
-        # Synthetic corpus may produce some unidentified entries depending
-        # on attribution selection — but the spec only guarantees the
-        # status appears when a card with that status exists.
-        if not any(
-            e.identifiability == IdentifiabilityStatus.UNIDENTIFIED
-            for e in report.attribution.entries
-        ):
-            pytest.skip("no unidentified entries in this synthetic corpus")
+        corpus = single_class_refusal_corpus()
+        report = build_report(corpus[0], corpus, seed=42)
+    else:
+        report = _build_synthetic_report()
+    html = render_html(report, now=FIXED_NOW)
     assert field in html

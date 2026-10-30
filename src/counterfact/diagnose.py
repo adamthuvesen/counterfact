@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from counterfact._fmt import outcome_label as _outcome_label
 from counterfact.attribute import AttributionEntry, FailureAttribution
@@ -20,12 +20,13 @@ from counterfact.intervene.estimate import (
     IdentifiabilityStatus,
     InterventionQuery,
     NextStep,
+    ResultModel,
 )
 from counterfact.schema import Decision, Run
 from counterfact.taxonomy import attribution_intervention_kind, valid_interventions
 
 
-class _Strict(BaseModel):
+class _Strict(ResultModel):
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
 
@@ -41,6 +42,14 @@ class DiagnosisEntry(_Strict):
     outcome_delta: DistributionSummary | None = None
     reason: str | None = None
     warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _consistent_estimate(self) -> DiagnosisEntry:
+        if self.estimate is not None:
+            for name in ("identifiability", "next_step", "outcome_delta", "reason", "warnings"):
+                if getattr(self, name) != getattr(self.estimate, name):
+                    raise ValueError(f"diagnosis {name} must match its causal estimate")
+        return self
 
 
 class DiagnosisReport(_Strict):
@@ -74,7 +83,7 @@ def _unsupported_estimate(
             decision_type=decision.decision_type,
             intervention_kind=intervention_kind,
             target=decision.chosen_action,
-            step=step if step is not None else -1,
+            step=step,
         ),
         identifiability=IdentifiabilityStatus.UNIDENTIFIED,
         reason=reason,

@@ -1,4 +1,4 @@
-"""Fixture registry + deterministic pytest verifier."""
+"""Fixture registry and host verifiers for trusted fixture checks only."""
 
 from __future__ import annotations
 
@@ -241,32 +241,8 @@ def snapshot_fixture(fixture: FixtureSpec, dest_root: Path) -> Path:
         shutil.copytree(
             fixture.root,
             dest,
-            ignore=shutil.ignore_patterns("tests_hidden", "_*reference*"),
+            ignore=shutil.ignore_patterns("tests_hidden"),
         )
     else:
         shutil.copytree(fixture.root, dest)
     return dest
-
-
-def build_hidden_eval_workspace(fixture: FixtureSpec, sandbox_root: Path, dest_root: Path) -> Path:
-    """Stage a hidden-eval workspace by copying the agent's patched src/ next
-    to the canonical tests_hidden/ from the fixture's source tree.
-
-    The agent's sandbox is read; the fixture's source is read; nothing is
-    written back to either. The returned workspace lives under `dest_root`
-    and is the cwd for `run_pytest_hidden`.
-    """
-    if not is_hidden_fixture(fixture):
-        raise ValueError(
-            f"build_hidden_eval_workspace called on non-hidden fixture {fixture.fixture_id!r}"
-        )
-    workspace = dest_root / f"{fixture.fixture_id}-hidden-eval"
-    if workspace.exists():
-        shutil.rmtree(workspace)
-    workspace.mkdir(parents=True)
-    # Patched src/ from the agent's sandbox.
-    shutil.copytree(sandbox_root / "src", workspace / "src")
-    # Canonical tests_hidden/ from the fixture's source tree (NOT from the
-    # sandbox — the sandbox doesn't have it).
-    shutil.copytree(fixture.root / "tests_hidden", workspace / "tests_hidden")
-    return workspace

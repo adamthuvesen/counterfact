@@ -9,10 +9,14 @@ carry light and dark colors via prefers-color-scheme.
 
 from __future__ import annotations
 
-import json
+import argparse
+import sys
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
+
+from scripts._benchmark_results import BenchmarkResults
+from scripts._generated import write_or_check
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "docs" / "benchmark-results.json"
@@ -128,20 +132,23 @@ def render(fig: Figure) -> str:
     return "\n".join(parts) + "\n"
 
 
-def scenario_figure(results: dict) -> Figure:
+def scenario_figure(results: BenchmarkResults) -> Figure:
     rows = [
         Row(
-            s["scenario"].replace("_", " "),
-            s["naive_bias"],
-            s["adjust_all_bias"],
-            s["engine_bias"],
-            note="engine: bounded" if s["expected_label"] == "bounded" else None,
+            s.scenario.replace("_", " "),
+            s.naive_bias,
+            s.adjust_all_bias,
+            s.engine_bias,
+            note="engine: bounded" if s.expected_label == "bounded" else None,
         )
-        for s in results["scenarios"]
+        for s in results.scenarios
     ]
     return Figure(
-        title="Single decision: sonnet vs haiku, 8 causal models built to break estimators",
-        subtitle=f"{results['seeds']} corpora per scenario. The engine refuses where the "
+        title=(
+            f"Single decision: sonnet vs haiku, {len(results.scenarios)} causal models "
+            "built to break estimators"
+        ),
+        subtitle=f"{results.seeds} corpora per scenario. The engine refuses where the "
         "data cannot identify the effect.",
         legend=("naive pass-rate gap", "adjust-everything g-formula", "counterfact (AIPW)"),
         rows=rows,
@@ -151,23 +158,22 @@ def scenario_figure(results: dict) -> Figure:
     )
 
 
-def policy_figure(results: dict) -> Figure:
+def policy_figure(results: BenchmarkResults) -> Figure:
     rows = [
         Row(
-            p["case"]
-            .replace(", outcome model blind to tests_passed", " (blind outcome model)")
+            p.case.replace(", outcome model blind to tests_passed", " (blind outcome model)")
             .replace(", retry propensity not logged", " (propensity unlogged)")
             .replace("_", " "),
-            p["matched_bias"],
-            p["ice_bias"],
-            p["dr_bias"],
-            note="engine: bounded" if p["expected_label"] == "bounded" else None,
+            p.matched_bias,
+            p.ice_bias,
+            p.dr_bias,
+            note="engine: bounded" if p.expected_label == "bounded" else None,
         )
-        for p in results["policies"]
+        for p in results.policies
     ]
     return Figure(
         title="Whole policies: retry rules over a sequential agent",
-        subtitle=f"{results['seeds']} corpora per case. Test results confound the retry choice.",
+        subtitle=f"{results.seeds} corpora per case. Test results confound the retry choice.",
         legend=("filter to matching runs", "outcome model only (ICE)", "counterfact (DR)"),
         rows=rows,
         x_min=-0.25,
@@ -176,12 +182,22 @@ def policy_figure(results: dict) -> Figure:
     )
 
 
-def main() -> None:
-    results = json.loads(RESULTS.read_text())
-    OUT.mkdir(exist_ok=True)
-    (OUT / "single-decision-bias.svg").write_text(render(scenario_figure(results)))
-    (OUT / "policy-bias.svg").write_text(render(policy_figure(results)))
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        results = BenchmarkResults.model_validate_json(RESULTS.read_text())
+        outputs = (
+            (OUT / "single-decision-bias.svg", render(scenario_figure(results))),
+            (OUT / "policy-bias.svg", render(policy_figure(results))),
+        )
+        valid = [write_or_check(path, text, check=args.check) for path, text in outputs]
+        return 0 if all(valid) else 1
+    except (OSError, ValueError) as exc:
+        print(f"benchmark figures: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -27,8 +27,9 @@ def test_analyze_help_frames_support_readiness(capsys) -> None:
 
 
 def test_analyze_single_class_refusal_exits_1_with_outcome_balance_failure(capsys) -> None:
-    if not SINGLE_CLASS_REFUSAL_DIR.exists():
-        pytest.skip(f"single_class_refusal corpus absent at {SINGLE_CLASS_REFUSAL_DIR}")
+    assert SINGLE_CLASS_REFUSAL_DIR.is_dir(), (
+        f"required committed corpus absent at {SINGLE_CLASS_REFUSAL_DIR}"
+    )
     rc = main(["analyze", "corpus", str(SINGLE_CLASS_REFUSAL_DIR)])
     out = capsys.readouterr().out
     assert rc == 1
