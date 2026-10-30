@@ -18,8 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from drives import (
     APPROVAL,
     CLI,
+    CONTROL_EXPECTED,
+    CONTROL_FAILURE,
     DRIVES,
-    EXPECTED_TOP,
     ROOT,
     SCRATCH,
     SHARED_PATHS,
@@ -111,9 +112,7 @@ def execute(names: list[str], control: bool = False) -> int:
         started = time.monotonic()
         try:
             if control:
-                detail = drive_diagnose(
-                    Run(run_dir, "control"), {**EXPECTED_TOP, "identifiability": "unidentified"}
-                )
+                detail = drive_diagnose(Run(run_dir, "control"), CONTROL_EXPECTED)
             else:
                 detail = drive.run(Run(run_dir, name))
             result = "PASS"
@@ -145,12 +144,15 @@ def execute(names: list[str], control: bool = False) -> int:
     print(f"evidence: {run_dir}")
     failed = any(r["result"] == "FAIL" for r in results)
     if control:
-        print(
-            "control: FAIL observed"
-            if failed
-            else "control: passed unexpectedly; the drive cannot fail"
-        )
-        return 0 if failed else 1
+        failures = [str(r["detail"]) for r in results if r["result"] == "FAIL"]
+        if len(failures) == 1 and failures[0].startswith(CONTROL_FAILURE):
+            print("control: FAIL observed")
+            return 0
+        if failures:
+            print(f"control: failed for another reason; expected {CONTROL_FAILURE!r}")
+        else:
+            print("control: passed unexpectedly; the drive cannot fail")
+        return 1
     return 1 if failed else 0
 
 

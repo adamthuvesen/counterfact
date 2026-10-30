@@ -37,6 +37,7 @@ from bench.real.coding_agent.llm import (
     CostUnknownError,
     LiteLLMClient,
     LLMResponse,
+    SpendNotApproved,
     extract_cost,
 )
 from bench.real.coding_agent.runner import (
@@ -925,6 +926,24 @@ def test_extract_cost__raises_when_both_paths_fail(
         extract_cost(resp)
 
 
+def test_litellm_client__refuses_an_unapproved_call_before_the_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import litellm
+
+    def _completion(**kw: object) -> object:
+        raise AssertionError("litellm.completion ran without approval")
+
+    monkeypatch.setattr(litellm, "completion", _completion)
+    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"})
+    with pytest.raises(SpendNotApproved, match="ask Adam") as refusal:
+        try:
+            client.call(role="small", prompt="fix this")
+        except Exception:
+            pytest.fail("the refusal must escape `except Exception` retry loops")
+    assert isinstance(refusal.value, SystemExit)
+
+
 def test_litellm_client__raises_when_response_cost_is_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -940,7 +959,7 @@ def test_litellm_client__raises_when_response_cost_is_unknown(
         raise RuntimeError("price table miss")
 
     monkeypatch.setattr(litellm, "completion_cost", _raise)
-    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"})
+    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"}, approved=True)
     with pytest.raises(CostUnknownError):
         client.call(role="small", prompt="fix this")
 
@@ -965,7 +984,7 @@ def test_litellm_client__requests_large_enough_patch_budget_and_records_finish_r
         }
 
     monkeypatch.setattr(litellm, "completion", _completion)
-    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"})
+    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"}, approved=True)
     response = client.call(role="small", prompt="fix this")
 
     assert captured["max_tokens"] == DEFAULT_MAX_TOKENS
@@ -987,7 +1006,7 @@ def test_litellm_client__normalizes_missing_content_to_extraction_failure(
             "response_cost": 0.01,
         },
     )
-    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"})
+    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"}, approved=True)
 
     response = client.call(role="small", prompt="fix this")
 

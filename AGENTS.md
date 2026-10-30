@@ -41,6 +41,7 @@ The Makefile defines every gate. Mark a test `slow` only when it is integration-
 | Repeated decisions of one type refuse focal localization | `tests/unit/test_causal_engine.py::test_intervene__repeated_decision_type_reports_localization_limit` | 2026-05-06 |
 | `verify control` must observe FAIL before a verify pass counts | `.agents/skills/verify-counterfact/verify::control` | 2026-11-06 |
 | These citations name real files and names | `tests/test_agents_md.py::test_enforced_rules_cite_existing_files_and_names` | 2026-11-06 |
+| No file downgrades strict type checking with a `# pyright:` mode comment | `tests/test_strict_mode.py::test_no_file_downgrades_type_checking_mode` | 2026-11-07 |
 
 ## Design boundaries
 

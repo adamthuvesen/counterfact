@@ -556,7 +556,7 @@ def run_real_corpus(
                 file=sys.stderr,
             )
             return 3
-        llm = (llm_client_factory or LiteLLMClient)()
+        llm = llm_client_factory() if llm_client_factory else LiteLLMClient(approved=True)
 
         progress_path = checkpoint_dir / "progress.jsonl"
 

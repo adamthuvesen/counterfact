@@ -6,15 +6,15 @@ install:
 	uv sync --locked --extra dev --extra bench
 
 lint:
-	$(UV) ruff check .
-	$(UV) ruff format --check .
+	$(UV) ruff check . .agents/skills/verify-counterfact/verify
+	$(UV) ruff format --check . .agents/skills/verify-counterfact/verify
 
 fix:
-	$(UV) ruff check --fix .
-	$(UV) ruff format .
+	$(UV) ruff check --fix . .agents/skills/verify-counterfact/verify
+	$(UV) ruff format . .agents/skills/verify-counterfact/verify
 
 format:
-	$(UV) ruff format .
+	$(UV) ruff format . .agents/skills/verify-counterfact/verify
 
 typecheck:
 	$(UV) basedpyright

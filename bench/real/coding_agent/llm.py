@@ -41,6 +41,10 @@ class CostUnknownError(RuntimeError):
     """Raised when a production LLM response cannot be priced safely."""
 
 
+class SpendNotApproved(SystemExit):
+    """A paid model call without approval. A SystemExit, so `except Exception` cannot retry it."""
+
+
 class LLMClient(Protocol):
     """Minimal interface the agent loop depends on."""
 
@@ -127,10 +131,18 @@ class LiteLLMClient:
     operator creates `.counterfact/approved` after eyeballing a smoke corpus.
     """
 
-    def __init__(self, role_to_model: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, role_to_model: dict[str, str] | None = None, *, approved: bool = False
+    ) -> None:
         self.role_to_model = role_to_model or ROLE_TO_MODEL
+        self.approved = approved
 
     def call(self, *, role: str, prompt: str) -> LLMResponse:
+        if not self.approved:
+            raise SpendNotApproved(
+                "Refusing to call a paid model: this spends money. Stop and ask Adam to approve "
+                "the run, then start it through `counterfact bench real` with its approval receipt."
+            )
         # Lazy import: keep `litellm` out of the test-time import path so unit
         # tests using mocked clients don't pay the import cost.
         import litellm
