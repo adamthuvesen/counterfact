@@ -1397,9 +1397,13 @@ def test_unknown_paid_call_cost_blocks_resume(tmp_path: Path) -> None:
             calls += 1
             raise CostUnknownError("provider response has no price")
 
-    kwargs = dict(
-        n=1, budget_cap_usd=1, output_dir=output, marker_path=marker, llm_client_factory=Client
-    )
+    kwargs = {
+        "n": 1,
+        "budget_cap_usd": 1,
+        "output_dir": output,
+        "marker_path": marker,
+        "llm_client_factory": Client,
+    }
     assert run_real_corpus(**kwargs) == 5
     assert run_real_corpus(**kwargs) == 7
     assert calls == 1
@@ -1534,9 +1538,13 @@ def test_invalid_response_cost_remains_unknown_and_blocks_resume(tmp_path: Path)
         def call(self, *, role: str, prompt: str) -> LLMResponse:
             return LLMResponse(text="no patch", cost_usd=-1.0)
 
-    kwargs = dict(
-        n=1, budget_cap_usd=1, output_dir=output, marker_path=marker, llm_client_factory=Client
-    )
+    kwargs = {
+        "n": 1,
+        "budget_cap_usd": 1,
+        "output_dir": output,
+        "marker_path": marker,
+        "llm_client_factory": Client,
+    }
     assert run_real_corpus(**kwargs) == 5
     assert run_real_corpus(**kwargs) == 7
 

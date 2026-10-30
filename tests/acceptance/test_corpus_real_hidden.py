@@ -755,7 +755,7 @@ def test_date_window_sandbox_omits_hidden_tests(tmp_path: Path) -> None:
     assert (sandbox / "tests_public").is_dir()
     assert (sandbox / "spec.md").is_file()
     assert not (sandbox / "tests_hidden").exists()
-    assert [p for p in sandbox.rglob("*date_window_hidden*")] == []
+    assert list(sandbox.rglob("*date_window_hidden*")) == []
 
 
 # --- Phase C: prompt content discipline ------------------------------------

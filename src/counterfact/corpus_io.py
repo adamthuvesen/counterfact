@@ -148,7 +148,7 @@ def atomic_write(path: Path, text: str) -> None:
             stream.write(text)
             stream.flush()
             os.fsync(stream.fileno())
-            os.replace(temporary, path)
+            temporary.replace(path)
         finally:
             temporary.unlink(missing_ok=True)
 

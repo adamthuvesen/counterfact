@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""Drive the installed counterfact CLI against committed corpora in temp dirs. No provider calls."""
+
+import atexit
+import datetime as dt
+import fnmatch
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import tomllib
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from drives import (
+    APPROVAL,
+    CLI,
+    DRIVES,
+    EXPECTED_TOP,
+    ROOT,
+    SCRATCH,
+    SHARED_PATHS,
+    SMOKE,
+    DriveFailure,
+    Run,
+    drive_diagnose,
+)
+
+
+def git(*args: str) -> str:
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, env=env, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def cleanup() -> None:
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def changed_files() -> set[str]:
+    branches = git("branch", "--list", "--all", "main", "origin/main").split()
+    base = git("merge-base", "HEAD", "main" if "main" in branches else "origin/main")
+    files = set(git("diff", "--name-only", base).splitlines())
+    return files | set(git("ls-files", "--others", "--exclude-standard").splitlines())
+
+
+def select_changed() -> list[str]:
+    files = changed_files()
+    if any(fnmatch.fnmatch(f, p) for f in files for p in SHARED_PATHS):
+        return list(DRIVES)
+    picked = [
+        n for n, d in DRIVES.items() if any(fnmatch.fnmatch(f, p) for f in files for p in d.paths)
+    ]
+    return picked or [SMOKE]
+
+
+def preflight(run_dir: Path) -> None:
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "VIRTUAL_ENV"))}
+    probe = (
+        "import counterfact, importlib.metadata as m; "
+        "print(counterfact.__file__); print(m.version('counterfact'))"
+    )
+    proc = subprocess.run(
+        ["uv", "run", "--locked", "--extra", "dev", "--extra", "bench", "python", "-c", probe],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    (run_dir / "preflight.log").write_text(proc.stdout + proc.stderr)
+    if proc.returncode != 0 or not CLI.exists():
+        sys.exit(
+            "preflight: locked environment did not resolve (run `make install`); "
+            f"see {run_dir / 'preflight.log'}"
+        )
+    location, version = proc.stdout.split()[-2:]
+    if not Path(location).resolve().is_relative_to(ROOT):
+        sys.exit(f"preflight: counterfact imports from {location}, not this checkout")
+    declared = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
+    if version != declared:
+        sys.exit(f"preflight: installed counterfact {version} != pyproject {declared}")
+    probe_env = Run(run_dir, "preflight").env
+    if any(k.endswith("_API_KEY") for k in probe_env):
+        sys.exit("preflight: a provider API key would reach the drives")
+    real_home = Path.home().resolve()
+    for key, value in probe_env.items():
+        if key.endswith("HOME") and Path(value).resolve().is_relative_to(real_home):
+            sys.exit(f"preflight: {key}={value} is inside the real HOME")
+
+
+def control() -> int:
+    """Re-drive the smoke drive against a wrong top decision; pass only when FAIL is observed."""
+    return execute([SMOKE], control=True)
+
+
+def execute(names: list[str], control: bool = False) -> int:
+    sha = git("rev-parse", "--short=7", "HEAD")
+    dirty = bool(git("status", "--porcelain"))
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    run_dir = ROOT / ".verify" / "runs" / f"{stamp}-{sha}{'-dirty' if dirty else ''}"
+    run_dir.mkdir(parents=True)
+    preflight(run_dir)
+    approval_before = APPROVAL.exists() and APPROVAL.read_bytes()
+    results = []
+    for name in names:
+        drive = DRIVES[name]
+        started = time.monotonic()
+        try:
+            if control:
+                detail = drive_diagnose(
+                    Run(run_dir, "control"), {**EXPECTED_TOP, "identifiability": "unidentified"}
+                )
+            else:
+                detail = drive.run(Run(run_dir, name))
+            result = "PASS"
+        except (
+            DriveFailure,
+            subprocess.TimeoutExpired,
+            KeyError,
+            IndexError,
+            json.JSONDecodeError,
+        ) as error:
+            result, detail = "FAIL", str(error)
+        seconds = round(time.monotonic() - started, 1)
+        if seconds > drive.timeout and result == "PASS":
+            result, detail = "FAIL", f"took {seconds}s, budget {drive.timeout}s"
+        if (APPROVAL.exists() and APPROVAL.read_bytes()) != approval_before:
+            result, detail = (
+                "FAIL",
+                f"{APPROVAL} changed during the drive; drives must never touch spend approval",
+            )
+        print(f"{result} {'control' if control else name} {seconds}s {detail}")
+        results.append({"drive": name, "result": result, "seconds": seconds, "detail": detail})
+    summary = {
+        "sha": git("rev-parse", "HEAD"),
+        "dirty": dirty,
+        "control": control,
+        "drives": results,
+    }
+    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+    print(f"evidence: {run_dir}")
+    failed = any(r["result"] == "FAIL" for r in results)
+    if control:
+        print(
+            "control: FAIL observed"
+            if failed
+            else "control: passed unexpectedly; the drive cannot fail"
+        )
+        return 0 if failed else 1
+    return 1 if failed else 0
+
+
+def main(argv: list[str]) -> int:
+    atexit.register(cleanup)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    if argv == ["list"]:
+        for name, drive in DRIVES.items():
+            print(f"{name}\t{drive.proves}\t{', '.join(drive.paths)}")
+        return 0
+    if argv == ["control"]:
+        return control()
+    if argv == ["all"]:
+        return execute(list(DRIVES))
+    unknown = [a for a in argv if a not in DRIVES]
+    if unknown:
+        print(f"unknown drive(s): {', '.join(unknown)}; run `verify list`", file=sys.stderr)
+        return 2
+    return execute(argv or select_changed())
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

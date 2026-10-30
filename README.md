@@ -1,6 +1,6 @@
 # counterfact
 
-![License](https://img.shields.io/github/license/adamthuvesen/counterfact) ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
+![License](https://img.shields.io/github/license/adamthuvesen/counterfact) ![Python](https://img.shields.io/badge/python-3.14%2B-blue)
 
 `counterfact` answers counterfactual questions about LLM agent traces:
 
@@ -26,7 +26,7 @@ The committed real-agent experiment compares a confounded router with an indepen
 uv sync --locked --extra dev --extra bench
 ```
 
-Requires Python 3.13 or later. The wheel ships only the library. The real-agent harness under `bench/` needs a checkout and the `bench` extra.
+Requires Python 3.14 or later. The wheel ships only the library. The real-agent harness under `bench/` needs a checkout and the `bench` extra.
 
 ## Quickstart
 
@@ -73,12 +73,7 @@ From Python, use `AnalysisCorpus` with `intervene` for a focal decision or `cont
 
 ## Development
 
-```bash
-make check
-make verify
-```
-
-`make check` runs the fast offline checks. `make verify` adds full-suite coverage, generated artifacts, installed-wheel consumers, and Docker execution checks. The Docker verifier requires a running Linux-container engine and its pinned image. See the [real-agent guide](bench/real/README.md).
+[AGENTS.md](AGENTS.md) lists the development commands. The Docker verifier requires a running Linux-container engine and its pinned image. See the [real-agent guide](bench/real/README.md).
 
 Synthetic benchmarks require a checkout and make no provider calls:
 

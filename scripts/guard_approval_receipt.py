@@ -1,14 +1,16 @@
-"""Claude Code PreToolUse hook: agents never write the real-agent spend approval receipt."""
+"""Claude Code and Codex PreToolUse hook: agents never write the spend approval receipt."""
 
 from __future__ import annotations
 
 import json
 import re
 import sys
+from pathlib import Path
 
-RECEIPT = re.compile(r"\.counterfact/approved\b")
-SHELL_WRITE = re.compile(
-    r"(?<![0-9&])>(?!\s*/dev/null)|\bsed\s+-i"
+# A command that names both parts, e.g. `cd .counterfact && touch approved`, counts.
+NAMES_RECEIPT = (re.compile(r"\.counterfact\b"), re.compile(r"\bapproved\b"))
+WRITES = re.compile(
+    r"(?<![0-9&])>(?!\s*/dev/null)|\bsed\s+-i|\*\*\* (Add|Update|Delete) File:"
     r"|\b(tee|cp|mv|touch|ln|rm|install|dd|truncate|python3?|uv|node|perl|ruby)\b"
 )
 MESSAGE = (
@@ -21,19 +23,24 @@ def denial(payload: dict[str, object]) -> str | None:
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         return None
-    if payload.get("tool_name") == "Bash":
-        command = str(tool_input.get("command", ""))
-        return MESSAGE if RECEIPT.search(command) and SHELL_WRITE.search(command) else None
-    path = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
-    return MESSAGE if RECEIPT.search(path) else None
+    path = tool_input.get("file_path") or tool_input.get("notebook_path")
+    if isinstance(path, str):
+        target = Path(str(payload.get("cwd") or ".")) / path
+        return MESSAGE if target.parts[-2:] == (".counterfact", "approved") else None
+    command = tool_input.get("command") or tool_input.get("input") or ""
+    if isinstance(command, list):
+        command = " ".join(str(part) for part in command)
+    text = str(command)
+    named = all(pattern.search(text) for pattern in NAMES_RECEIPT)
+    return MESSAGE if named and WRITES.search(text) else None
 
 
 def main() -> int:
     reason = denial(json.load(sys.stdin))
-    if reason is None:
-        return 0
-    print(reason, file=sys.stderr)
-    return 2
+    if reason is not None:
+        decision = {"permissionDecision": "deny", "permissionDecisionReason": reason}
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", **decision}}))
+    return 0
 
 
 if __name__ == "__main__":

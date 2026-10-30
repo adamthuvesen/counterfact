@@ -178,7 +178,7 @@ def test_decisions_log_randomization__chosen_action_must_be_valid_action() -> No
 def test_decisions_log_randomization__propensity_must_be_in_zero_one_inclusive() -> None:
     from counterfact.schema import Decision
 
-    base = dict(decision_id="d-bad", decision_type="tool_call")
+    base = {"decision_id": "d-bad", "decision_type": "tool_call"}
     with pytest.raises(ValidationError):
         Decision(**base, propensity=0.0)
     with pytest.raises(ValidationError):

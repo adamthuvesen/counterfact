@@ -35,10 +35,13 @@ htmlcov/
 *.local.json
 
 # Claude / agent local state
-.agents/
+.agents/*
+!.agents/skills/
 .claude/*
 !.claude/settings.json
-.codex/
+!.claude/skills
+.codex/*
+!.codex/hooks.json
 .claude/settings.local.json
 .claude/projects/
 worktrees/
@@ -55,6 +58,7 @@ checkpoints/
 *.sqlite
 
 # Counterfact runtime artifacts
+.verify/
 .counterfact/
 bench/real/runs/
 bench/real/runs_pilot_*/

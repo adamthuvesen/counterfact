@@ -1,8 +1,8 @@
 """The repo PreToolUse hook refuses agent writes to the spend approval receipt."""
 
 import json
+import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -20,6 +20,16 @@ RECEIPT = "/repo/.counterfact/approved"
         {"tool_name": "Edit", "tool_input": {"file_path": RECEIPT}},
         {"tool_name": "Bash", "tool_input": {"command": "echo '{}' > .counterfact/approved"}},
         {"tool_name": "Bash", "tool_input": {"command": "cp receipt.json .counterfact/approved"}},
+        {"tool_name": "Bash", "tool_input": {"command": "cd .counterfact && touch approved"}},
+        {
+            "tool_name": "Write",
+            "cwd": "/repo/.counterfact",
+            "tool_input": {"file_path": "approved"},
+        },
+        {
+            "tool_name": "apply_patch",
+            "tool_input": {"command": "*** Begin Patch\n*** Add File: .counterfact/approved\n+{}"},
+        },
         {
             "tool_name": "Bash",
             "tool_input": {"command": 'python3 -c \'open(".counterfact/approved", "w")\''},
@@ -42,16 +52,25 @@ def test_reads_and_unrelated_tools_are_allowed(payload: dict[str, object]) -> No
     assert denial(payload) is None
 
 
-def test_settings_hook_exits_2_with_the_stop_message() -> None:
-    settings = json.loads((ROOT / ".claude" / "settings.json").read_text())
-    command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-    assert "scripts/guard_approval_receipt.py" in command
+@pytest.mark.parametrize(
+    ("settings", "client_dir"),
+    [(".claude/settings.json", "$CLAUDE_PROJECT_DIR"), (".codex/hooks.json", "git rev-parse")],
+)
+def test_client_hook_denies_with_the_stop_message(settings: str, client_dir: str) -> None:
+    command = json.loads((ROOT / settings).read_text())["hooks"]["PreToolUse"][0]["hooks"][0][
+        "command"
+    ]
+    assert client_dir in command and "scripts/guard_approval_receipt.py" in command
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "guard_approval_receipt.py")],
+        command,
+        shell=True,
+        cwd=ROOT,
+        env={**os.environ, "CLAUDE_PROJECT_DIR": str(ROOT)},
         input=json.dumps({"tool_name": "Write", "tool_input": {"file_path": RECEIPT}}),
         capture_output=True,
         text=True,
         check=False,
     )
-    assert result.returncode == 2
-    assert "Ask Adam to approve the spend" in result.stderr
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "Ask Adam to approve the spend" in output["permissionDecisionReason"]

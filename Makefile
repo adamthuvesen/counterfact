@@ -1,6 +1,6 @@
 UV = uv run --locked --extra dev --extra bench
 
-.PHONY: install lint format typecheck imports check cov generated check-generated check-wheel check-container verify
+.PHONY: install lint format typecheck imports check cov generated check-generated check-wheel check-container verify drive
 
 install:
 	uv sync --locked --extra dev --extra bench
@@ -42,4 +42,12 @@ check-wheel:
 check-container:
 	$(UV) python scripts/check_container.py --build
 
-verify: check cov check-generated check-wheel check-container
+VERIFY_APP := .agents/skills/verify-counterfact/verify
+
+# Drive the real CLI: no ARGS = drives for changed files; ARGS=all|list|control|<drive>.
+drive:
+	$(VERIFY_APP) $(ARGS)
+
+verify: lint typecheck imports cov check-generated check-wheel check-container
+	$(VERIFY_APP) all
+	$(VERIFY_APP) control
