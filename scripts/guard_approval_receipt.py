@@ -10,7 +10,7 @@ from pathlib import Path
 # A command that names both parts, e.g. `cd .counterfact && touch approved`, counts.
 NAMES_RECEIPT = (re.compile(r"\.counterfact\b"), re.compile(r"\bapproved\b"))
 WRITES = re.compile(
-    r">(?!\s*(/dev/null|&\d))|\bsed\s+-i|\*\*\* (Add|Update|Delete) File:"
+    r">(?!\s*(/dev/null|&\d))|\bsed\b[^|;&\n]*\s(-[a-zA-Z]*i|--in-place)|\*\*\* (Add|Update|Delete) File:"
     r"|\b(tee|cp|mv|touch|ln|rm|install|dd|truncate|python3?|uv|node|perl|ruby)\b"
 )
 MESSAGE = (

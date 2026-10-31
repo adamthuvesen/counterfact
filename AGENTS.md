@@ -43,6 +43,7 @@ The Makefile defines every gate. Mark a test `slow` only when it is integration-
 | `verify control` must observe FAIL before a verify pass counts | `.agents/skills/verify-counterfact/verify::control` | 2026-11-06 |
 | These citations name real files and names | `tests/test_agents_md.py::test_enforced_rules_cite_existing_files_and_names` | 2026-11-06 |
 | No file downgrades strict type checking with a `# pyright:` mode comment | `tests/test_strict_mode.py::test_no_file_downgrades_type_checking_mode` | 2026-11-07 |
+| Every inline type ignore names its rule and gives a reason | `tests/test_strict_mode.py::test_inline_ignores_name_a_rule_and_give_a_reason` | 2026-11-07 |
 
 ## Design boundaries
 

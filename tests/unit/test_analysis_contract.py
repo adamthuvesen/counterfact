@@ -112,10 +112,10 @@ def test_corpus_snapshot_preserves_row_order_and_detaches_mutable_views() -> Non
     view[1].steps.clear()
     assert _contrast(corpus).model_dump() == expected
     with pytest.raises(FrozenInstanceError):
-        corpus.facts[0].run_id = "changed"  # pyright: ignore[reportAttributeAccessIssue]
+        corpus.facts[0].run_id = "changed"  # pyright: ignore[reportAttributeAccessIssue]  # mutation on purpose
     config = corpus.facts[0].steps[2].decisions[0].metadata["model_config"]
     with pytest.raises(TypeError):
-        config["temperature"] = 9  # pyright: ignore[reportIndexIssue]
+        config["temperature"] = 9  # pyright: ignore[reportIndexIssue]  # mutation on purpose
 
 
 def test_duplicate_step_indexes_parse_but_analysis_rejects_them() -> None:
@@ -252,7 +252,7 @@ def test_result_fields_and_nested_payloads_cannot_mutate_estimate_state() -> Non
     estimate = _contrast(_runs())
     before = estimate.model_dump_json()
     with pytest.raises(ValidationError):
-        estimate.identifiability = "unidentified"  # pyright: ignore[reportAttributeAccessIssue]
+        estimate.identifiability = "unidentified"  # pyright: ignore[reportAttributeAccessIssue]  # mutation on purpose
     assert estimate.outcome_delta is not None
     with pytest.raises(ValidationError):
         estimate.outcome_delta.ci_low = float("nan")
@@ -295,7 +295,7 @@ def test_analysis_facts_freeze_python_set_metadata() -> None:
     assert fact_labels == frozenset({"a", "b"})
     assert isinstance(fact_labels, frozenset)
     with pytest.raises(AttributeError):
-        fact_labels.add("mutation")  # pyright: ignore[reportAttributeAccessIssue]
+        fact_labels.add("mutation")  # pyright: ignore[reportAttributeAccessIssue]  # mutation on purpose
 
 
 def test_label_contract_rejects_fake_identified_and_allows_bound_without_interval() -> None:

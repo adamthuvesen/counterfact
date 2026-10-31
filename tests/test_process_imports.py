@@ -3,6 +3,8 @@
 import ast
 from pathlib import Path
 
+from tests.test_strict_mode import checkout_python_files
+
 ROOT = Path(__file__).resolve().parents[1]
 VERIFY_SKILL = ".agents/skills/verify-counterfact"
 OWNERS = {
@@ -76,16 +78,11 @@ def banned_uses(source: str) -> list[tuple[int, str]]:
     return sorted(hits)
 
 
-def _checked_files() -> list[Path]:
-    globs = ["src/**/*.py", "bench/**/*.py", "scripts/*.py", f"{VERIFY_SKILL}/*.py"]
-    return sorted({*(p for g in globs for p in ROOT.glob(g)), ROOT / VERIFY_SKILL / "verify"})
-
-
 def test_only_owner_files_import_process_network_or_paid_modules() -> None:
     hits = []
-    for path in _checked_files():
+    for path in checkout_python_files():
         relative = path.relative_to(ROOT).as_posix()
-        if relative in OWNERS:
+        if relative in OWNERS or relative.startswith("tests/"):
             continue
         hits += [f"{relative}:{line} {name}" for line, name in banned_uses(path.read_text())]
     assert not hits, "Move these calls into an owner file listed in OWNERS: " + ", ".join(hits)

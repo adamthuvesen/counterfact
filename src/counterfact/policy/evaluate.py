@@ -471,7 +471,7 @@ class _QModel:
         for name in features:
             if name in self.columns:
                 x[0, self.columns[name]] = 1.0
-        prob: float = self.model.predict_proba(x)[0, 1]  # pyright: ignore[reportAttributeAccessIssue]
+        prob: float = self.model.predict_proba(x)[0, 1]  # pyright: ignore[reportAttributeAccessIssue]  # fit_logistic returns an untyped sklearn model
         return prob
 
 

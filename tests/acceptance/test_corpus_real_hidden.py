@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from tests.fixtures.coding_agent import REFERENCES_ROOT
+
+if TYPE_CHECKING:
+    from bench.real.coding_agent.llm import LLMClient
 
 # --- Phase A: csv_dedupe fixture content + registry ------------------------
 
@@ -773,9 +777,8 @@ def test_hidden_fixture_prompt_contains_spec_md_and_public_test(tmp_path: Path) 
     sandbox = snapshot_fixture(csv_dedupe, tmp_path)
     prompt = build_fix_prompt(csv_dedupe, sandbox)
     spec_text = (csv_dedupe.root / "spec.md").read_text()
-    public_text = (
-        csv_dedupe.root / "tests_public" / csv_dedupe.public_tests_relpath  # pyright: ignore[reportOperatorIssue]
-    ).read_text()
+    assert csv_dedupe.public_tests_relpath is not None
+    public_text = (csv_dedupe.root / "tests_public" / csv_dedupe.public_tests_relpath).read_text()
     src_text = csv_dedupe.source_path.read_text()
     # Pick a few stable substrings that must survive whatever framing the
     # builder adds; full-text equality would be brittle to wrapping.
@@ -854,7 +857,7 @@ def test_date_window_prompt_contains_spec_and_public_only(tmp_path: Path) -> Non
 # --- Phase D: hidden eval + Outcome metadata wiring ------------------------
 
 
-def _stub_llm_returning(text: str) -> object:
+def _stub_llm_returning(text: str) -> LLMClient:
     """Build a one-shot stub LLM that always returns `text`."""
     from bench.real.coding_agent.llm import LLMResponse
 
@@ -907,7 +910,7 @@ def test_hidden_outcome_when_reference_passes_both(tmp_path: Path) -> None:
     run = run_one_trace(
         csv,
         run_index=0,
-        llm=_stub_llm_returning(_csv_dedupe_reference_fence()),  # pyright: ignore[reportArgumentType]
+        llm=_stub_llm_returning(_csv_dedupe_reference_fence()),
         budget=budget,
         sandbox_root=tmp_path,
         config=AgentRunConfig(epsilon=0.0, seed=42),
@@ -940,7 +943,7 @@ def test_stateful_raw_class_response_is_extracted_and_evaluated(
     run = run_one_trace(
         fixture,
         run_index=0,
-        llm=_stub_llm_returning(reference),  # pyright: ignore[reportArgumentType]
+        llm=_stub_llm_returning(reference),
         budget=BudgetTracker(cap_usd=1.0),
         sandbox_root=tmp_path,
         config=AgentRunConfig(epsilon=0.0, seed=42),
@@ -974,7 +977,7 @@ def test_hidden_outcome_records_generalization_gap(tmp_path: Path) -> None:
     run = run_one_trace(
         csv,
         run_index=0,
-        llm=_stub_llm_returning(_csv_dedupe_buggy_fence()),  # pyright: ignore[reportArgumentType]
+        llm=_stub_llm_returning(_csv_dedupe_buggy_fence()),
         budget=budget,
         sandbox_root=tmp_path,
         config=AgentRunConfig(epsilon=0.0, seed=42),
@@ -1000,7 +1003,7 @@ def test_hidden_outcome_when_no_patch_extracted(tmp_path: Path) -> None:
     run = run_one_trace(
         csv,
         run_index=0,
-        llm=_stub_llm_returning("(no fence)"),  # pyright: ignore[reportArgumentType]
+        llm=_stub_llm_returning("(no fence)"),
         budget=budget,
         sandbox_root=tmp_path,
         config=AgentRunConfig(epsilon=0.0, seed=42),
@@ -1039,7 +1042,7 @@ def test_hidden_eval_runs_exactly_once_per_trace(
     run_one_trace(
         csv,
         run_index=0,
-        llm=_stub_llm_returning("(no fence)"),  # pyright: ignore[reportArgumentType]
+        llm=_stub_llm_returning("(no fence)"),
         budget=budget,
         sandbox_root=tmp_path,
         config=AgentRunConfig(epsilon=0.0, seed=42),

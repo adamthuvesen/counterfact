@@ -259,7 +259,7 @@ def run_from_messages(messages: list[dict[str, Any]]) -> Run:
         raise IngestError("claude-agent-sdk message stream is empty")
 
     for idx, msg in enumerate(messages):
-        if not isinstance(msg, dict):  # pyright: ignore[reportUnnecessaryIsInstance]
+        if not isinstance(msg, dict):  # pyright: ignore[reportUnnecessaryIsInstance]  # untrusted JSON input
             raise IngestError(f"record {idx}: message must be a JSON object")
         if _message_type(msg) not in _KNOWN_MESSAGE_TYPES:
             raise IngestError(

@@ -24,6 +24,14 @@ RECEIPT = "/repo/.counterfact/approved"
         {"tool_name": "Bash", "tool_input": {"command": "cp receipt.json .counterfact/approved"}},
         {"tool_name": "Bash", "tool_input": {"command": "cd .counterfact && touch approved"}},
         {
+            "tool_name": "Bash",
+            "tool_input": {"command": "sed -E -i 's/a/b/' .counterfact/approved"},
+        },
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": "sed --in-place s/a/b/ .counterfact/approved"},
+        },
+        {
             "tool_name": "Write",
             "cwd": "/repo/.counterfact",
             "tool_input": {"file_path": "approved"},
@@ -48,6 +56,7 @@ def test_receipt_writes_are_denied(payload: dict[str, object]) -> None:
         {"tool_name": "Write", "tool_input": {"file_path": "/repo/docs/usage.md"}},
         {"tool_name": "Bash", "tool_input": {"command": "cat .counterfact/approved 2>/dev/null"}},
         {"tool_name": "Bash", "tool_input": {"command": "cat .counterfact/approved 2>&1"}},
+        {"tool_name": "Bash", "tool_input": {"command": "sed -n 1p .counterfact/approved"}},
         {"tool_name": "Bash", "tool_input": {"command": "uv run counterfact bench real --n 1"}},
     ],
 )

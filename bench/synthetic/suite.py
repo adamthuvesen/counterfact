@@ -162,9 +162,9 @@ def summarize(scenario: Scenario, results: list[SeedResult], n_runs: int) -> Sce
         label_accuracy=sum(r.label == scenario.expected_label for r in results) / len(results),
         engine_bias=engine_bias,
         engine_rmse=engine_rmse,
-        ci_coverage=_share([r.ci_low <= truth <= r.ci_high for r in identified]),  # pyright: ignore[reportOperatorIssue, reportOptionalOperand]
+        ci_coverage=_share([r.ci_low <= truth <= r.ci_high for r in identified]),  # pyright: ignore[reportOperatorIssue, reportOptionalOperand]  # identified rows carry a CI
         mean_ci_width=float(np.mean(widths)) if widths else None,
-        bound_coverage=_share([r.bound_low <= truth <= r.bound_high for r in bounded]),  # pyright: ignore[reportOperatorIssue, reportOptionalOperand]
+        bound_coverage=_share([r.bound_low <= truth <= r.bound_high for r in bounded]),  # pyright: ignore[reportOperatorIssue, reportOptionalOperand]  # bounded rows carry bounds
         mean_bound_low=float(np.mean(bound_lows)) if bound_lows else None,
         mean_bound_high=float(np.mean(bound_highs)) if bound_highs else None,
     )

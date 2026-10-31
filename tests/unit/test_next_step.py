@@ -171,7 +171,7 @@ def test_next_step_add_arm_randomization_requires_policy() -> None:
 
 def test_next_step_unknown_action_raises() -> None:
     with pytest.raises(ValidationError):
-        NextStep(action="teleport", payload={}, human_text="…")  # pyright: ignore[reportArgumentType]
+        NextStep(action="teleport", payload={}, human_text="…")  # pyright: ignore[reportArgumentType]  # unknown action on purpose
 
 
 def test_next_step_optional_suggested_command_is_accepted() -> None:
