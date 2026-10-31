@@ -5,7 +5,7 @@ description: "Drives the real counterfact CLI (diagnose, explain, intervene, ing
 
 # Verify counterfact
 
-`verify` runs the installed `.venv/bin/counterfact` console script the way a user does. It uses the committed `bench/real/smoke_mixed_outcome` corpus and the Claude Agent SDK adapter fixture. Every output goes to a temp dir with a temp HOME. The child environment holds no API keys, and no drive reaches `bench real`, Docker, or a provider.
+`verify` runs the installed `.venv/bin/counterfact` console script the way a user does. It uses the committed `bench/real/smoke_mixed_outcome` corpus and the Claude Agent SDK adapter fixture. Every output goes to a temp dir with a temp HOME. The child environment holds no API keys, and no drive reaches `bench real`, Docker, or a provider. Stubs for `curl`, `git`, `docker`, `uv`, `claude`, and other tools come first on PATH, and a drive that calls one fails.
 
 ## Run
 

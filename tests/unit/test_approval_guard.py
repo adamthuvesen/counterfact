@@ -19,6 +19,8 @@ RECEIPT = "/repo/.counterfact/approved"
         {"tool_name": "Write", "tool_input": {"file_path": RECEIPT, "content": "{}"}},
         {"tool_name": "Edit", "tool_input": {"file_path": RECEIPT}},
         {"tool_name": "Bash", "tool_input": {"command": "echo '{}' > .counterfact/approved"}},
+        {"tool_name": "Bash", "tool_input": {"command": "echo '{}' 1> .counterfact/approved"}},
+        {"tool_name": "Bash", "tool_input": {"command": "echo '{}' &> .counterfact/approved"}},
         {"tool_name": "Bash", "tool_input": {"command": "cp receipt.json .counterfact/approved"}},
         {"tool_name": "Bash", "tool_input": {"command": "cd .counterfact && touch approved"}},
         {
@@ -45,6 +47,7 @@ def test_receipt_writes_are_denied(payload: dict[str, object]) -> None:
     [
         {"tool_name": "Write", "tool_input": {"file_path": "/repo/docs/usage.md"}},
         {"tool_name": "Bash", "tool_input": {"command": "cat .counterfact/approved 2>/dev/null"}},
+        {"tool_name": "Bash", "tool_input": {"command": "cat .counterfact/approved 2>&1"}},
         {"tool_name": "Bash", "tool_input": {"command": "uv run counterfact bench real --n 1"}},
     ],
 )

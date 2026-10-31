@@ -19,6 +19,8 @@ CLAUDE_FIXTURE = ROOT / "tests" / "fixtures" / "adapters" / "claude_agent_sdk" /
 APPROVAL = ROOT / ".counterfact" / "approved"
 SCRATCH = Path(tempfile.mkdtemp(prefix="verify-counterfact-"))
 SECRET_NAME = re.compile("KEY|TOKEN|SECRET|PASSWORD")
+# The CLI never needs these. A stub on PATH records any call and the drive fails.
+TRIPWIRES = ["curl", "wget", "git", "docker", "uv", "uvx", "claude", "codex", "ssh", "nc"]
 SHARED_PATHS = [
     "pyproject.toml",
     "uv.lock",
@@ -44,8 +46,15 @@ class Run:
         self.run_dir = run_dir
         self.name = name
         self.home = Path(tempfile.mkdtemp(prefix=f"{name}-", dir=SCRATCH))
+        self.tripwire_hits = self.home / "tripwire-hits"
+        tripwire_bin = self.home / "tripwire-bin"
+        tripwire_bin.mkdir()
+        for tool in TRIPWIRES:
+            stub = tripwire_bin / tool
+            stub.write_text(f'#!/bin/sh\necho "{tool} $*" >> "{self.tripwire_hits}"\nexit 97\n')
+            stub.chmod(0o755)
         self.env = {
-            "PATH": f"{VENV_BIN}:/usr/bin:/bin",
+            "PATH": f"{tripwire_bin}:{VENV_BIN}:/usr/bin:/bin",
             "HOME": str(self.home),
             "TZ": "UTC",
             "XDG_CONFIG_HOME": str(self.home / "config"),
@@ -77,6 +86,9 @@ class Run:
             "stderr": proc.stderr,
         }
         (self.run_dir / f"{self.name}.{self.step}.json").write_text(json.dumps(record, indent=2))
+        if self.tripwire_hits.exists():
+            hits = self.tripwire_hits.read_text().strip().splitlines()
+            raise DriveFailure(f"`counterfact {' '.join(args[:2])}` hit a tripwire: {hits[0]}")
         if proc.returncode != expect_exit:
             tail = (proc.stderr or proc.stdout).strip()[-300:]
             raise DriveFailure(
