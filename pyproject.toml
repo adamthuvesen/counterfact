@@ -81,39 +81,6 @@ ignore = ["B008", "E501"]
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "counterfact.schema.Run.model_validate_json".msg = "Read run files with counterfact.corpus_io.load_run or load_corpus."
 "counterfact.schema.models.Run.model_validate_json".msg = "Read run files with counterfact.corpus_io.load_run or load_corpus."
-"subprocess".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"pty".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"asyncio.subprocess".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"asyncio.create_subprocess_exec".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"asyncio.create_subprocess_shell".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.system".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.popen".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.posix_spawn".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.posix_spawnp".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.execl".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.execle".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.execlp".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.execlpe".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.execv".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.execve".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.execvp".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.execvpe".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.spawnl".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.spawnle".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.spawnlp".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.spawnlpe".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.spawnv".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.spawnve".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.spawnvp".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"os.spawnvpe".msg = "Process calls belong to their owner files; see [tool.ruff.lint.per-file-ignores]."
-"socket".msg = "Network clients have no owner in this repo."
-"http.client".msg = "Network clients have no owner in this repo."
-"urllib.request".msg = "Network clients have no owner in this repo."
-"requests".msg = "Network clients have no owner in this repo."
-"httpx".msg = "Network clients have no owner in this repo."
-"litellm".msg = "Paid model calls go through bench/real/coding_agent/llm.py::LiteLLMClient."
-"openai".msg = "Paid model calls go through bench/real/coding_agent/llm.py::LiteLLMClient."
-"anthropic".msg = "Paid model calls go through bench/real/coding_agent/llm.py::LiteLLMClient."
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/build_demo_notebook.py" = ["E501", "RUF001", "RUF002"]
@@ -121,16 +88,6 @@ ignore = ["B008", "E501"]
 # Tests read published files directly to assert on the raw output.
 "src/counterfact/corpus_io.py" = ["TID251"]
 "src/counterfact/analysis/corpus.py" = ["TID251"]
-# Owners of process calls and the paid model client. Tests also drive subprocesses and fake litellm.
-"bench/real/coding_agent/executor.py" = ["TID251"]
-"bench/real/coding_agent/fixtures.py" = ["TID251"]
-"bench/real/coding_agent/llm.py" = ["TID251"]
-"bench/real/container/verify.py" = ["TID251"]
-"scripts/check_container.py" = ["TID251"]
-"scripts/check_wheel.py" = ["TID251"]
-"scripts/wheel_smoke.py" = ["TID251"]
-".agents/skills/verify-counterfact/drives.py" = ["TID251"]
-".agents/skills/verify-counterfact/verify" = ["TID251"]
 "tests/**" = ["TID251"]
 
 [tool.coverage.run]

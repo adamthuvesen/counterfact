@@ -49,7 +49,8 @@ def repo_writes(since_ns: int, run_dir: Path) -> list[str]:
             dirs[:] = [d for d in dirs if here / d not in (run_dir, git_dir)]
             for name in [*dirs, *files]:
                 path = here / name
-                if path.lstat().st_mtime_ns >= since_ns:
+                stat = path.lstat()
+                if max(stat.st_mtime_ns, stat.st_ctime_ns) >= since_ns:
                     written.append(str(path.relative_to(top.parent)))
     return written
 

@@ -28,7 +28,7 @@ The Makefile defines every gate. Mark a test `slow` only when it is integration-
 | --- | --- | --- |
 | Scientific code does not import presentation, CLI, provider, or bench modules | `pyproject.toml::tool.importlinter.contracts` | 2026-11-05 |
 | Parse run files only through `corpus_io.load_run` or `load_corpus` | `pyproject.toml::tool.ruff.lint.flake8-tidy-imports.banned-api` | 2026-11-06 |
-| Only named owner files import process, network, or paid-model modules | `pyproject.toml::tool.ruff.lint.flake8-tidy-imports.banned-api` | 2026-11-07 |
+| Only named owner files import process, network, or paid-model modules | `tests/test_process_imports.py::test_only_owner_files_import_process_network_or_paid_modules` | 2026-11-07 |
 | Write run files only through `corpus_io.write_corpus` (exception: `bench/real/coding_agent/runner.py`) | `tests/test_corpus_writes.py::test_run_json_is_not_written_by_hand` | 2026-11-06 |
 | Library modules import without `bench/`, `scripts/`, or `tests/` | `tests/test_imports.py::test_library_imports_without_checkout_only_modules` | 2026-11-06 |
 | The wheel holds `src/counterfact` only and works outside the checkout | `scripts/check_wheel.py` | 2026-11-05 |

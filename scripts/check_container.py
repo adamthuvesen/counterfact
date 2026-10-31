@@ -38,9 +38,7 @@ def main() -> int:
             "-m",
             "container",
             "--no-cov",
-            "tests/unit/test_corpus_real.py",
-            "tests/acceptance/test_corpus_real_hidden.py",
-            "tests/acceptance/test_container_executor.py",
+            "tests",
         ],
         cwd=ROOT,
     ).returncode
