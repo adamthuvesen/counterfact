@@ -25,6 +25,16 @@ RECEIPT = "/repo/.counterfact/approved"
         {"tool_name": "Bash", "tool_input": {"command": "cd .counterfact && touch approved"}},
         {
             "tool_name": "Bash",
+            "tool_input": {"command": "gawk -i inplace '{print}' .counterfact/approved"},
+        },
+        {"tool_name": "Bash", "tool_input": {"command": "curl -o .counterfact/approved http://x"}},
+        {"tool_name": "Bash", "tool_input": {"command": "rsync r.json .counterfact/approved"}},
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": "git checkout stash -- .counterfact/approved"},
+        },
+        {
+            "tool_name": "Bash",
             "tool_input": {"command": "sed -E -i 's/a/b/' .counterfact/approved"},
         },
         {
@@ -57,6 +67,10 @@ def test_receipt_writes_are_denied(payload: dict[str, object]) -> None:
         {"tool_name": "Bash", "tool_input": {"command": "cat .counterfact/approved 2>/dev/null"}},
         {"tool_name": "Bash", "tool_input": {"command": "cat .counterfact/approved 2>&1"}},
         {"tool_name": "Bash", "tool_input": {"command": "sed -n 1p .counterfact/approved"}},
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls .counterfact && cat .counterfact/approved"},
+        },
         {"tool_name": "Bash", "tool_input": {"command": "uv run counterfact bench real --n 1"}},
     ],
 )

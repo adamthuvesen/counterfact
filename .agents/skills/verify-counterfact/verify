@@ -44,6 +44,9 @@ def repo_writes(since_ns: int, run_dir: Path) -> list[str]:
     git_dir = Path(git("rev-parse", "--absolute-git-dir"))
     written: list[str] = []
     for top in (ROOT, git_dir):
+        stat = top.lstat()
+        if max(stat.st_mtime_ns, stat.st_ctime_ns) >= since_ns:
+            written.append(top.name)
         for parent, dirs, files in os.walk(top):
             here = Path(parent)
             dirs[:] = [d for d in dirs if here / d not in (run_dir, git_dir)]

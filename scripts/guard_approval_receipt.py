@@ -13,6 +13,23 @@ WRITES = re.compile(
     r">(?!\s*(/dev/null|&\d))|\bsed\b[^|;&\n]*\s(-[a-zA-Z]*i|--in-place)|\*\*\* (Add|Update|Delete) File:"
     r"|\b(tee|cp|mv|touch|ln|rm|install|dd|truncate|python3?|uv|node|perl|ruby)\b"
 )
+# A command that names the receipt may only read it: every segment starts with a read-only tool.
+SEGMENT_SPLIT = re.compile(r"\|\|?|&&|;|\n|&(?![0-9>])")
+READ_ONLY = {
+    "cat",
+    "ls",
+    "test",
+    "[",
+    "stat",
+    "head",
+    "tail",
+    "grep",
+    "rg",
+    "wc",
+    "file",
+    "cd",
+    "echo",
+}
 MESSAGE = (
     "Stop. Agents never create or edit .counterfact/approved. "
     "Ask Adam to approve the spend and write the approval receipt himself."
@@ -32,7 +49,21 @@ def denial(payload: dict[str, object]) -> str | None:
         command = " ".join(str(part) for part in command)
     text = str(command)
     named = all(pattern.search(text) for pattern in NAMES_RECEIPT)
-    return MESSAGE if named and WRITES.search(text) else None
+    if not named:
+        return None
+    return MESSAGE if WRITES.search(text) or not _only_reads(text) else None
+
+
+def _only_reads(command: str) -> bool:
+    for segment in SEGMENT_SPLIT.split(command):
+        words = segment.split()
+        if not words:
+            continue
+        if words[0] == "sed" and "-n" in words:
+            continue
+        if words[0] not in READ_ONLY:
+            return False
+    return True
 
 
 def main() -> int:
