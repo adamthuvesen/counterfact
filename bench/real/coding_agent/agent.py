@@ -264,7 +264,6 @@ class AgentRunConfig:
     epsilon: float = 0.2
     max_steps: int = DEFAULT_MAX_STEPS
     seed: int = 0
-    # Per-decision policy knobs.
     tool_greedy: str = "inspect_file"
     tool_epsilon: float | None = None
     model_greedy: str = "large"
@@ -336,7 +335,6 @@ def run_one_trace(
     steps: list[Step] = []
     step_index = 0
 
-    # ----- Step 0: plan_step (deterministic) -----
     steps.append(
         Step(
             step_index=step_index,
@@ -351,7 +349,6 @@ def run_one_trace(
     )
     step_index += 1
 
-    # ----- Step 1: tool_call (ε-greedy on tool_choice) -----
     tool_action, tool_prop = eg_tool.choose(TOOL_ARMS, greedy=config.tool_greedy)
     src_text = src_path.read_text()
     if hidden:
@@ -388,7 +385,6 @@ def run_one_trace(
     )
     step_index += 1
 
-    # ----- Step 2: retry_policy decided upfront -----
     retry_action, retry_prop = eg_retry.choose(RETRY_ARMS, greedy=config.retry_greedy)
     attempts_remaining = 1 + (1 if retry_action == "retry_once" else 0)
     steps.append(
@@ -410,7 +406,6 @@ def run_one_trace(
     )
     step_index += 1
 
-    # ----- Step 3: model_call (ε-greedy on model_choice) -----
     if config.model_route_by_fixture is None:
         model_action, model_prop = eg_model.choose(MODEL_ARMS, greedy=config.model_greedy)
         model_policy = "epsilon_greedy"
@@ -464,7 +459,6 @@ def run_one_trace(
     if patched is not None:
         src_path.write_text(patched)
 
-    # ----- Step 4: tool_call run_tests (deterministic) -----
     execution = _run_tests_in_loop()
     passed, tail = execution.passed, execution.output_tail
     steps.append(
@@ -538,7 +532,6 @@ def run_one_trace(
             run_index, fixture, steps, sandbox, public_pass=False, executor=executor
         )
 
-    # ----- Step 5: model_call retry, with failure context -----
     retry_prompt = build_fix_prompt(fixture, sandbox) + _RETRY_PROMPT_SUFFIX.format(
         test_output=tail[-1000:]
     )
@@ -588,7 +581,6 @@ def run_one_trace(
     if patched2 is not None:
         src_path.write_text(patched2)
 
-    # ----- Step 6: tool_call run_tests (second attempt) -----
     execution2 = _run_tests_in_loop()
     passed2, tail2 = execution2.passed, execution2.output_tail
     steps.append(

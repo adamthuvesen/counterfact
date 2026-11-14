@@ -159,7 +159,6 @@ def _identifiability_coverage(
     if len(classes) < 2:
         # Single-class corpus — outcome model can't fit. Only the unidentified
         # paths (always-replay, degenerate) are reachable through the engine.
-        # We mark that explicitly so the rubric reasoning is honest.
         return _unfittable_coverage()
 
     model = AnalysisCorpus(runs, seed=_PROBE_SEED)

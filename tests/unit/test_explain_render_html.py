@@ -34,10 +34,6 @@ from counterfact.intervene.estimate import (
 from counterfact.schema import Decision, Metadata, Observation, Outcome, Run
 from tests.conftest import single_class_refusal_corpus, synthetic_corpus
 
-# ---------------------------------------------------------------------------
-# Fixtures and helpers
-# ---------------------------------------------------------------------------
-
 FIXED_NOW = datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC)
 
 
@@ -321,11 +317,6 @@ def _hand_built_report(
             "corpus_dir": "runs",
         }
     )
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 def test_render__starts_with_doctype_and_lang() -> None:

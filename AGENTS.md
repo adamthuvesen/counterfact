@@ -24,27 +24,23 @@ The Makefile defines every gate. Mark a test `slow` only when it is integration-
 
 ## Enforced Rules
 
-| Rule | Enforced by | Added |
-| --- | --- | --- |
-| Scientific code does not import presentation, CLI, provider, or bench modules | `pyproject.toml::tool.importlinter.contracts` | 2026-11-05 |
-| Parse run files only through `corpus_io.load_run` or `load_corpus` | `pyproject.toml::tool.ruff.lint.flake8-tidy-imports.banned-api` | 2026-11-06 |
-| Only named owner files import process, network, or paid-model modules | `tests/test_process_imports.py::test_only_owner_files_import_process_network_or_paid_modules` | 2026-11-07 |
-| Write run files only through `corpus_io.write_corpus` (exception: `bench/real/coding_agent/runner.py`) | `tests/test_corpus_writes.py::test_run_json_is_not_written_by_hand` | 2026-11-06 |
-| Library modules import without `bench/`, `scripts/`, or `tests/` | `tests/test_imports.py::test_library_imports_without_checkout_only_modules` | 2026-11-06 |
-| The wheel holds `src/counterfact` only and works outside the checkout | `scripts/check_wheel.py` | 2026-11-05 |
-| Generated artifacts match their builders | `Makefile::check-generated` | 2026-11-05 |
-| Generated code cannot reach the host or mutate the verifier (`make check-container`) | `tests/acceptance/test_container_executor.py::test_generated_code_cannot_reach_host_or_mutate_verifier` | 2026-11-05 |
-| Real-agent spend halts at 80% of the budget | `tests/unit/test_corpus_real.py::test_budget__halt_at_80_percent` | 2026-04-09 |
-| Unknown paid-call charges block resume | `tests/unit/test_corpus_real.py::test_unknown_paid_call_cost_blocks_resume` | 2026-11-05 |
-| Agents never create or edit `.counterfact/approved`. Stop and ask Adam to approve the spend | `.claude/settings.json::hooks.PreToolUse`, `.codex/hooks.json::hooks.PreToolUse`, `tests/unit/test_approval_guard.py::test_client_hook_denies_with_the_stop_message` | 2026-11-06 |
-| The approval receipt must match the budget before any API call | `tests/unit/test_corpus_real.py::test_approval_receipt_must_match_budget_before_any_api_call` | 2026-05-10 |
-| Same-step decisions never enter adjustment sets | `tests/unit/test_analysis_contract.py::test_same_step_decisions_are_not_adjustment_features` | 2026-11-05 |
-| Repeated decisions of one type refuse focal localization | `tests/unit/test_causal_engine.py::test_intervene__repeated_decision_type_reports_localization_limit` | 2026-05-06 |
-| `verify control` must observe FAIL before a verify pass counts | `.agents/skills/verify-counterfact/verify::control` | 2026-11-06 |
-| These citations name real files and names | `tests/test_agents_md.py::test_enforced_rules_cite_existing_files_and_names` | 2026-11-06 |
-| No file downgrades strict type checking with a `# pyright:` mode comment | `tests/test_strict_mode.py::test_no_file_downgrades_type_checking_mode` | 2026-11-07 |
-| Every inline type ignore names its rule and gives a reason | `tests/test_strict_mode.py::test_inline_ignores_name_a_rule_and_give_a_reason` | 2026-11-07 |
-| No blanket `noqa`, no file-wide `# ruff: noqa`, no `noqa` on a module ban | `pyproject.toml::tool.ruff.lint`, `tests/test_strict_mode.py::test_no_noqa_lifts_a_ban_or_a_whole_file` | 2026-11-09 |
+| Rule | Enforced by |
+| --- | --- |
+| Scientific code does not import presentation, CLI, provider, or bench modules | `pyproject.toml::tool.importlinter.contracts` |
+| Parse run files only through `corpus_io.load_run` or `load_corpus` | `pyproject.toml::tool.ruff.lint.flake8-tidy-imports.banned-api` |
+| Only named owner files import process, network, or paid-model modules | `tests/test_process_imports.py::test_only_owner_files_import_process_network_or_paid_modules` |
+| Write run files only through `corpus_io.write_corpus` (exception: `bench/real/coding_agent/runner.py`) | `tests/test_corpus_writes.py::test_run_json_is_not_written_by_hand` |
+| Library modules import without `bench/`, `scripts/`, or `tests/` | `tests/test_imports.py::test_library_imports_without_checkout_only_modules` |
+| The wheel holds `src/counterfact` only and works outside the checkout | `scripts/check_wheel.py` |
+| Generated artifacts match their builders | `Makefile::check-generated` |
+| Generated code cannot reach the host or mutate the verifier (`make check-container`) | `tests/acceptance/test_container_executor.py::test_generated_code_cannot_reach_host_or_mutate_verifier` |
+| Real-agent spend halts at 80% of the budget | `tests/unit/test_corpus_real.py::test_budget__halt_at_80_percent` |
+| Unknown paid-call charges block resume | `tests/unit/test_corpus_real.py::test_unknown_paid_call_cost_blocks_resume` |
+| Agents never create or edit `.counterfact/approved`. Stop and ask Adam to approve the spend | `.claude/settings.json::hooks.PreToolUse`, `.codex/hooks.json::hooks.PreToolUse`, `tests/unit/test_approval_guard.py::test_client_hook_denies_with_the_stop_message` |
+| The approval receipt must match the budget before any API call | `tests/unit/test_corpus_real.py::test_approval_receipt_must_match_budget_before_any_api_call` |
+| Same-step decisions never enter adjustment sets | `tests/unit/test_analysis_contract.py::test_same_step_decisions_are_not_adjustment_features` |
+| Repeated decisions of one type refuse focal localization | `tests/unit/test_causal_engine.py::test_intervene__repeated_decision_type_reports_localization_limit` |
+| `verify control` must observe FAIL before a verify pass counts | `.agents/skills/verify-counterfact/verify::control` |
 
 ## Design boundaries
 

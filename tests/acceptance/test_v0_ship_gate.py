@@ -62,9 +62,6 @@ FORBIDDEN_DEPS = ("dowhy", "causalml", "pyro", "langchain", "langgraph", "pandas
 FORBIDDEN_IMPORTS = ("dowhy", "causalml", "pyro", "langchain", "langgraph")
 
 
-# --- fixtures ---------------------------------------------------------------
-
-
 def _load_real_corpus() -> list[Run]:
     assert REAL_CORPUS_DIR.exists(), f"required real corpus absent at {REAL_CORPUS_DIR}"
     return load_json_corpus(REAL_CORPUS_DIR)
@@ -77,9 +74,6 @@ def real_corpus() -> list[Run]:
     return runs
 
 
-# --- synthetic corpus is reproducible at >=500 traces -----------------------
-
-
 def test_synthetic_corpus_is_deterministically_500_traces() -> None:
     """Synthetic generator produces 500 traces deterministically per seed."""
     a = list(generate_traces(n=500, seed=42))
@@ -87,9 +81,6 @@ def test_synthetic_corpus_is_deterministically_500_traces() -> None:
     assert len(a) == 500
     assert a[0] == b[0]
     assert a[-1] == b[-1]
-
-
-# --- real-corpus identifiability is honestly reported -----------------------
 
 
 def test_real_corpus_meets_minimum_size(real_corpus: list[Run]) -> None:
@@ -229,9 +220,6 @@ def test_real_corpus_identifiability_is_honest(real_corpus: list[Run]) -> None:
                 )
 
 
-# --- at least one unidentified with actionable next_step --------------------
-
-
 def test_at_least_one_unidentified_with_actionable_next_step(
     real_corpus: list[Run],
 ) -> None:
@@ -285,9 +273,6 @@ def test_at_least_one_unidentified_with_actionable_next_step(
     )
 
 
-# --- top-1 attribution matches the labeled root cause -----------------------
-
-
 def test_top1_attribution_label_artifact_is_present() -> None:
     """The labels.json artifact exists with the documented schema.
 
@@ -305,9 +290,6 @@ def test_top1_attribution_label_artifact_is_present() -> None:
         pytest.skip("labels.json has zero entries; human labeling gate is open")
     entry = labels["labels"][0]
     assert entry.get("root_cause_decision_id"), "first label entry has no root_cause_decision_id"
-
-
-# --- demo notebook renders the naive-vs-honest contrast ---------------------
 
 
 def test_demo_renders_naive_vs_honest_contrast(tmp_path: Path) -> None:
@@ -329,9 +311,6 @@ def test_demo_renders_naive_vs_honest_contrast(tmp_path: Path) -> None:
         "demo notebook does not render any actionable next_step.action; "
         f"expected one of {sorted(ACTIONABLE_NEXT_STEP_ACTIONS)}"
     )
-
-
-# --- forbidden dependencies stay out ---------------------------------------
 
 
 def test_no_forbidden_dependencies_in_pyproject() -> None:

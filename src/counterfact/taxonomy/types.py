@@ -84,13 +84,11 @@ def _ensure_known(decision_type: str) -> None:
 
 
 def valid_interventions(decision_type: str) -> frozenset[str]:
-    """Return the intervention kinds accepted on this decision type."""
     _ensure_known(decision_type)
     return frozenset(kind for kind, _ in _SPECS[decision_type].interventions)
 
 
 def is_valid_intervention(decision_type: str, intervention_kind: str) -> bool:
-    """True iff `intervention_kind` is a valid intervention on this decision type."""
     if decision_type not in DECISION_TYPES:
         return False
     return intervention_kind in valid_interventions(decision_type)

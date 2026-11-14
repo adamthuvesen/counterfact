@@ -15,8 +15,6 @@ from counterfact.schema import Run
 
 
 def test_synthetic__generator_produces_n_traces(tmp_path: Path) -> None:
-    """WHEN counterfact bench synthetic --n 500 --seed 42 is executed
-    THEN 500 trace files are produced and the wall-clock runtime is under 60 seconds."""
     out = tmp_path / "syn"
     t0 = time.monotonic()
     generate_corpus(n=500, seed=42, output_dir=out)
@@ -30,8 +28,6 @@ def test_synthetic__generator_produces_n_traces(tmp_path: Path) -> None:
 
 
 def test_synthetic__known_true_effect_is_accessible() -> None:
-    """WHEN the synthetic SCM is constructed in code
-    THEN the true effect of the headline intervention is exposed as a constant."""
     assert isinstance(HEADLINE_TRUE_EFFECT, float)
     assert -1.0 < HEADLINE_TRUE_EFFECT < 1.0
     # The headline intervention is model_choice; sonnet should beat haiku.
@@ -39,8 +35,6 @@ def test_synthetic__known_true_effect_is_accessible() -> None:
 
 
 def test_synthetic__randomization_is_uniform(tmp_path: Path) -> None:
-    """WHEN any randomized decision is made during synthetic-trace generation
-    THEN policy is "uniform" and propensity equals 1 / len(valid_actions)."""
     out = tmp_path / "syn"
     generate_corpus(n=20, seed=1, output_dir=out)
     files = sorted(out.glob("syn-*.json"))
@@ -61,8 +55,6 @@ def test_synthetic__randomization_is_uniform(tmp_path: Path) -> None:
 
 
 def test_synthetic__same_seed_yields_same_traces(tmp_path: Path) -> None:
-    """WHEN counterfact bench synthetic --n 100 --seed 7 is executed twice
-    THEN the two output directories contain byte-identical files."""
     a, b = tmp_path / "a", tmp_path / "b"
     generate_corpus(n=100, seed=7, output_dir=a)
     generate_corpus(n=100, seed=7, output_dir=b)
@@ -74,8 +66,6 @@ def test_synthetic__same_seed_yields_same_traces(tmp_path: Path) -> None:
 
 
 def test_synthetic__different_seeds_yield_different_traces(tmp_path: Path) -> None:
-    """WHEN counterfact bench synthetic --n 100 --seed 7 and --seed 8 are executed
-    THEN at least one trace file differs between the two outputs."""
     a, b = tmp_path / "a", tmp_path / "b"
     generate_corpus(n=100, seed=7, output_dir=a)
     generate_corpus(n=100, seed=8, output_dir=b)
@@ -97,12 +87,7 @@ def test_synthetic__rejects_non_empty_json_output_dir(tmp_path: Path) -> None:
     assert (out / "stale.json").exists()
 
 
-# --- CLI scenarios -----------------------------------------------------------
-
-
 def test_cli__synthetic_subcommand_runs_end_to_end(tmp_path: Path) -> None:
-    """WHEN `counterfact bench synthetic --n 50 --seed 1 --output-dir DIR` is executed
-    THEN 50 trace JSON files appear in DIR and the process exits 0."""
     out = tmp_path / "cli_syn"
     rc = main(["bench", "synthetic", "--n", "50", "--seed", "1", "--output-dir", str(out)])
     assert rc == 0
@@ -110,17 +95,12 @@ def test_cli__synthetic_subcommand_runs_end_to_end(tmp_path: Path) -> None:
 
 
 def test_cli__bench_help_describes_both_subcommands(capsys: pytest.CaptureFixture[str]) -> None:
-    """WHEN `counterfact bench --help` is executed
-    THEN the output mentions both `synthetic` and `real` subcommands."""
     with pytest.raises(SystemExit) as exit_info:
         main(["bench", "--help"])
     assert exit_info.value.code == 0
     stdout = capsys.readouterr().out
     assert "synthetic" in stdout
     assert "real" in stdout
-
-
-# --- spot-check via the strict schema ---------------------------------------
 
 
 def test_synthetic__generated_traces_round_trip_through_schema(tmp_path: Path) -> None:

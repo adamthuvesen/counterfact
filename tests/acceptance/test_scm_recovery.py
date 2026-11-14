@@ -42,8 +42,6 @@ def _headline(model: OutcomeModel, runs: list[Run]) -> CausalEstimate:
 def test_scm_recovery__within_tolerance_on_default_seed(
     fitted_corpus: tuple[list[Run], OutcomeModel],
 ) -> None:
-    """WHEN the SCM-recovery acceptance test is executed with the default seed
-    THEN the estimated headline effect is within ±0.05 of the known true E."""
     runs, model = fitted_corpus
 
     estimate = _headline(model, runs)
@@ -60,8 +58,6 @@ def test_scm_recovery__within_tolerance_on_default_seed(
 def test_scm_recovery__ci_covers_true_effect(
     fitted_corpus: tuple[list[Run], OutcomeModel],
 ) -> None:
-    """WHEN the SCM-recovery acceptance test computes the 95% CI for the headline effect
-    THEN the interval contains E."""
     runs, model = fitted_corpus
 
     delta = _headline(model, runs).outcome_delta

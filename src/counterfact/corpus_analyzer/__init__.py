@@ -15,7 +15,6 @@ from counterfact.corpus_analyzer.report import (
 )
 from counterfact.corpus_analyzer.rubric import DEFAULT_THRESHOLDS, RubricThresholds
 
-# Convenience alias matching the top-level public API.
 analyze_corpus = analyze
 
 __all__ = [

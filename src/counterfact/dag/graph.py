@@ -61,28 +61,6 @@ class DAG:
     def children_of(self, decision_id: str) -> list[str]:
         return list(self._adj.get(decision_id, ()))
 
-    def ancestors_of(self, decision_id: str) -> list[str]:
-        seen: set[str] = set()
-        stack = [decision_id]
-        while stack:
-            cur = stack.pop()
-            for p in self._radj.get(cur, ()):
-                if p not in seen:
-                    seen.add(p)
-                    stack.append(p)
-        return list(seen)
-
-    def descendants_of(self, decision_id: str) -> list[str]:
-        seen: set[str] = set()
-        stack = [decision_id]
-        while stack:
-            cur = stack.pop()
-            for c in self._adj.get(cur, ()):
-                if c not in seen:
-                    seen.add(c)
-                    stack.append(c)
-        return list(seen)
-
     def topological_sort(self) -> list[str]:
         """Kahn's algorithm. Raises DAGCycleError if a cycle is present."""
         indeg: dict[str, int] = defaultdict(int)

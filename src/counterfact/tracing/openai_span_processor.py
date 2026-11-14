@@ -51,8 +51,6 @@ class CounterfactSpanProcessor:
         self.outcome_provider = outcome_provider
         self._spans_by_trace: dict[str, list[dict[str, Any]]] = {}
 
-    # --- TracingProcessor interface ------------------------------------------
-
     def on_trace_start(self, trace: Any) -> None:
         return None
 
@@ -99,8 +97,6 @@ class CounterfactSpanProcessor:
     def force_flush(self) -> None:
         # In-process buffering only — nothing async to drain.
         return None
-
-    # --- helpers -------------------------------------------------------------
 
     def _build_run(self, *, trace_id: str, spans: list[dict[str, Any]]) -> Run:
         trace_payload = {"trace_id": trace_id, "spans": spans}

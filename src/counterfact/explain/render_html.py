@@ -29,10 +29,6 @@ from counterfact.intervene.estimate import (
 )
 from counterfact.schema import Decision, Run
 
-# --------------------------------------------------------------------------
-# Header / story
-# --------------------------------------------------------------------------
-
 
 def _render_header(report: ExplainReport, *, generated_at: datetime) -> str:
     run = report.run
@@ -110,11 +106,6 @@ def _render_diagnosis_summary(report: ExplainReport) -> str:
         raw(tag("h2", None, "Diagnosis summary")),
         raw(tag("p", {"class": "diagnosis-summary"}, report.diagnosis_summary)),
     )
-
-
-# --------------------------------------------------------------------------
-# Trace timeline and decision cards
-# --------------------------------------------------------------------------
 
 
 def _render_timeline(report: ExplainReport) -> str:
@@ -394,11 +385,6 @@ def _render_counterfactual_lookup(report: ExplainReport) -> str:
     )
 
 
-# --------------------------------------------------------------------------
-# Descriptive baseline
-# --------------------------------------------------------------------------
-
-
 def _render_descriptive(report: ExplainReport) -> str:
     table = report.pass_rate_table
     head = tag(
@@ -461,11 +447,6 @@ def _render_descriptive(report: ExplainReport) -> str:
             )
         ),
     )
-
-
-# --------------------------------------------------------------------------
-# DAG (inline SVG)
-# --------------------------------------------------------------------------
 
 
 def _node_label(decision: Decision, run: Run | None = None) -> str:
@@ -624,11 +605,6 @@ def _render_dag(dag: DAG, *, focal_decision_id: str | None) -> str:
         ),
         raw(tag("div", {"class": "dag-wrapper"}, raw(svg))),
     )
-
-
-# --------------------------------------------------------------------------
-# CausalEstimate cards (the honesty contract lives here)
-# --------------------------------------------------------------------------
 
 
 def _render_badge(status: IdentifiabilityStatus) -> str:
@@ -893,11 +869,6 @@ def _render_verdict(report: ExplainReport) -> str:
         raw(_render_attribution_table(report.attribution)),
         raw(tag("div", {"class": "cards"}, raw(cards))),
     )
-
-
-# --------------------------------------------------------------------------
-# Footer + entry point
-# --------------------------------------------------------------------------
 
 
 def _render_footer(report: ExplainReport, *, generated_at: datetime) -> str:

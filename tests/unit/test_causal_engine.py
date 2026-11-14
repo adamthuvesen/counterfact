@@ -24,8 +24,6 @@ from counterfact.intervene import IdentifiabilityStatus
 from counterfact.outcome.model import OutcomeModel
 from counterfact.schema import Decision, Outcome, Run, Step
 
-# --- shared fixtures ---------------------------------------------------------
-
 
 @pytest.fixture(scope="module")
 def small_corpus() -> list[Run]:
@@ -47,9 +45,6 @@ def not_run_tests_run(small_corpus: list[Run]) -> Run:
     return next(
         run for run in small_corpus if run.steps[1].decisions[0].chosen_action != "run_tests"
     )
-
-
-# --- fit_outcome_model spec scenarios ---------------------------------------
 
 
 def test_fit_outcome_model__fits_on_synthetic_corpus_and_returns_a_model(
@@ -237,9 +232,6 @@ def test_intervene_query_step_accepts_none() -> None:
         step=None,
     )
     assert q.step is None
-
-
-# --- intervene spec scenarios ------------------------------------------------
 
 
 def test_intervene__adjustment_set_holds_only_pre_treatment_decisions(
@@ -566,9 +558,6 @@ def test_intervene__repeated_replay_query_still_reports_replay_required(
     assert "localization_limit" not in est.next_step.payload
 
 
-# --- attribute_failure spec scenarios ----------------------------------------
-
-
 def test_attribute_failure__top_k_returns_at_most_k(
     small_corpus: list[Run], fitted: OutcomeModel
 ) -> None:
@@ -631,9 +620,6 @@ def test_attribute_failure__mixed_type_step_uses_explicit_decision_ids(
     assert all(e.estimate.query.step == 0 for e in entries if e.estimate is not None)
 
 
-# --- Stacked uncertainty / no-silent-L3 -------------------------------------
-
-
 def test_stacked_uncertainty__identified_estimate_carries_ci_and_cross_checks_not_bounds(
     small_corpus: list[Run], fitted: OutcomeModel, not_run_tests_run: Run
 ) -> None:
@@ -680,9 +666,6 @@ def test_no_silent_l3__identified_estimate_names_its_adjustment(
 def test_no_silent_l3__bounded_estimate_explains_sensitivity_stance(
     fitted: OutcomeModel,
 ) -> None:
-    """WHEN any bounded estimate is inspected
-    THEN estimate.assumptions either names a sensitivity technique used or
-    explicitly says no sensitivity bound was computed (and why)."""
     run = Run(
         schema_version="0.1.0",
         run_id="r-mem-2",

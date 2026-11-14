@@ -88,9 +88,6 @@ def _write_approval(
     marker.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
 
 
-# --- ε-greedy randomization spec scenarios ----------------------------------
-
-
 def test_epsilon_greedy__greedy_action_propensity() -> None:
     actions = ["a", "b", "c", "d"]
     # Force the greedy branch by exhausting the RNG path; we just validate the
@@ -132,9 +129,6 @@ def test_epsilon_greedy__rejects_greedy_not_in_valid() -> None:
         eg.choose(["x", "y"], greedy="z")
 
 
-# --- Budget tracker spec scenarios ------------------------------------------
-
-
 def test_budget__halt_at_80_percent() -> None:
     tracker = BudgetTracker(cap_usd=10.0)
     tracker.add(3.0)
@@ -158,9 +152,6 @@ def test_budget__rejects_non_finite_spend(cost: float) -> None:
     tracker = BudgetTracker(cap_usd=10.0)
     with pytest.raises(ValueError, match="finite"):
         tracker.add(cost)
-
-
-# --- Fixture spec scenarios -------------------------------------------------
 
 
 @pytest.mark.slow
@@ -398,10 +389,6 @@ def _first_model_call_observation(run: Run) -> dict[str, Any]:
 
 @pytest.mark.container
 def test_agent_observation_records_extracted_patch_text(tmp_path: Path) -> None:
-    """WHEN the LLM returns a Python code block
-    THEN the model_call observation's `extracted_code` field carries the
-    actual patch source as a string (not a bool flag) so downstream
-    consumers can inspect what the agent wrote."""
     fixture = FIXTURES[1]
     code = "def add(a, b):\n    return a + b"
     fenced_response = f"Here's the fix:\n\n```python\n{code}\n```\n"
@@ -429,9 +416,6 @@ def test_agent_observation_records_extracted_patch_text(tmp_path: Path) -> None:
 
 @pytest.mark.container
 def test_agent_observation_extracted_code_is_none_when_parse_fails(tmp_path: Path) -> None:
-    """WHEN the LLM response has no code fence
-    THEN `extracted_code` is None (not False), preserving the
-    'parse failed' signal as a typed absence rather than a bool flag."""
     fixture = FIXTURES[1]
 
     class _NoFenceLLM:
@@ -457,8 +441,6 @@ def test_agent_observation_extracted_code_is_none_when_parse_fails(tmp_path: Pat
 def test_agent_observation_records_finish_reason_and_response_chars(
     tmp_path: Path,
 ) -> None:
-    """WHEN the LLM response includes provider finish metadata
-    THEN the trace keeps it next to extraction diagnostics."""
     fixture = FIXTURES[1]
 
     class _StoppedLLM:
@@ -522,9 +504,6 @@ def test_extract_python_block_rejects_unparseable_commentary() -> None:
 def test_extract_python_block_rejects_wrong_function() -> None:
     text = "def other() -> int:\n    return 1\n"
     assert extract_python_block(text, expected_function="target") is None
-
-
-# --- Approval gate / resume / CLI -------------------------------------------
 
 
 def test_first_run_prompts_before_any_api_call(tmp_path: Path) -> None:

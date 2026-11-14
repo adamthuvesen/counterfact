@@ -23,8 +23,6 @@ class _Strict(BaseModel):
 
 
 class PassRateRow(_Strict):
-    """One row of the per-arm pass-rate table."""
-
     arm: str
     n: int = Field(ge=0)
     pass_count: int = Field(ge=0)
