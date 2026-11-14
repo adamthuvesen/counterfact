@@ -24,7 +24,7 @@ imports:
 	$(UV) lint-imports
 
 check: lint typecheck imports
-	$(UV) pytest -n auto --dist worksteal -m "not container and not slow" --ignore=tests/acceptance
+	$(UV) pytest -n auto --dist worksteal -m "not container and not slow"
 
 cov:
 	$(UV) pytest -n auto --durations=20 --cov --cov-config=$(CURDIR)/pyproject.toml --cov-report=xml --cov-report=term-missing --cov-fail-under=80

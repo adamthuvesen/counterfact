@@ -9,6 +9,7 @@ from pathlib import Path
 
 # A command that names both parts, e.g. `cd .counterfact && touch approved`, counts.
 NAMES_RECEIPT = (re.compile(r"\.counterfact\b"), re.compile(r"\bapproved\b"))
+PATCH_PATH = re.compile(r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$", re.M)
 WRITES = re.compile(r">(?!\s*(/dev/null|&\d))")
 # A command that names the receipt may only read it: every segment starts with a read-only tool.
 SEGMENT_SPLIT = re.compile(r"\|\|?|&&|;|\n|&(?![0-9>])")
@@ -37,18 +38,27 @@ def denial(payload: dict[str, object]) -> str | None:
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         return None
+    cwd = Path(str(payload.get("cwd") or "."))
     path = tool_input.get("file_path") or tool_input.get("notebook_path")
     if isinstance(path, str):
-        target = Path(str(payload.get("cwd") or ".")) / path
-        return MESSAGE if target.parts[-2:] == (".counterfact", "approved") else None
+        return MESSAGE if _is_receipt(cwd / path) else None
     command = tool_input.get("command") or tool_input.get("input") or ""
     if isinstance(command, list):
         command = " ".join(str(part) for part in command)
     text = str(command)
+    if text.lstrip().startswith("*** Begin Patch"):
+        paths = PATCH_PATH.findall(text)
+        return MESSAGE if any(_is_receipt(cwd / patched) for patched in paths) else None
+    if cwd.name == ".counterfact" and re.search(r"\bapproved\b", text):
+        text = f".counterfact {text}"
     named = all(pattern.search(text) for pattern in NAMES_RECEIPT)
     if not named:
         return None
     return MESSAGE if WRITES.search(text) or not _only_reads(text) else None
+
+
+def _is_receipt(target: Path) -> bool:
+    return target.parts[-2:] == (".counterfact", "approved")
 
 
 def _only_reads(command: str) -> bool:

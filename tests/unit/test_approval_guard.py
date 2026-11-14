@@ -55,6 +55,17 @@ RECEIPT = "/repo/.counterfact/approved"
             "tool_name": "Bash",
             "tool_input": {"command": 'python3 -c \'open(".counterfact/approved", "w")\''},
         },
+        {
+            "tool_name": "Bash",
+            "cwd": "/repo/.counterfact",
+            "tool_input": {"command": "echo ok > approved"},
+        },
+        {
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "input": "*** Begin Patch\n*** Add File: .counterfact/approved\n+ok\n*** End Patch"
+            },
+        },
     ],
 )
 def test_receipt_writes_are_denied(payload: dict[str, object]) -> None:
@@ -72,6 +83,12 @@ def test_receipt_writes_are_denied(payload: dict[str, object]) -> None:
             "tool_input": {"command": "ls .counterfact && cat .counterfact/approved"},
         },
         {"tool_name": "Bash", "tool_input": {"command": "uv run counterfact bench real --n 1"}},
+        {
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "input": "*** Begin Patch\n*** Update File: AGENTS.md\n+Never edit .counterfact/approved\n*** End Patch"
+            },
+        },
     ],
 )
 def test_reads_and_unrelated_tools_are_allowed(payload: dict[str, object]) -> None:

@@ -114,7 +114,7 @@ EXPECTED_TOP = {
 }
 # The control passes only when the drive fails on exactly this planted expectation.
 CONTROL_EXPECTED = {**EXPECTED_TOP, "identifiability": "unidentified"}
-CONTROL_FAILURE = f"top diagnosed decision: expected {CONTROL_EXPECTED!r}, got "
+CONTROL_FAILURE = f"top diagnosed decision: expected {CONTROL_EXPECTED!r}, got {EXPECTED_TOP!r}"
 
 
 def drive_diagnose(run: Run, expected: dict[str, str] | None = None) -> str:

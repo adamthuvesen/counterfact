@@ -149,6 +149,7 @@ def execute(names: list[str], control: bool = False) -> int:
             subprocess.TimeoutExpired,
             KeyError,
             IndexError,
+            TypeError,
             json.JSONDecodeError,
         ) as error:
             result, detail = "FAIL", str(error)
@@ -185,7 +186,7 @@ def verdict(results: list[dict[str, object]], control: bool) -> int:
     failed = any(r["result"] == "FAIL" for r in results)
     if control:
         failures = [str(r["detail"]) for r in results if r["result"] == "FAIL"]
-        if len(failures) == 1 and failures[0].startswith(CONTROL_FAILURE):
+        if len(failures) == 1 and failures[0] == CONTROL_FAILURE:
             print("control: FAIL observed")
             return 0
         if failures:
