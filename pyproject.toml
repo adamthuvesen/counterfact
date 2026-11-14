@@ -78,7 +78,7 @@ target-version = "py314"
 exclude = ["notebooks/*.ipynb"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "PGH003", "PTH", "RUF", "TID251"]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "PGH003", "PGH004", "PTH", "RUF", "TID251"]
 ignore = ["B008", "E501"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]

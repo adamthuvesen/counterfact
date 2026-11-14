@@ -44,6 +44,7 @@ The Makefile defines every gate. Mark a test `slow` only when it is integration-
 | These citations name real files and names | `tests/test_agents_md.py::test_enforced_rules_cite_existing_files_and_names` | 2026-11-06 |
 | No file downgrades strict type checking with a `# pyright:` mode comment | `tests/test_strict_mode.py::test_no_file_downgrades_type_checking_mode` | 2026-11-07 |
 | Every inline type ignore names its rule and gives a reason | `tests/test_strict_mode.py::test_inline_ignores_name_a_rule_and_give_a_reason` | 2026-11-07 |
+| No blanket `noqa`, no file-wide `# ruff: noqa`, no `noqa` on a module ban | `pyproject.toml::tool.ruff.lint`, `tests/test_strict_mode.py::test_no_noqa_lifts_a_ban_or_a_whole_file` | 2026-11-09 |
 
 ## Design boundaries
 

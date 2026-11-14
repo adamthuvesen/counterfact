@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # Any file-level `# pyright:` comment except `strict` turns a check off for the whole file.
 DOWNGRADE = re.compile(r"^\s*#\s*pyright:(?!\s*(?:strict\s*$|ignore\b))")
 INLINE_IGNORE = re.compile(r"#\s*(?:pyright|type):\s*ignore")
+FILE_WIDE_NOQA = re.compile(r"#\s*ruff:\s*noqa", re.IGNORECASE)
+NOQA_ON_BAN = re.compile(r"#\s*noqa\b.*\bTID251", re.IGNORECASE)
 NAMED_WITH_REASON = re.compile(r"#\s*(?:pyright|type):\s*ignore\[[^\]]+\]\s*#\s*\S")
 
 
@@ -84,3 +86,34 @@ def test_ignore_pattern_finds_unexplained_ignores() -> None:
         'e = "# pyright: ignore"\n'
     )
     assert unexplained_ignores(source) == [1, 2, 3]
+
+
+def lifted_bans(source: str) -> list[int]:
+    tokens = tokenize.generate_tokens(io.StringIO(source).readline)
+    return [
+        token.start[0]
+        for token in tokens
+        if token.type == tokenize.COMMENT
+        and (FILE_WIDE_NOQA.search(token.string) or NOQA_ON_BAN.search(token.string))
+    ]
+
+
+def test_no_noqa_lifts_a_ban_or_a_whole_file() -> None:
+    hits = [
+        f"{path.relative_to(ROOT)}:{line}"
+        for path in checkout_python_files()
+        for line in lifted_bans(path.read_text(errors="replace"))
+    ]
+    assert not hits, (
+        "name an owner in pyproject instead of a file-wide or TID251 noqa: " + ", ".join(hits)
+    )
+
+
+def test_lifted_ban_pattern_finds_known_cases() -> None:
+    source = (
+        "# ruff: noqa\n"
+        "import subprocess  # noqa: TID251\n"
+        "import os  # noqa: F401\n"
+        'x = "# noqa: TID251"\n'
+    )
+    assert lifted_bans(source) == [1, 2]

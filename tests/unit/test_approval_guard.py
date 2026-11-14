@@ -84,6 +84,11 @@ def test_receipt_writes_are_denied(payload: dict[str, object]) -> None:
         },
         {"tool_name": "Bash", "tool_input": {"command": "uv run counterfact bench real --n 1"}},
         {
+            "tool_name": "Bash",
+            "cwd": "/repo/.counterfact",
+            "tool_input": {"command": "cat approved"},
+        },
+        {
             "tool_name": "apply_patch",
             "tool_input": {
                 "input": "*** Begin Patch\n*** Update File: AGENTS.md\n+Never edit .counterfact/approved\n*** End Patch"

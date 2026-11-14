@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -49,16 +50,15 @@ def denial(payload: dict[str, object]) -> str | None:
     if text.lstrip().startswith("*** Begin Patch"):
         paths = PATCH_PATH.findall(text)
         return MESSAGE if any(_is_receipt(cwd / patched) for patched in paths) else None
-    if cwd.name == ".counterfact" and re.search(r"\bapproved\b", text):
-        text = f".counterfact {text}"
-    named = all(pattern.search(text) for pattern in NAMES_RECEIPT)
+    in_receipt_dir = cwd.name == ".counterfact" and re.search(r"\bapproved\b", text)
+    named = in_receipt_dir or all(pattern.search(text) for pattern in NAMES_RECEIPT)
     if not named:
         return None
     return MESSAGE if WRITES.search(text) or not _only_reads(text) else None
 
 
 def _is_receipt(target: Path) -> bool:
-    return target.parts[-2:] == (".counterfact", "approved")
+    return Path(os.path.normpath(str(target).strip())).parts[-2:] == (".counterfact", "approved")
 
 
 def _only_reads(command: str) -> bool:

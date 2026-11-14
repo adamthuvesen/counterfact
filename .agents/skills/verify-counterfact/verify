@@ -153,6 +153,8 @@ def execute(names: list[str], control: bool = False) -> int:
             json.JSONDecodeError,
         ) as error:
             result, detail = "FAIL", str(error)
+        except SystemExit as error:
+            result, detail = "FAIL", f"drive exited the run: SystemExit({error.code!r})"
         seconds = round(time.monotonic() - started, 1)
         if seconds > drive.timeout:
             over = f"took {seconds}s, budget {drive.timeout}s"

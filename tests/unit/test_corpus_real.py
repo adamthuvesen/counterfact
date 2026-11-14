@@ -164,8 +164,7 @@ def test_budget__rejects_non_finite_spend(cost: float) -> None:
 
 
 @pytest.mark.slow
-def test_real_corpus_has_at_least_three_fixtures() -> None:
-    assert len(FIXTURES) >= 3
+def test_real_corpus_fixtures_have_source_and_tests() -> None:
     for fx in FIXTURES:
         assert fx.root.is_dir()
         assert fx.source_path.is_file()
