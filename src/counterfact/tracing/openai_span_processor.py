@@ -16,11 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from counterfact.adapters._common import (
-    IngestReceipt,
-    randomization_warning,
-    write_corpus,
-)
+from counterfact.adapters._common import write_sdk_corpus
 from counterfact.adapters.openai_agents import SOURCE_FORMAT, MissingOutcomeError, run_from_trace
 from counterfact.schema import Outcome, Run
 
@@ -63,20 +59,22 @@ class CounterfactSpanProcessor:
         if not spans:
             return
         run = self._build_run(trace_id=str(trace_id), spans=spans)
-        receipt = IngestReceipt(
-            source_format=SOURCE_FORMAT,
-            source_file="<live-processor>",
-            generated_count=0,
-            warnings=[randomization_warning(SOURCE_FORMAT)],
-        )
+        warnings: list[str] = []
         if run.outcome.kind != "binary":
-            receipt.warnings.append(
+            warnings.append(
                 f"trace {trace_id!r}: no binary outcome could be derived; "
                 f"wrote categorical outcome={run.outcome.value!r} so the trace "
                 "is preserved without faking success/fail. Provide an "
                 "outcome_provider to label it."
             )
-        write_corpus([run], self.output_dir, receipt, append=True)
+        write_sdk_corpus(
+            [run],
+            self.output_dir,
+            source_format=SOURCE_FORMAT,
+            source_file="<live-processor>",
+            append=True,
+            warnings=warnings,
+        )
 
     def on_span_start(self, span: Any) -> None:
         # Most useful state arrives at span_end (timings, outputs).

@@ -19,11 +19,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any
 
-from counterfact.adapters._common import (
-    IngestReceipt,
-    randomization_warning,
-    write_corpus,
-)
+from counterfact.adapters._common import write_sdk_corpus
 from counterfact.adapters.claude_agent_sdk import SOURCE_FORMAT, run_from_messages
 
 
@@ -55,14 +51,13 @@ class ClaudeAgentTracer:
         # raises IngestError; let that bubble up.
         if not self._messages:
             return None
-        run = run_from_messages(self._messages)
-        receipt = IngestReceipt(
+        write_sdk_corpus(
+            [run_from_messages(self._messages)],
+            self.output_dir,
             source_format=SOURCE_FORMAT,
             source_file="<live-tracer>",
-            generated_count=0,
-            warnings=[randomization_warning(SOURCE_FORMAT)],
+            append=True,
         )
-        write_corpus([run], self.output_dir, receipt, append=True)
         return None
 
     def observe(self, message: Any) -> None:

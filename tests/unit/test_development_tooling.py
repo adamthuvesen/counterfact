@@ -13,7 +13,6 @@ import pytest
 
 from scripts import (
     build_benchmark_docs,
-    build_demo_notebook,
     build_figures,
     check_container,
     check_wheel,
@@ -41,18 +40,6 @@ def test_generated_text_check_rejects_missing_and_stale_without_writing(tmp_path
     path.write_text("stale")
     assert not write_or_check(path, "expected", check=True)
     assert path.read_text() == "stale"
-
-
-def test_notebook_generator_check_detects_drift(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / "demo.ipynb"
-    monkeypatch.setattr(build_demo_notebook, "NB_PATH", path)
-    assert build_demo_notebook.main([]) == 0
-    assert build_demo_notebook.main(["--check"]) == 0
-    path.write_text("{}")
-    assert build_demo_notebook.main(["--check"]) == 1
-    assert path.read_text() == "{}"
 
 
 def test_benchmark_generators_derive_outputs_and_reject_stale_files(

@@ -52,7 +52,7 @@ The Makefile defines every gate. Mark a test `slow` only when it is integration-
 - Keep the project narrow. Name a concrete caller before adding compatibility shims or abstractions.
 - Ask before adding runtime dependencies. Broad causal or agent frameworks are outside this library's scope.
 
-The wheel contains `src/counterfact` only. `bench/`, notebook generation, and real-agent execution require a checkout.
+The wheel contains `src/counterfact` only. `bench/` and real-agent execution require a checkout.
 
 ## Causal honesty
 

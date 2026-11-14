@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 from counterfact.corpus_io import CorpusIOError as IngestError
@@ -78,6 +80,25 @@ def randomization_warning(source_format: str) -> str:
     )
 
 
+def write_sdk_corpus(
+    runs: list[Run],
+    output_dir: Path,
+    *,
+    source_format: str,
+    source_file: str,
+    append: bool = False,
+    warnings: Sequence[str] = (),
+) -> IngestReceipt:
+    """Publish SDK runs with the corpus-level `randomization_warning` first in the receipt."""
+    receipt = IngestReceipt(
+        source_format=source_format,
+        source_file=source_file,
+        generated_count=0,  # write_corpus counts the published runs
+        warnings=[randomization_warning(source_format), *warnings],
+    )
+    return write_corpus(runs, output_dir, receipt, append=append)
+
+
 def per_decision_randomization_warnings(run: Run, *, source_index: int) -> list[str]:
     """Per-record warnings for decisions with chosen_action but no randomization.
 
@@ -116,4 +137,5 @@ __all__ = [
     "randomization_warning",
     "strict_bool",
     "write_corpus",
+    "write_sdk_corpus",
 ]

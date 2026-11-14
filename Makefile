@@ -30,13 +30,11 @@ cov:
 	$(UV) pytest -n auto --durations=20 --cov --cov-config=$(CURDIR)/pyproject.toml --cov-report=xml --cov-report=term-missing --cov-fail-under=80
 
 generated:
-	$(UV) python scripts/build_demo_notebook.py
 	$(UV) python scripts/build_benchmark_docs.py
 	$(UV) python scripts/build_figures.py
 	$(UV) python scripts/build_routed_results.py
 
 check-generated:
-	$(UV) python scripts/build_demo_notebook.py --check
 	$(UV) python scripts/build_benchmark_docs.py --check
 	$(UV) python scripts/build_figures.py --check
 	$(UV) python scripts/build_routed_results.py --check

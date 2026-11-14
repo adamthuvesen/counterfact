@@ -20,9 +20,8 @@ from counterfact.adapters._common import (
     IngestError,
     IngestReceipt,
     StepBuilder,
-    randomization_warning,
     strict_bool,
-    write_corpus,
+    write_sdk_corpus,
 )
 from counterfact.corpus_io import read_text
 from counterfact.schema import Decision, Metadata, Observation, Outcome, Run, Step
@@ -336,8 +335,6 @@ def ingest_claude_agent_sdk(
 
     text = read_text(source_path)
     runs: list[Run] = []
-    warnings = [randomization_warning(SOURCE_FORMAT)]
-
     for line_no, raw_line in enumerate(text.splitlines(), start=1):
         if not raw_line.strip():
             continue
@@ -363,13 +360,9 @@ def ingest_claude_agent_sdk(
             raise IngestError(f"{source_path}: line {line_no}: {exc}") from exc
         runs.append(run)
 
-    receipt = IngestReceipt(
-        source_format=SOURCE_FORMAT,
-        source_file=str(source_path),
-        generated_count=len(runs),
-        warnings=warnings,
+    return write_sdk_corpus(
+        runs, output_dir, source_format=SOURCE_FORMAT, source_file=str(source_path)
     )
-    return write_corpus(runs, output_dir, receipt)
 
 
 __all__ = [
