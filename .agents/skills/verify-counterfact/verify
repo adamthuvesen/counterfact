@@ -153,8 +153,9 @@ def execute(names: list[str], control: bool = False) -> int:
         ) as error:
             result, detail = "FAIL", str(error)
         seconds = round(time.monotonic() - started, 1)
-        if seconds > drive.timeout and result == "PASS":
-            result, detail = "FAIL", f"took {seconds}s, budget {drive.timeout}s"
+        if seconds > drive.timeout:
+            over = f"took {seconds}s, budget {drive.timeout}s"
+            result, detail = "FAIL", over if result == "PASS" else f"{over}; {detail}"
         if (APPROVAL.exists() and APPROVAL.read_bytes()) != approval_before:
             result, detail = (
                 "FAIL",

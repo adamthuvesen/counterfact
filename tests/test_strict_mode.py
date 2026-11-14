@@ -8,9 +8,8 @@ import tokenize
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DOWNGRADE = re.compile(
-    r"^\s*#\s*pyright:\s*(?:[^#\n]*,\s*)?(?:basic|standard|off|recommended|all|strict\s*=\s*false)\b"
-)
+# Any file-level `# pyright:` comment except `strict` turns a check off for the whole file.
+DOWNGRADE = re.compile(r"^\s*#\s*pyright:(?!\s*(?:strict\s*$|ignore\b))")
 INLINE_IGNORE = re.compile(r"#\s*(?:pyright|type):\s*ignore")
 NAMED_WITH_REASON = re.compile(r"#\s*(?:pyright|type):\s*ignore\[[^\]]+\]\s*#\s*\S")
 
@@ -51,6 +50,8 @@ def test_no_file_downgrades_type_checking_mode() -> None:
 def test_downgrade_pattern_finds_a_known_mode_comment() -> None:
     assert DOWNGRADE.match("# pyright: basic")
     assert DOWNGRADE.match("#pyright: reportMissingImports=false, strict=false")
+    assert DOWNGRADE.match("# pyright: reportAssignmentType=false, reportArgumentType=false")
+    assert not DOWNGRADE.match("# pyright: strict")
     assert not DOWNGRADE.match("# pyright: ignore[reportUnknownMemberType]")
 
 

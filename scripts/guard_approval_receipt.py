@@ -9,10 +9,7 @@ from pathlib import Path
 
 # A command that names both parts, e.g. `cd .counterfact && touch approved`, counts.
 NAMES_RECEIPT = (re.compile(r"\.counterfact\b"), re.compile(r"\bapproved\b"))
-WRITES = re.compile(
-    r">(?!\s*(/dev/null|&\d))|\bsed\b[^|;&\n]*\s(-[a-zA-Z]*i|--in-place)|\*\*\* (Add|Update|Delete) File:"
-    r"|\b(tee|cp|mv|touch|ln|rm|install|dd|truncate|python3?|uv|node|perl|ruby)\b"
-)
+WRITES = re.compile(r">(?!\s*(/dev/null|&\d))")
 # A command that names the receipt may only read it: every segment starts with a read-only tool.
 SEGMENT_SPLIT = re.compile(r"\|\|?|&&|;|\n|&(?![0-9>])")
 READ_ONLY = {
@@ -58,8 +55,6 @@ def _only_reads(command: str) -> bool:
     for segment in SEGMENT_SPLIT.split(command):
         words = segment.split()
         if not words:
-            continue
-        if words[0] == "sed" and "-n" in words:
             continue
         if words[0] not in READ_ONLY:
             return False

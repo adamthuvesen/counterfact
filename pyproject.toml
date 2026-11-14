@@ -72,7 +72,10 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-extend-exclude = ["notebooks"]
+
+# The demo notebook is generated; its builder owns layout, so it is linted but not formatted.
+[tool.ruff.format]
+exclude = ["notebooks/*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "PGH003", "PTH", "RUF", "TID251"]
