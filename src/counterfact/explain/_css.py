@@ -1,7 +1,7 @@
 """Static content for the explain HTML renderer: CSS and identifiability gloss.
 
 These are pure strings/dicts with no rendering logic. They live here so
-`render_html.py` stays focused on layout, not styling and copy.
+the renderer modules stay focused on layout, not styling and copy.
 """
 
 from __future__ import annotations

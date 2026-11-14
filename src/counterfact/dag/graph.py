@@ -30,7 +30,6 @@ class DAG:
     edges: list[tuple[str, str]] = field(default_factory=list)
     run: Run | None = None
     _adj: dict[str, list[str]] = field(default_factory=dict, init=False, repr=False)
-    _radj: dict[str, list[str]] = field(default_factory=dict, init=False, repr=False)
 
     def __getattribute__(self, name: str) -> Any:
         value = super().__getattribute__(name)
@@ -43,23 +42,15 @@ class DAG:
         if len(ids) != len(set(ids)):
             raise ValueError("DAG decision IDs must be unique")
         object.__setattr__(self, "_adj", {nid: [] for nid in ids})
-        object.__setattr__(self, "_radj", {nid: [] for nid in ids})
         for parent, child in self.edges:
             if parent not in self._adj or child not in self._adj:
                 raise ValueError("DAG edge endpoints must name existing decisions")
             self._adj[parent].append(child)
-            self._radj[child].append(parent)
         if self.nodes or self.edges:
             self.topological_sort()
 
     def node_ids(self) -> list[str]:
         return [n.decision_id for n in object.__getattribute__(self, "nodes")]
-
-    def parents_of(self, decision_id: str) -> list[str]:
-        return list(self._radj.get(decision_id, ()))
-
-    def children_of(self, decision_id: str) -> list[str]:
-        return list(self._adj.get(decision_id, ()))
 
     def topological_sort(self) -> list[str]:
         """Kahn's algorithm. Raises DAGCycleError if a cycle is present."""

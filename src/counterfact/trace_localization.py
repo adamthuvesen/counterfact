@@ -13,10 +13,3 @@ def duplicate_decision_type_steps(run: Run, *, except_step: int, decision_type: 
         if step.step_index != except_step
         and any(d.decision_type == decision_type for d in step.decisions)
     ]
-
-
-def decision_type_repeats_elsewhere(run: Run, step_index: int, decision_type: str) -> bool:
-    """True iff `decision_type` appears in any step other than `step_index`."""
-    return bool(
-        duplicate_decision_type_steps(run, except_step=step_index, decision_type=decision_type)
-    )

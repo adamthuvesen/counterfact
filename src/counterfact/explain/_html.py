@@ -1,4 +1,4 @@
-"""Tiny stdlib HTML/SVG builders used by `render_html`.
+"""Tiny stdlib HTML/SVG builders used by the explain renderer.
 
 Output is escaped by default so renderer code does not have to remember
 when to call `html.escape`. Children that are pre-built strings (e.g. SVG
@@ -85,3 +85,15 @@ def tag(
 
 def raw(body: str) -> Raw:
     return Raw(body)
+
+
+def section(css_class: str, heading: str, *body: str, subtitle: str | None = None) -> str:
+    """Render a report `<section>`: an `<h2>`, an optional subtitle, then pre-built `body`."""
+    parts = [tag("h2", None, heading)]
+    if subtitle is not None:
+        parts.append(tag("p", {"class": "section-subtitle"}, subtitle))
+    return tag("section", {"class": css_class}, raw("".join([*parts, *body])))
+
+
+def header_row(*labels: str) -> str:
+    return tag("tr", None, raw("".join(tag("th", None, label) for label in labels)))

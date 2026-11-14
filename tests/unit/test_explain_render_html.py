@@ -20,7 +20,8 @@ import pytest
 from counterfact.attribute import AttributionEntry, FailureAttribution
 from counterfact.diagnose import build_diagnosis_pair
 from counterfact.explain import build_report, render_html
-from counterfact.explain.render_html import _arm_names, _node_label
+from counterfact.explain._dag_svg import _node_label
+from counterfact.explain._decision_cards import _arm_names
 from counterfact.explain.report import ExplainReport
 from counterfact.intervene.estimate import (
     CausalEstimate,
@@ -790,15 +791,15 @@ def test_render__rejects_no_external_assets_with_strict_check() -> None:
     assert "<link " not in html or "http" not in html.split("<link", 1)[-1].split(">", 1)[0]
 
 
-def test_render_field__escapes_plain_strings_and_passes_raw_through() -> None:
+def test_field__escapes_plain_strings_and_passes_raw_through() -> None:
     from counterfact.explain._html import raw
-    from counterfact.explain.render_html import _render_field
+    from counterfact.explain._verdict import _field
 
-    escaped = _render_field("note", "<script>alert(1)</script>")
+    escaped = _field("note", "<script>alert(1)</script>", "note")
     assert "<script>alert(1)</script>" not in escaped
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in escaped
 
-    passthrough = _render_field("items", raw("<ul><li>a</li></ul>"))
+    passthrough = _field("items", raw("<ul><li>a</li></ul>"), "items")
     assert "<ul><li>a</li></ul>" in passthrough
 
 

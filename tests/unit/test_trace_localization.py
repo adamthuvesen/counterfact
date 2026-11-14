@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from counterfact.schema import Decision, Outcome, Run, Step
 from counterfact.trace_localization import (
-    decision_type_repeats_elsewhere,
     duplicate_decision_type_steps,
 )
 
@@ -55,9 +54,3 @@ def test_duplicate_decision_type_steps__finds_other_occurrences() -> None:
 def test_duplicate_decision_type_steps__none_when_unique() -> None:
     run = _run_with_steps()
     assert duplicate_decision_type_steps(run, except_step=2, decision_type="model_call") == []
-
-
-def test_decision_type_repeats_elsewhere__matches_duplicate_list() -> None:
-    run = _run_with_steps()
-    assert decision_type_repeats_elsewhere(run, 1, "tool_call") is True
-    assert decision_type_repeats_elsewhere(run, 2, "model_call") is False

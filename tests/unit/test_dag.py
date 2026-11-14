@@ -74,31 +74,3 @@ def test_build_dag__cycle_raises() -> None:
     b = Decision(decision_id="b", decision_type="plan_step")
     with pytest.raises(DAGCycleError):
         DAG(nodes=[a, b], edges=[("a", "b"), ("b", "a")])
-
-
-def test_build_dag__adjacency_lookups_are_constant_time() -> None:
-    """parents_of/children_of read from precomputed adjacency dicts, not the edge list."""
-    plan = Decision(decision_id="d0", decision_type="plan_step", chosen_action="investigate")
-    tool = Decision(decision_id="d1", decision_type="tool_call", chosen_action="run_tests")
-    run = _make_run(
-        [
-            Step(step_index=0, decisions=[plan]),
-            Step(step_index=1, decisions=[tool]),
-        ]
-    )
-    dag = build_dag(run)
-
-    # Smoke-test the contract: lookups are backed by per-node adjacency dicts
-    # so the implementation must store an entry for every node id, not scan
-    # `dag.edges` linearly on each call.
-    assert set(dag._adj.keys()) == {"d0", "d1"}
-    assert set(dag._radj.keys()) == {"d0", "d1"}
-    # The expected edge from plan -> tool is in adjacency.
-    assert dag.children_of("d0") == ["d1"]
-    assert dag.parents_of("d1") == ["d0"]
-    # Appending to `dag.edges` after construction must not affect existing
-    # lookups — that proves the adjacency dicts are independent of the edge
-    # list rather than recomputed on each call.
-    dag.edges.append(("d1", "d0"))
-    assert dag.children_of("d1") == []
-    assert dag.parents_of("d0") == []
