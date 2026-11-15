@@ -70,7 +70,10 @@ def test_run_json_is_not_written_by_hand() -> None:
         if relative in ALLOWED or "/fixtures/" in relative or relative.startswith("tests/"):
             continue
         hits += [f"{relative}:{line}" for line in hand_written_runs(path.read_text())]
-    assert not hits, "Publish runs with counterfact.corpus_io.write_corpus: " + ", ".join(hits)
+    assert not hits, (
+        "Do not write run files by hand; publish runs with counterfact.corpus_io.write_corpus (src/counterfact/corpus_io.py): "
+        + ", ".join(hits)
+    )
 
 
 def test_detector_finds_each_hand_written_form() -> None:

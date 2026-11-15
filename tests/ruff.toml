@@ -1,0 +1,11 @@
+extend = "../pyproject.toml"
+# A nested config replaces the parent's banned-api table. The root Run.model_validate_json bans
+# are not repeated here: tests read published run files directly to assert on the raw output.
+src = ["..", "../src"]
+
+[lint.flake8-tidy-imports.banned-api]
+"time.sleep".msg = "A test that sleeps is slow and flaky. Fix: wait on an event, or inject a fake clock."
+"asyncio.sleep".msg = "A test that sleeps is slow and flaky. Fix: wait on an event, or inject a fake clock."
+"time.time".msg = "A test that reads the wall clock is flaky. Fix: inject a fake clock."
+"time.perf_counter".msg = "A test that measures elapsed time is flaky. Fix: inject a fake clock."
+"time.monotonic".msg = "A test that measures elapsed time is flaky. Fix: inject a fake clock."

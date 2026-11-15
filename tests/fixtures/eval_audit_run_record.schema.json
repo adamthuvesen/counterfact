@@ -1,0 +1,206 @@
+{
+  "$defs": {
+    "CostProvenance": {
+      "description": "Provenance class for cost data, inherited verbatim from scouting.",
+      "enum": [
+        "reconciled",
+        "partial",
+        "as_reported_only",
+        "cost_not_available"
+      ],
+      "title": "CostProvenance",
+      "type": "string"
+    },
+    "OutcomeStatus": {
+      "description": "Whether a task was graded normally or errored upstream.",
+      "enum": [
+        "graded",
+        "errored"
+      ],
+      "title": "OutcomeStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One task-level observation within a single agent run.\n\nField semantics inherit from the locked semantic-role vocabulary in the\n`gaia-hal-generalist-scouting` capability spec; see scouting/gaia-hal-generalist-decision.md.",
+  "properties": {
+    "agent_id": {
+      "title": "Agent Id",
+      "type": "string"
+    },
+    "cost_provenance": {
+      "$ref": "#/$defs/CostProvenance"
+    },
+    "harness": {
+      "title": "Harness",
+      "type": "string"
+    },
+    "latency_s": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Latency S"
+    },
+    "model_id": {
+      "title": "Model Id",
+      "type": "string"
+    },
+    "outcome_status": {
+      "$ref": "#/$defs/OutcomeStatus"
+    },
+    "partial_credit": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Partial Credit"
+    },
+    "reconstructed_per_task_cost_usd": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reconstructed Per Task Cost Usd"
+    },
+    "reported_run_total_cost_usd": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reported Run Total Cost Usd"
+    },
+    "rerun_metadata": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Rerun Metadata",
+      "type": "object"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "seed": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Seed"
+    },
+    "success": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Success"
+    },
+    "task_category": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Task Category"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "timestamp": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Timestamp"
+    },
+    "tokens_in": {
+      "minimum": 0,
+      "title": "Tokens In",
+      "type": "integer"
+    },
+    "tokens_in_by_model": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Tokens In By Model",
+      "type": "object"
+    },
+    "tokens_out": {
+      "minimum": 0,
+      "title": "Tokens Out",
+      "type": "integer"
+    },
+    "tokens_out_by_model": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Tokens Out By Model",
+      "type": "object"
+    }
+  },
+  "required": [
+    "agent_id",
+    "model_id",
+    "harness",
+    "run_id",
+    "task_id",
+    "success",
+    "outcome_status",
+    "tokens_in",
+    "tokens_out",
+    "tokens_in_by_model",
+    "tokens_out_by_model",
+    "reconstructed_per_task_cost_usd",
+    "cost_provenance"
+  ],
+  "title": "RunRecord",
+  "type": "object"
+}

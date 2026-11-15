@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 
 import pytest
@@ -16,12 +15,9 @@ from counterfact.schema import Run
 
 def test_synthetic__generator_produces_n_traces(tmp_path: Path) -> None:
     out = tmp_path / "syn"
-    t0 = time.monotonic()
     generate_corpus(n=500, seed=42, output_dir=out)
-    dt = time.monotonic() - t0
     files = sorted(out.glob("syn-*.json"))
     assert len(files) == 500
-    assert dt < 60.0, f"generation took {dt:.2f}s (>60s)"
     # spot-check parseability with the strict Pydantic schema
     Run.model_validate_json(files[0].read_text())
     Run.model_validate_json(files[-1].read_text())

@@ -57,6 +57,31 @@ Recovery removes only the batch's planned run files and restores the previous re
 
 New ingest receipts carry `receipt_version="2"`. Receipts without that field remain readable when their content and counts are valid. `write_corpus` returns a committed receipt copy and leaves the supplied receipt unchanged.
 
+## Parquet export version 3
+
+New export receipts carry `export_version="3"`. The Parquet file now loads with eval-audit's `load_run_records`. A copy of eval-audit's `docs/run-record.schema.json` in `tests/fixtures/` pins the contract.
+
+| Field | Version 3 behavior |
+| --- | --- |
+| `model_ids`, `model_identity_provenance`, `tokens_*_provenance`, `cost_sources` | Removed as columns. `rerun_metadata` keeps `model_ids`, `cost_sources` (JSON lists), `tokens_in_source`, and `tokens_out_source` |
+| `tokens_in_by_model`, `tokens_out_by_model` | A struct keyed by model id. A null field means the model's usage is unknown |
+| `tokens_in`, `tokens_out` | `0` when untracked, which is eval-audit's documented value. The token source is `not_available` |
+| `outcome_status` | Always `graded`. Runs with nonbinary outcomes are excluded and counted |
+| `task_id` | `metadata.extra.task_id`, else `outcome.metadata.fixture_id`. A run with neither stops the export |
+| `model_id` | Required. A run without a `model_call` stops the export |
+| `timestamp` | A UTC datetime parsed from an ISO 8601 string with an offset |
+| `cost_provenance` | An eval-audit value. `rerun_metadata.counterfact_cost_provenance` keeps the counterfact value |
+
+| counterfact cost provenance | eval-audit `cost_provenance` | Reason |
+| --- | --- | --- |
+| `reconciled` | `reconciled` | Reported and reconstructed costs agree |
+| `discrepant` | `as_reported_only` | Reconstruction does not reconcile, so the reported total is the basis. The reconstructed cost exports as null |
+| `reported` | `as_reported_only` | Only the reported total exists |
+| `reconstructed` | `partial` | No reported total exists to reconcile against, so provenance is incomplete |
+| `cost_not_available` | `cost_not_available` | No cost data |
+
+An export with no binary-outcome runs fails. Version 2 wrote an empty file.
+
 ## Parquet export version 2
 
 New export receipts carry `export_version="2"` and migration notes. Legacy receipts without the field remain readable.

@@ -173,7 +173,16 @@ uv run --locked counterfact export-runs bench/real/smoke_mixed_outcome \
   --output /tmp/counterfact-runs.parquet
 ```
 
-This writes one Parquet row per run and a versioned derivation receipt. Missing tokens stay null. Reported provider costs and reconstructed call costs remain separate. Per-model usage uses model identities, with chosen-action fallback for legacy traces. [Migration](migration.md#parquet-export-version-2) describes the version 2 schema.
+This writes one eval-audit `RunRecord` row per run and a versioned derivation receipt. The columns, types, and enum values are exactly those of eval-audit's `RunRecord`.
+
+- Each run needs a task id: `metadata.extra.task_id`, or the `outcome.metadata.fixture_id` that `bench real` logs. A run without one stops the export. eval-audit pairs rows on `task_id`, so the run id cannot stand in.
+- Each run needs a `model_call` decision, because eval-audit requires `model_id`.
+- Runs with a nonbinary outcome are excluded. The output prints `excluded: N ungraded run(s)` and the receipt records `excluded_ungraded_count`.
+- Untracked tokens export as `0`, the value eval-audit documents for untracked tokens. `rerun_metadata.tokens_in_source` and `tokens_out_source` are `not_available` for those rows.
+- `metadata.extra.timestamp` must be an ISO 8601 string with a UTC offset.
+- `rerun_metadata` keeps the counterfact-only provenance as strings: `model_ids`, `cost_sources`, token sources, and `counterfact_cost_provenance`.
+
+[Migration](migration.md#parquet-export-version-3) gives the cost provenance mapping.
 
 ### Evaluate A Policy
 

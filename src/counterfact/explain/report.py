@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from counterfact.analysis import AnalysisCorpus
 from counterfact.analysis.outcomes import binary_outcome_value
+from counterfact.analysis.timeline import first_observed_arm
 from counterfact.attribute import FailureAttribution, attribute_failure
 from counterfact.baselines import PassRateTable, pass_rate_by_arm
 from counterfact.dag import DAG, build_dag
@@ -26,7 +27,7 @@ from counterfact.intervene.estimate import (
     NextStep,
 )
 from counterfact.schema import DecisionTypeLiteral, Run, require_focal
-from counterfact.taxonomy import default_intervention_kind, first_observed_arm
+from counterfact.taxonomy import default_intervention_kind
 
 
 class ExplainReport(BaseModel):

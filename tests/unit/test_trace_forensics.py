@@ -198,6 +198,8 @@ def test_ingest_generic_jsonl__partial_randomization_fails(tmp_path: Path) -> No
 
 def test_export_runrecord_parquet__writes_rows_and_receipt(tmp_path: Path) -> None:
     runs = synthetic_corpus(n=3, seed=42)
+    for run in runs:
+        run.metadata.extra["task_id"] = "synthetic-task"
     output = tmp_path / "runs.parquet"
 
     receipt = export_runrecord_parquet(runs, source_corpus=tmp_path / "runs", output_path=output)

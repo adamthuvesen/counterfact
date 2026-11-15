@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from counterfact import __version__ as _COUNTERFACT_VERSION
 from counterfact._fmt import outcome_label as _outcome_label
+from counterfact._version import __version__ as _COUNTERFACT_VERSION
 from counterfact.explain._css import CSS
 from counterfact.explain._dag_svg import render_dag
 from counterfact.explain._decision_cards import (

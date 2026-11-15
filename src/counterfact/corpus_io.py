@@ -37,12 +37,13 @@ class IngestReceipt(BaseModel):
 class RunRecordExportReceipt(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    export_version: Literal["1", "2"] = "2"
+    export_version: Literal["1", "2", "3"] = "3"
     source_corpus: str
     output_path: str
     row_count: int
     field_derivations: dict[str, str]
     missing_cost_policy: str
+    excluded_ungraded_count: int = 0
     warnings: list[str] = Field(default_factory=list)
     migration_notes: list[str] = Field(default_factory=list)
 

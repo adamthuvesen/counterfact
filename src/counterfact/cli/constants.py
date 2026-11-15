@@ -25,3 +25,13 @@ INGEST_FORMATS = [
     ("openai-agents", "OpenAI Agents SDK trace JSON (requires --outcome unless derivable)"),
     ("generic-jsonl", "Any JSONL with an explicit user-supplied --mapping file"),
 ]
+
+FIXTURE_SET_CHOICES = (
+    "v0",
+    "easy",
+    "hidden_v1",
+    "hard_hidden_v1",
+    "broad_calibration",
+    "very_hard_hidden_v1",
+    "stateful_calibration",
+)

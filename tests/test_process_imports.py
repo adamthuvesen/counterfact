@@ -85,7 +85,10 @@ def test_only_owner_files_import_process_network_or_paid_modules() -> None:
         if relative in OWNERS or relative.startswith("tests/"):
             continue
         hits += [f"{relative}:{line} {name}" for line, name in banned_uses(path.read_text())]
-    assert not hits, "Move these calls into an owner file listed in OWNERS: " + ", ".join(hits)
+    assert not hits, (
+        "Process, network, and paid-model imports belong only in OWNERS in tests/test_process_imports.py; move the call into an owner such as bench/real/coding_agent/executor.py, or add the file to OWNERS: "
+        + ", ".join(hits)
+    )
 
 
 def test_detector_finds_each_import_form() -> None:

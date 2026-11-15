@@ -149,11 +149,25 @@ def test_distinct_live_writers_share_committed_count(tmp_path: Path) -> None:
 
 def test_custom_export_filename_sidecar_remains_loadable(tmp_path: Path) -> None:
     from counterfact.runrecord_export import export_runrecord_parquet
+    from counterfact.schema import Decision, Metadata, Step
 
     destination = tmp_path / "corpus"
     write_corpus([_run()], destination, _receipt())
+    exported = _run().model_copy(
+        update={
+            "steps": [
+                Step(
+                    step_index=0,
+                    decisions=[
+                        Decision(decision_id="d0", decision_type="model_call", chosen_action="m")
+                    ],
+                )
+            ],
+            "metadata": Metadata(extra={"task_id": "t1"}),
+        }
+    )
     export_runrecord_parquet(
-        [_run()], source_corpus=destination, output_path=destination / "export.data"
+        [exported], source_corpus=destination, output_path=destination / "export.data"
     )
     assert [run.run_id for run in load_corpus(destination)] == ["r1"]
 

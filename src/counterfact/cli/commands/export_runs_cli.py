@@ -34,6 +34,8 @@ def run(args: argparse.Namespace) -> int:
         )
         print(f"receipt: {receipt_path.resolve()}")
         print(f"rows: {receipt.row_count}")
+        if receipt.excluded_ungraded_count:
+            print(f"excluded: {receipt.excluded_ungraded_count} ungraded run(s)")
         if receipt.warnings:
             print(f"warnings: {len(receipt.warnings)}")
     return 0

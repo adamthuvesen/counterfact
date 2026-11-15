@@ -16,7 +16,7 @@ def _run(
     return Run(
         schema_version="0.1.0",
         run_id=run_id,
-        metadata=Metadata(agent_name=agent_name),
+        metadata=Metadata(agent_name=agent_name, extra={"task_id": "task-1"}),
         steps=[Step(step_index=0, decisions=decisions)] if decisions else [],
         outcome=Outcome(kind="binary", value=outcome_value, verifier="stub"),
     )
@@ -39,7 +39,11 @@ def test_model_id_uses_first_model_call_chosen_action() -> None:
     assert rows[0]["model_id"] == "claude-sonnet-4-6"
 
 
-def test_model_id_is_none_when_no_model_call_exists() -> None:
+def test_run_without_a_model_call_is_refused() -> None:
+    import pytest
+
+    from counterfact.corpus_io import CorpusIOError
+
     run = _run(
         run_id="r-no-model-call",
         agent_name="claude-agent-sdk",
@@ -51,16 +55,15 @@ def test_model_id_is_none_when_no_model_call_exists() -> None:
             )
         ],
     )
-    rows, _ = runs_to_runrecord_rows([run])
-    assert rows[0]["agent_id"] == "claude-agent-sdk"
-    assert rows[0]["model_id"] is None
+    with pytest.raises(CorpusIOError, match="eval-audit requires model_id"):
+        runs_to_runrecord_rows([run])
 
 
 def test_model_id_picks_first_model_call_when_multiple_present() -> None:
     run = Run(
         schema_version="0.1.0",
         run_id="r-multi",
-        metadata=Metadata(agent_name="claude-agent-sdk"),
+        metadata=Metadata(agent_name="claude-agent-sdk", extra={"task_id": "task-1"}),
         steps=[
             Step(
                 step_index=0,
@@ -165,20 +168,78 @@ def test_provider_totals_do_not_double_count_call_usage() -> None:
     rows, _ = runs_to_runrecord_rows([run])
     assert rows[0]["tokens_in"] == 30
     assert rows[0]["tokens_out"] == 10
-    assert rows[0]["tokens_in_by_model"] == [{"model_id": "model-a", "tokens": 30}]
+    assert rows[0]["tokens_in_by_model"] == {"model-a": 30}
     assert rows[0]["reported_run_total_cost_usd"] == 0.5
     assert rows[0]["reconstructed_per_task_cost_usd"] is None
-    assert rows[0]["cost_provenance"] == "reported"
+    assert rows[0]["cost_provenance"] == "as_reported_only"
+    assert rows[0]["rerun_metadata"]["counterfact_cost_provenance"] == "reported"
 
 
-def test_unknown_tokens_and_outcome_remain_null() -> None:
-    run = _run(run_id="unknown", agent_name="agent", decisions=[])
-    run.outcome = Outcome(kind="categorical", value="unknown", verifier="missing")
+def test_ungraded_runs_are_excluded_and_counted() -> None:
+    graded = _run(
+        run_id="graded",
+        agent_name="agent",
+        decisions=[Decision(decision_id="d0", decision_type="model_call", chosen_action="m")],
+    )
+    ungraded = _run(run_id="unknown", agent_name="agent", decisions=[])
+    ungraded.outcome = Outcome(kind="categorical", value="unknown", verifier="missing")
+    rows, warnings = runs_to_runrecord_rows([graded, ungraded])
+    assert [row["run_id"] for row in rows] == ["graded"]
+    assert rows[0]["outcome_status"] == "graded"
+    assert any("excluded 1 ungraded run(s)" in warning for warning in warnings)
+
+
+def test_untracked_tokens_export_zero_and_say_so() -> None:
+    run = _run(
+        run_id="no-usage",
+        agent_name="agent",
+        decisions=[Decision(decision_id="d0", decision_type="model_call", chosen_action="m")],
+    )
+    rows, warnings = runs_to_runrecord_rows([run])
+    assert (rows[0]["tokens_in"], rows[0]["tokens_out"]) == (0, 0)
+    assert rows[0]["tokens_in_by_model"] == {"m": None}
+    assert rows[0]["rerun_metadata"]["tokens_in_source"] == "not_available"
+    assert any("no token totals" in warning for warning in warnings)
+
+
+def test_run_without_a_task_id_is_refused() -> None:
+    import pytest
+
+    from counterfact.corpus_io import CorpusIOError
+
+    run = _run(
+        run_id="no-task",
+        agent_name="agent",
+        decisions=[Decision(decision_id="d0", decision_type="model_call", chosen_action="m")],
+    )
+    run.metadata.extra.clear()
+    with pytest.raises(CorpusIOError, match="no task id"):
+        runs_to_runrecord_rows([run])
+    run.outcome.metadata["fixture_id"] = "bench-fixture"
     rows, _ = runs_to_runrecord_rows([run])
-    assert rows[0]["tokens_in"] is None
-    assert rows[0]["tokens_out"] is None
-    assert rows[0]["success"] is None
-    assert rows[0]["outcome_status"] == "ungraded"
+    assert rows[0]["task_id"] == "bench-fixture"
+
+
+def test_cost_provenance_uses_eval_audit_values() -> None:
+    from counterfact.schema import Observation
+
+    run = _run(
+        run_id="costs",
+        agent_name="agent",
+        decisions=[Decision(decision_id="d0", decision_type="model_call", chosen_action="m")],
+    )
+    run.steps[0].observations = [Observation(observation_id="o1", content={"cost_usd": 0.2})]
+    rows, _ = runs_to_runrecord_rows([run])
+    assert rows[0]["cost_provenance"] == "partial"
+    assert rows[0]["reconstructed_per_task_cost_usd"] == 0.2
+    run.metadata.extra["total_cost_usd"] = 0.2
+    rows, _ = runs_to_runrecord_rows([run])
+    assert rows[0]["cost_provenance"] == "reconciled"
+    run.metadata.extra["total_cost_usd"] = 0.5
+    rows, _ = runs_to_runrecord_rows([run])
+    assert rows[0]["cost_provenance"] == "as_reported_only"
+    assert rows[0]["reconstructed_per_task_cost_usd"] is None
+    assert rows[0]["rerun_metadata"]["counterfact_cost_provenance"] == "discrepant"
 
 
 def test_adapter_usage_and_committed_harness_cost_are_preserved() -> None:
@@ -199,6 +260,8 @@ def test_adapter_usage_and_committed_harness_cost_are_preserved() -> None:
     )
     corpus = Path(__file__).parents[2] / "bench/real/smoke_mixed_outcome"
     harness = Run.model_validate_json(next(corpus.glob("*.json")).read_text())
+    for run in (claude, openai):
+        run.metadata.extra["task_id"] = "adapter-task"
     rows, _ = runs_to_runrecord_rows([claude, openai, harness])
     assert rows[0]["reported_run_total_cost_usd"] == 0.012
     assert rows[0]["tokens_in"] == 1500
@@ -212,25 +275,38 @@ def test_adapter_usage_and_committed_harness_cost_are_preserved() -> None:
     )
     assert rows[2]["reconstructed_per_task_cost_usd"] == expected
     assert rows[2]["reported_run_total_cost_usd"] is None
-    assert rows[2]["tokens_in"] is None
+    assert rows[2]["rerun_metadata"]["tokens_in_source"] == "not_available"
 
 
-def test_parquet_schema_is_stable_across_models_empty_and_missing_usage(tmp_path) -> None:
+def test_parquet_conforms_to_eval_audit_across_models_and_missing_usage(tmp_path) -> None:
     import polars as pl
+    import pytest
 
+    from counterfact.corpus_io import CorpusIOError
     from counterfact.runrecord_export import export_runrecord_parquet
+    from counterfact.schema import Observation
+    from tests.fixtures.eval_audit_contract import assert_conforms_to_eval_audit
 
     models = [
         Decision(decision_id="d1", decision_type="model_call", chosen_action="m1"),
         Decision(decision_id="d2", decision_type="model_call", chosen_action="m2"),
     ]
-    run = _run(run_id="multi", agent_name="agent", decisions=models)
-    first = tmp_path / "first.parquet"
-    empty = tmp_path / "empty.parquet"
-    export_runrecord_parquet([run], source_corpus=tmp_path, output_path=first)
-    export_runrecord_parquet([], source_corpus=tmp_path, output_path=empty)
-    assert pl.read_parquet(first).schema == pl.read_parquet(empty).schema
-    assert pl.read_parquet(first)["tokens_in"].to_list() == [None]
+    multi = _run(run_id="multi", agent_name="agent", decisions=models)
+    costed = _run(
+        run_id="costed",
+        agent_name="agent",
+        decisions=[Decision(decision_id="d0", decision_type="model_call", chosen_action="m3")],
+    )
+    costed.steps[0].observations = [Observation(observation_id="o1", content={"cost_usd": 0.2})]
+    costed.metadata.extra.update(
+        {"total_cost_usd": 0.5, "usage": {"input_tokens": 9, "output_tokens": 2}}
+    )
+    costed.metadata.extra["timestamp"] = "2026-11-12T10:00:00Z"
+    output = tmp_path / "runs.parquet"
+    export_runrecord_parquet([multi, costed], source_corpus=tmp_path, output_path=output)
+    assert_conforms_to_eval_audit(pl.read_parquet(output))
+    with pytest.raises(CorpusIOError, match="no binary-outcome runs"):
+        export_runrecord_parquet([], source_corpus=tmp_path, output_path=tmp_path / "e.parquet")
 
 
 def test_incomplete_call_costs_cannot_become_a_run_total() -> None:
@@ -268,10 +344,10 @@ def test_model_usage_costs_and_tokens_are_totals_with_model_identity() -> None:
     }
     rows, _ = runs_to_runrecord_rows([run])
     assert rows[0]["model_id"] == "arm"
-    assert rows[0]["model_ids"] == ["provider/model"]
-    assert rows[0]["tokens_in_by_model"] == [{"model_id": "provider/model", "tokens": 12}]
+    assert rows[0]["rerun_metadata"]["model_ids"] == '["provider/model"]'
+    assert rows[0]["tokens_in_by_model"] == {"provider/model": 12}
     assert rows[0]["reported_run_total_cost_usd"] == 0.2
-    assert rows[0]["cost_sources"] == ["metadata.extra.model_usage"]
+    assert rows[0]["rerun_metadata"]["cost_sources"] == '["metadata.extra.model_usage"]'
     run.metadata.agent_name = None
     rows, _ = runs_to_runrecord_rows([run])
     assert rows[0]["agent_id"] == "arm"
@@ -290,7 +366,19 @@ def test_export_receipt_failure_leaves_no_published_parquet(tmp_path, monkeypatc
 
     monkeypatch.setattr(runrecord_export, "atomic_write", fail_receipt)
     with pytest.raises(CorpusIOError, match="injected"):
-        runrecord_export.export_runrecord_parquet([], source_corpus=tmp_path, output_path=output)
+        runrecord_export.export_runrecord_parquet(
+            [
+                _run(
+                    run_id="r",
+                    agent_name="agent",
+                    decisions=[
+                        Decision(decision_id="d0", decision_type="model_call", chosen_action="m")
+                    ],
+                )
+            ],
+            source_corpus=tmp_path,
+            output_path=output,
+        )
     assert not output.exists()
     assert not output.with_suffix(".parquet.receipt.json").exists()
 
@@ -304,6 +392,7 @@ def test_tool_cost_cannot_mask_missing_model_cost_in_parquet(tmp_path) -> None:
     run = Run(
         schema_version="0.1.0",
         run_id="missing-model-cost",
+        metadata=Metadata(extra={"task_id": "task-1"}),
         steps=[
             Step(
                 step_index=0,
@@ -421,13 +510,10 @@ def test_partial_provider_model_usage_does_not_become_a_run_total() -> None:
         "m1": {"inputTokens": 12, "outputTokens": 3, "costUSD": 0.2},
     }
     rows, warnings = runs_to_runrecord_rows([run])
-    assert rows[0]["tokens_in"] is None
-    assert rows[0]["tokens_out"] is None
+    assert rows[0]["rerun_metadata"]["tokens_in_source"] == "not_available"
+    assert rows[0]["rerun_metadata"]["tokens_out_source"] == "not_available"
     assert rows[0]["reported_run_total_cost_usd"] is None
-    assert rows[0]["tokens_in_by_model"] == [
-        {"model_id": "m1", "tokens": 12},
-        {"model_id": "m2", "tokens": None},
-    ]
+    assert rows[0]["tokens_in_by_model"] == {"m1": 12, "m2": None}
     assert any("model_usage omits known models" in warning for warning in warnings)
     run.metadata.extra.update(
         {
@@ -452,6 +538,7 @@ def test_complete_model_coverage_preserves_tool_cost_and_unknown_tool_cost() -> 
     run = Run(
         schema_version="0.1.0",
         run_id="observed-task-cost",
+        metadata=Metadata(extra={"task_id": "task-1"}),
         steps=[
             Step(
                 step_index=0,
@@ -491,7 +578,7 @@ def test_complete_model_coverage_preserves_tool_cost_and_unknown_tool_cost() -> 
     )
     rows, _ = runs_to_runrecord_rows([run])
     assert rows[0]["reconstructed_per_task_cost_usd"] == pytest.approx(0.7)
-    assert rows[0]["cost_sources"] == ["observations.content.cost_usd"]
+    assert rows[0]["rerun_metadata"]["cost_sources"] == '["observations.content.cost_usd"]'
     run.steps[1].observations[0].content["cost_usd"] = None
     rows, warnings = runs_to_runrecord_rows([run])
     assert rows[0]["reconstructed_per_task_cost_usd"] is None

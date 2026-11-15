@@ -177,12 +177,18 @@ def drive_ingest(run: Run) -> str:
         "diagnose on ingested corpus",
     )
     out = run.home / "runs.parquet"
-    run.cli("export-runs", str(corpus), "--to", "runrecord-parquet", "--output", str(out))
-    if not out.exists():
-        raise DriveFailure("export-runs wrote no parquet file")
+    refused = run.cli(
+        "export-runs", str(corpus), "--to", "runrecord-parquet", "--output", str(out), expect_exit=2
+    )
+    check("no task id" in refused.stderr and not out.exists(), True, "export without task ids")
+    exported = run.cli(
+        "export-runs", str(SMOKE_CORPUS), "--to", "runrecord-parquet", "--output", str(out)
+    )
+    check("rows: 120" in exported.stdout and out.exists(), True, "smoke corpus export")
     return (
         "Claude SDK fixture ingests to 2 runs, analyze refuses readiness (exit 1), "
-        "diagnose reads the failed run, and export-runs writes 2 parquet rows"
+        "diagnose reads the failed run, export-runs refuses traces without a task id, "
+        "and the smoke corpus exports 120 RunRecord rows"
     )
 
 
@@ -206,7 +212,8 @@ DRIVES = {
         30,
     ),
     "ingest": Drive(
-        "ingest claude-agent-sdk, analyze (exit 1, not ready), diagnose, and export-runs work",
+        "ingest claude-agent-sdk, analyze (exit 1, not ready), diagnose, and export-runs work "
+        "or refuse traces without a task id",
         [
             "src/counterfact/adapters/**",
             "src/counterfact/ingest.py",

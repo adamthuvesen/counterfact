@@ -101,7 +101,12 @@ def test_import_contract_rejects_scientific_dependency_on_cli(tmp_path: Path) ->
         timeout=30,
     )
     assert result.returncode == 1, result.stdout + result.stderr
-    assert "Scientific code has no presentation or integration dependencies BROKEN" in result.stdout
+    # import-linter wraps long contract names across lines.
+    report = " ".join(result.stdout.split())
+    assert (
+        "Scientific code must not import CLI, presentation, integrations, corpus_io, or bench; "
+        "pass data in from the caller BROKEN"
+    ) in report
     assert "boundary_probe" in result.stdout
 
 

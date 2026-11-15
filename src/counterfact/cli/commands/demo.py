@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from counterfact.analysis.timeline import first_observed_arm
 from counterfact.baselines import pass_rate_by_arm
 from counterfact.cli.constants import DEMO_CONTRAST_TEMPLATE, DEMO_CONTRAST_THRESHOLD
 from counterfact.cli.formatters import estimate_lines, format_pass_rate_table
@@ -12,7 +13,7 @@ from counterfact.errors import CounterError
 from counterfact.intervene.degenerate import degenerate_estimate, outcome_classes
 from counterfact.intervene.estimate import CausalEstimate
 from counterfact.schema import Run
-from counterfact.taxonomy import default_intervention_kind, first_observed_arm
+from counterfact.taxonomy import default_intervention_kind
 
 
 def _load_demo_runs(args: argparse.Namespace) -> tuple[list[Run], str] | None:

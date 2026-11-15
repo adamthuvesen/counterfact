@@ -2,6 +2,8 @@
 
 `counterfact` answers causal questions about agent traces. Missing support must remain visible. A useful `unidentified` result is better than a fabricated counterfactual.
 
+Domain terms are in `GLOSSARY.md`. A change that adds, renames, or redefines a term updates it in the same commit.
+
 ## Start here
 
 - [docs/repo-context.md](docs/repo-context.md) routes changes to owners and checks.
@@ -26,7 +28,9 @@ The Makefile defines every gate. Mark a test `slow` only when it is integration-
 
 | Rule | Enforced by |
 | --- | --- |
-| Scientific code does not import presentation, CLI, provider, or bench modules | `pyproject.toml::tool.importlinter.contracts` |
+| Scientific code does not import presentation, CLI, provider, corpus IO, or bench modules | `pyproject.toml::tool.importlinter.contracts` |
+| Domain modules import only downward (cli, compare, diagnose, explain, attribute, intervene, outcome, analysis, taxonomy, schema) | `pyproject.toml::tool.importlinter.contracts` |
+| Provider integrations (tracing, adapters) sit above corpus IO above schema | `pyproject.toml::tool.importlinter.contracts` |
 | Parse run files only through `corpus_io.load_run` or `load_corpus` | `pyproject.toml::tool.ruff.lint.flake8-tidy-imports.banned-api` |
 | Only named owner files import process, network, or paid-model modules | `tests/test_process_imports.py::test_only_owner_files_import_process_network_or_paid_modules` |
 | Write run files only through `corpus_io.write_corpus` (exception: `bench/real/coding_agent/runner.py`) | `tests/test_corpus_writes.py::test_run_json_is_not_written_by_hand` |
@@ -40,7 +44,9 @@ The Makefile defines every gate. Mark a test `slow` only when it is integration-
 | The approval receipt must match the budget before any API call | `tests/unit/test_corpus_real.py::test_approval_receipt_must_match_budget_before_any_api_call` |
 | Same-step decisions never enter adjustment sets | `tests/unit/test_analysis_contract.py::test_same_step_decisions_are_not_adjustment_features` |
 | Repeated decisions of one type refuse focal localization | `tests/unit/test_causal_engine.py::test_intervene__repeated_decision_type_reports_localization_limit` |
+| `export-runs` writes exactly the columns, types, and enum values of eval-audit's `RunRecord` (copy of its `docs/run-record.schema.json`) | `tests/unit/test_runrecord_export.py::test_parquet_conforms_to_eval_audit_across_models_and_missing_usage` |
 | `verify control` must observe FAIL before a verify pass counts | `.agents/skills/verify-counterfact/verify::control` |
+| Tests do not sleep or read the clock, and every skip or xfail gives a reason | `tests/ruff.toml::lint.flake8-tidy-imports.banned-api`, `tests/test_strict_mode.py::test_every_skip_gives_a_reason` |
 
 ## Design boundaries
 

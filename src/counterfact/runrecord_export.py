@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import math
 import os
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -97,13 +99,63 @@ def _reconstructed_cost(run: Run) -> float | int | None:
     return _sum_known(costs)
 
 
+# eval-audit's RunRecord owns the exported columns, types, and enum values.
+# tests/fixtures/eval_audit_run_record.schema.json pins a copy of its schema.
+# eval-audit's `reconciled` needs both costs; a reconstruction with no reported
+# total to check it against is incomplete provenance, which eval-audit calls
+# `partial` (docs/design-ingest.md).
+_EVAL_AUDIT_COST_PROVENANCE = {
+    "reconciled": "reconciled",
+    "discrepant": "as_reported_only",
+    "reported": "as_reported_only",
+    "reconstructed": "partial",
+    "cost_not_available": "cost_not_available",
+}
+
+
+def _task_id(run: Run) -> str:
+    task_id = run.metadata.extra.get("task_id") or run.outcome.metadata.get("fixture_id")
+    if not task_id:
+        raise CorpusIOError(
+            f"run {run.run_id}: no task id; set metadata.extra.task_id. eval-audit pairs "
+            "treatment and control rows on task_id, so the run id cannot stand in"
+        )
+    return str(task_id)
+
+
+def _timestamp(run: Run) -> datetime | None:
+    value = run.metadata.extra.get("timestamp")
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        parsed = None
+    if parsed is None or parsed.tzinfo is None:
+        raise CorpusIOError(
+            f"run {run.run_id}: metadata.extra.timestamp must be an ISO 8601 string "
+            f"with a UTC offset, got {value!r}"
+        )
+    return parsed.astimezone(UTC)
+
+
 def runs_to_runrecord_rows(runs: list[Run]) -> tuple[list[dict[str, Any]], list[str]]:
     rows: list[dict[str, Any]] = []
     warnings: list[str] = []
+    ungraded: list[str] = []
+    untracked_tokens: list[str] = []
     for run in validate_runs(runs):
+        if run.outcome.kind != "binary":
+            ungraded.append(run.run_id)
+            continue
         extra = run.metadata.extra
         calls = [d for s in run.steps for d in s.decisions if d.decision_type == "model_call"]
         first_action = next((d.chosen_action for d in calls if d.chosen_action), None)
+        if first_action is None:
+            raise CorpusIOError(
+                f"run {run.run_id}: no model_call chosen_action; eval-audit requires model_id"
+            )
+        task_id = _task_id(run)
         models = list(
             dict.fromkeys(
                 model for d in calls if (model := _model_identity(d.chosen_action, d.metadata))
@@ -172,6 +224,8 @@ def runs_to_runrecord_rows(runs: list[Run]) -> tuple[list[dict[str, Any]], list[
             token_sources.append(source if value is not None else "not_available")
         if len(models) == 1 and model_usage is None and all(v is None for v in by_model[models[0]]):
             by_model[models[0]] = (tokens[0], tokens[1])
+        if None in tokens:
+            untracked_tokens.append(run.run_id)
         reported_key = "cost_usd" if extra.get("cost_usd") is not None else "total_cost_usd"
         reported = _number(extra.get(reported_key), field=reported_key)
         if reported is None and isinstance(model_usage, dict):
@@ -210,88 +264,125 @@ def runs_to_runrecord_rows(runs: list[Run]) -> tuple[list[dict[str, Any]], list[
         else:
             provenance = "cost_not_available"
             warnings.append(f"run {run.run_id}: no recorded cost; exporting null cost fields")
+        eval_audit_provenance = _EVAL_AUDIT_COST_PROVENANCE[provenance]
         rows.append(
             {
-                "agent_id": run.metadata.agent_name or first_action or "counterfact-agent",
+                "agent_id": run.metadata.agent_name or first_action,
                 "model_id": first_action,
-                "model_ids": models,
-                "model_identity_provenance": (
-                    "model_id: first chosen_action; model_ids: logged model_id/provider_model, "
-                    "else chosen_action"
-                ),
                 "harness": str(extra.get("harness") or "counterfact-trace"),
                 "run_id": run.run_id,
-                "task_id": str(extra.get("task_id") or run.run_id),
+                "task_id": task_id,
                 "task_category": extra.get("task_category"),
                 "seed": extra.get("seed"),
-                "success": run.outcome.value if run.outcome.kind == "binary" else None,
+                "success": run.outcome.value,
                 "partial_credit": None,
-                "outcome_status": "graded" if run.outcome.kind == "binary" else "ungraded",
-                "tokens_in": tokens[0],
-                "tokens_out": tokens[1],
-                "tokens_in_by_model": [
-                    {"model_id": m, "tokens": pair[0]} for m, pair in by_model.items()
-                ],
-                "tokens_out_by_model": [
-                    {"model_id": m, "tokens": pair[1]} for m, pair in by_model.items()
-                ],
-                "tokens_in_provenance": token_sources[0],
-                "tokens_out_provenance": token_sources[1],
+                "outcome_status": "graded",
+                # eval-audit has no null token count; it documents 0 for untracked
+                # tokens. rerun_metadata.tokens_*_source=not_available marks them.
+                "tokens_in": tokens[0] or 0,
+                "tokens_out": tokens[1] or 0,
+                # A null struct field is an absent key to eval-audit.
+                "tokens_in_by_model": {m: pair[0] for m, pair in by_model.items()},
+                "tokens_out_by_model": {m: pair[1] for m, pair in by_model.items()},
                 "latency_s": extra.get("latency_s"),
-                "timestamp": extra.get("timestamp"),
-                "reconstructed_per_task_cost_usd": reconstructed,
+                "timestamp": _timestamp(run),
+                # eval-audit uses the reported total when reconstruction does not
+                # reconcile; exporting the unreconciled number would invite its use.
+                "reconstructed_per_task_cost_usd": (
+                    None if eval_audit_provenance == "as_reported_only" else reconstructed
+                ),
                 "reported_run_total_cost_usd": reported,
-                "cost_provenance": provenance,
-                "cost_sources": cost_sources,
+                "cost_provenance": eval_audit_provenance,
                 "rerun_metadata": {
                     "source": "counterfact export-runs",
                     "counterfact_run_id": run.run_id,
+                    "model_ids": json.dumps(models),
+                    "tokens_in_source": token_sources[0],
+                    "tokens_out_source": token_sources[1],
+                    "cost_sources": json.dumps(cost_sources),
+                    "counterfact_cost_provenance": provenance,
                 },
             }
+        )
+    if ungraded:
+        warnings.append(
+            f"excluded {len(ungraded)} ungraded run(s) with nonbinary outcomes; "
+            f"eval-audit accepts only graded or errored rows: {ungraded}"
+        )
+    if untracked_tokens:
+        warnings.append(
+            f"{len(untracked_tokens)} run(s) have no token totals; exported 0, eval-audit's "
+            "value for untracked tokens (rerun_metadata.tokens_*_source=not_available)"
         )
     return rows, warnings
 
 
-_MODEL_TOKENS = pl.List(pl.Struct({"model_id": pl.String, "tokens": pl.Int64}))
-_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
-    "agent_id": pl.String,
-    "model_id": pl.String,
-    "model_ids": pl.List(pl.String),
-    "model_identity_provenance": pl.String,
-    "harness": pl.String,
-    "run_id": pl.String,
-    "task_id": pl.String,
-    "task_category": pl.String,
-    "seed": pl.Int64,
-    "success": pl.Boolean,
-    "partial_credit": pl.Float64,
-    "outcome_status": pl.String,
-    "tokens_in": pl.Int64,
-    "tokens_out": pl.Int64,
-    "tokens_in_by_model": _MODEL_TOKENS,
-    "tokens_out_by_model": _MODEL_TOKENS,
-    "tokens_in_provenance": pl.String,
-    "tokens_out_provenance": pl.String,
-    "latency_s": pl.Float64,
-    "timestamp": pl.String,
-    "reconstructed_per_task_cost_usd": pl.Float64,
-    "reported_run_total_cost_usd": pl.Float64,
-    "cost_provenance": pl.String,
-    "cost_sources": pl.List(pl.String),
-    "rerun_metadata": pl.Struct({"source": pl.String, "counterfact_run_id": pl.String}),
-}
+_RERUN_METADATA_KEYS = (
+    "source",
+    "counterfact_run_id",
+    "model_ids",
+    "tokens_in_source",
+    "tokens_out_source",
+    "cost_sources",
+    "counterfact_cost_provenance",
+)
+
+
+def _schema(rows: list[dict[str, Any]]) -> dict[str, pl.DataType | type[pl.DataType]]:
+    models = sorted(
+        {
+            model
+            for row in rows
+            for key in ("tokens_in_by_model", "tokens_out_by_model")
+            for model in row[key]
+        }
+    )
+    model_tokens = pl.Struct(dict.fromkeys(models, pl.Int64))
+    return {
+        "agent_id": pl.String,
+        "model_id": pl.String,
+        "harness": pl.String,
+        "run_id": pl.String,
+        "task_id": pl.String,
+        "task_category": pl.String,
+        "seed": pl.Int64,
+        "success": pl.Boolean,
+        "partial_credit": pl.Float64,
+        "outcome_status": pl.String,
+        "tokens_in": pl.Int64,
+        "tokens_out": pl.Int64,
+        "tokens_in_by_model": model_tokens,
+        "tokens_out_by_model": model_tokens,
+        "latency_s": pl.Float64,
+        "timestamp": pl.Datetime("us", "UTC"),
+        "reconstructed_per_task_cost_usd": pl.Float64,
+        "reported_run_total_cost_usd": pl.Float64,
+        "cost_provenance": pl.String,
+        "rerun_metadata": pl.Struct(dict.fromkeys(_RERUN_METADATA_KEYS, pl.String)),
+    }
+
+
 _FIELD_DERIVATIONS = {
-    "agent_id": (
-        "Run.metadata.agent_name, else first model_call chosen_action, else counterfact-agent"
+    "agent_id": "Run.metadata.agent_name, else first model_call chosen_action",
+    "model_id": "first model_call chosen_action, preserving the legacy identity; required",
+    "task_id": "metadata.extra.task_id, else outcome.metadata.fixture_id; required",
+    "rerun_metadata.model_ids": (
+        "JSON list of distinct model_call model_id/provider_model, else chosen_action"
     ),
-    "model_id": "first model_call chosen_action, preserving the legacy identity",
-    "model_ids": "distinct model_call model_id/provider_model, else chosen_action",
-    "success": "binary outcome value; null for other outcome kinds",
+    "success": "binary outcome value; runs with other outcome kinds are excluded",
     "partial_credit": "null because no native partial-credit grader is recorded",
-    "tokens": "run totals, else model totals, else decision usage; never add totals to calls",
+    "tokens": (
+        "run totals, else model totals, else decision usage; never add totals to calls; "
+        "0 when untracked, with rerun_metadata.tokens_*_source=not_available"
+    ),
     "cost": (
         "reported provider total remains separate from unique observed task costs; "
         "reconstruction requires complete unambiguous model-call cost coverage"
+    ),
+    "cost_provenance": (
+        "eval-audit value: reconciled stays reconciled; reported and discrepant become "
+        "as_reported_only with a null reconstructed cost; reconstructed becomes partial; "
+        "rerun_metadata.counterfact_cost_provenance keeps the counterfact value"
     ),
 }
 
@@ -300,17 +391,24 @@ def export_runrecord_parquet(
     runs: list[Run], *, source_corpus: Path, output_path: Path
 ) -> RunRecordExportReceipt:
     rows, warnings = runs_to_runrecord_rows(runs)
+    if not rows:
+        detail = f": {'; '.join(warnings)}" if warnings else ""
+        raise CorpusIOError(f"no binary-outcome runs to export{detail}")
     receipt = RunRecordExportReceipt(
         source_corpus=str(source_corpus),
         output_path=str(output_path),
         row_count=len(rows),
         field_derivations=_FIELD_DERIVATIONS,
         missing_cost_policy="Missing costs are null with cost_provenance=cost_not_available.",
+        excluded_ungraded_count=sum(run.outcome.kind != "binary" for run in runs),
         warnings=warnings,
         migration_notes=[
-            "Version 2 replaces fabricated zero token counts with null.",
-            "Per-model usage is a list of model_id/tokens records instead of agent-keyed structs.",
-            "Reported totals stay separate from observed task costs with model-call coverage.",
+            "Version 3 writes exactly eval-audit's RunRecord columns, types, and enum values.",
+            "Per-model usage is a model-keyed struct; a null field is an absent model.",
+            "Exporter-only provenance moves into string fields of rerun_metadata.",
+            "Untracked tokens are 0, marked by rerun_metadata.tokens_*_source=not_available.",
+            "Runs with nonbinary outcomes are excluded and counted.",
+            "Every run needs a task id; the run id no longer stands in.",
             "Legacy receipts without export_version remain readable.",
         ],
     )
@@ -327,7 +425,7 @@ def export_runrecord_parquet(
             mode="wb", dir=output_path.parent, prefix=".counterfact-", delete=False
         ) as stream:
             temporary = Path(stream.name)
-            pl.DataFrame(rows, schema=_SCHEMA, strict=True).write_parquet(stream)
+            pl.DataFrame(rows, schema=_schema(rows), strict=True).write_parquet(stream)
         os.link(temporary, output_path)
         published = True
         receipt_path = output_path.with_suffix(output_path.suffix + ".receipt.json")

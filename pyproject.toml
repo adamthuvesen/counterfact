@@ -83,15 +83,13 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "PGH003", "PGH004", "PTH",
 ignore = ["B008", "E501"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-"counterfact.schema.Run.model_validate_json".msg = "Read run files with counterfact.corpus_io.load_run or load_corpus."
-"counterfact.schema.models.Run.model_validate_json".msg = "Read run files with counterfact.corpus_io.load_run or load_corpus."
+"counterfact.schema.Run.model_validate_json".msg = "Read run files with counterfact.corpus_io.load_run or load_corpus. Only src/counterfact/corpus_io.py and src/counterfact/analysis/corpus.py may call Run.model_validate_json."
+"counterfact.schema.models.Run.model_validate_json".msg = "Read run files with counterfact.corpus_io.load_run or load_corpus. Only src/counterfact/corpus_io.py and src/counterfact/analysis/corpus.py may call Run.model_validate_json."
 
 [tool.ruff.lint.per-file-ignores]
 # corpus_io owns run-file parsing. AnalysisCorpus re-parses its in-memory snapshots.
-# Tests read published files directly to assert on the raw output.
 "src/counterfact/corpus_io.py" = ["TID251"]
 "src/counterfact/analysis/corpus.py" = ["TID251"]
-"tests/**" = ["TID251"]
 
 [tool.coverage.run]
 source_pkgs = ["counterfact", "bench", "scripts"]
@@ -137,7 +135,7 @@ reportPrivateUsage = false
 root_packages = ["counterfact", "bench"]
 
 [[tool.importlinter.contracts]]
-name = "Scientific code has no presentation or integration dependencies"
+name = "Scientific code must not import CLI, presentation, integrations, corpus_io, or bench; pass data in from the caller"
 type = "forbidden"
 source_modules = [
     "counterfact.analysis", "counterfact.attribute", "counterfact.baselines",
@@ -148,11 +146,37 @@ source_modules = [
 forbidden_modules = [
     "counterfact.cli", "counterfact.adapters", "counterfact.tracing",
     "counterfact.explain", "counterfact.corpus_analyzer", "counterfact.ingest",
-    "counterfact.runrecord_export", "bench",
+    "counterfact.runrecord_export", "counterfact.corpus_io", "bench",
 ]
 
 [[tool.importlinter.contracts]]
-name = "Presentation does not depend on CLI or provider integrations"
+name = "Presentation must not import CLI, adapters, tracing, or bench; take loaded data as arguments"
 type = "forbidden"
 source_modules = ["counterfact.explain", "counterfact.corpus_analyzer"]
 forbidden_modules = ["counterfact.cli", "counterfact.adapters", "counterfact.tracing", "bench"]
+
+[[tool.importlinter.contracts]]
+name = "Domain layers import only lower layers; move shared code to a lower layer such as counterfact.schema"
+type = "layers"
+layers = [
+    "counterfact.cli",
+    "counterfact.compare",
+    "counterfact.diagnose",
+    "counterfact.explain | counterfact.corpus_analyzer",
+    "counterfact.attribute | counterfact.policy",
+    "counterfact.intervene",
+    "counterfact.outcome | counterfact.dag | counterfact.baselines",
+    "counterfact.analysis",
+    "counterfact.taxonomy",
+    "counterfact.errors | counterfact.schema | counterfact.stats",
+]
+
+[[tool.importlinter.contracts]]
+name = "Import order is tracing, then adapters, then corpus_io, then schema; never import upward"
+type = "layers"
+layers = [
+    "counterfact.tracing",
+    "counterfact.adapters",
+    "counterfact.corpus_io",
+    "counterfact.schema",
+]

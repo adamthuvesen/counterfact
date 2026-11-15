@@ -1,5 +1,6 @@
-"""Type-check suppressions stay narrow: no file-level downgrade, no inline ignore without a rule and reason."""
+"""Suppressions stay narrow: no file-level downgrade, no inline ignore without a rule and reason, no skip without a reason."""
 
+import ast
 import io
 import os
 import re
@@ -44,8 +45,9 @@ def test_no_file_downgrades_type_checking_mode() -> None:
         for number, line in enumerate(path.read_text(errors="replace").splitlines(), start=1)
         if DOWNGRADE.match(line)
     ]
-    assert not downgrades, "file-level `# pyright:` comment turns strict mode off: " + ", ".join(
-        downgrades
+    assert not downgrades, (
+        "file-level `# pyright:` comment turns strict mode off; remove it and fix the type error, or use an inline `# pyright: ignore[rule]  # reason`: "
+        + ", ".join(downgrades)
     )
 
 
@@ -74,7 +76,10 @@ def test_inline_ignores_name_a_rule_and_give_a_reason() -> None:
         for path in checkout_python_files()
         for line in unexplained_ignores(path.read_text(errors="replace"))
     ]
-    assert not hits, "write `# pyright: ignore[rule]  # reason`: " + ", ".join(hits)
+    assert not hits, (
+        "pyright ignore needs a rule and a reason; write `# pyright: ignore[ruleName]  # why`: "
+        + ", ".join(hits)
+    )
 
 
 def test_ignore_pattern_finds_unexplained_ignores() -> None:
@@ -105,7 +110,8 @@ def test_no_noqa_lifts_a_ban_or_a_whole_file() -> None:
         for line in lifted_bans(path.read_text(errors="replace"))
     ]
     assert not hits, (
-        "name an owner in pyproject instead of a file-wide or TID251 noqa: " + ", ".join(hits)
+        "remove the file-wide or TID251 noqa; fix each finding, or give the owner file a TID251 per-file-ignore in pyproject.toml: "
+        + ", ".join(hits)
     )
 
 
@@ -117,3 +123,77 @@ def test_lifted_ban_pattern_finds_known_cases() -> None:
         'x = "# noqa: TID251"\n'
     )
     assert lifted_bans(source) == [1, 2]
+
+
+SKIP_NAMES = {"pytest.skip", "unittest.skip", "pytest.mark.skip", "pytest.mark.xfail"}
+# Only these two take the reason as a first positional argument. For the marks, the first
+# positional argument is the xfail condition, so they take the reason as a keyword alone.
+POSITIONAL_REASON = {"pytest.skip", "unittest.skip"}
+
+
+def _dotted_name(node: ast.expr) -> str:
+    if isinstance(node, ast.Attribute):
+        return f"{_dotted_name(node.value)}.{node.attr}"
+    if isinstance(node, ast.Name):
+        return node.id
+    return ""
+
+
+def _reason(call: ast.Call) -> ast.expr | None:
+    for keyword in call.keywords:
+        if keyword.arg == "reason":
+            return keyword.value
+    if _dotted_name(call.func) in POSITIONAL_REASON and call.args:
+        return call.args[0]
+    return None
+
+
+def _has_reason(value: ast.expr | None) -> bool:
+    if value is None:
+        return False
+    return not (
+        isinstance(value, ast.Constant) and isinstance(value.value, str) and not value.value.strip()
+    )
+
+
+def reasonless_skips(source: str) -> list[int]:
+    found: list[int] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Call) and _dotted_name(node.func) in SKIP_NAMES:
+            if not _has_reason(_reason(node)):
+                found.append(node.lineno)
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            for decorator in node.decorator_list:
+                if _dotted_name(decorator) in SKIP_NAMES:
+                    found.append(decorator.lineno)
+    return sorted(found)
+
+
+def test_every_skip_gives_a_reason() -> None:
+    bare = [
+        f"{path.relative_to(ROOT)}:{line}"
+        for path in checkout_python_files()
+        for line in reasonless_skips(path.read_text(errors="replace"))
+    ]
+    assert not bare, (
+        'give each skip or xfail a non-empty reason string, e.g. reason="needs Docker": '
+        + ", ".join(bare)
+    )
+
+
+def test_skip_scan_finds_known_reasonless_skips() -> None:
+    source = (
+        "import pytest\n"
+        "@pytest.mark.skip\n"
+        "def test_bare_decorator(): ...\n"
+        "@pytest.mark.skip()\n"
+        "def test_empty_mark(): ...\n"
+        "pytest.skip()\n"
+        "pytest.skip('')\n"
+        "pytest.mark.xfail(False)\n"
+        "unittest.skip('the reason is positional')\n"
+        "pytest.mark.skip(reason='the reason is a keyword')\n"
+        "pytest.mark.xfail(False, reason='the reason is a keyword')\n"
+        "pytest.skip(reason='the reason is a keyword')\n"
+    )
+    assert reasonless_skips(source) == [2, 4, 6, 7, 8]

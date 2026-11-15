@@ -14,7 +14,6 @@ table, not edits to algorithm code.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Literal, get_args
 
@@ -138,18 +137,6 @@ def attribution_intervention_kind(decision_type: str) -> str | None:
     return kinds[0] if kinds else None
 
 
-def first_observed_arm(runs: Iterable[Run], decision_type: str) -> str | None:
-    """Return the first non-empty `chosen_action` for `decision_type` in corpus order."""
-    from counterfact.analysis.timeline import ordered_steps
-
-    for run in runs:
-        for step in ordered_steps(run):
-            for decision in step.decisions:
-                if decision.decision_type == decision_type and decision.chosen_action:
-                    return decision.chosen_action
-    return None
-
-
 def extract_features(decision: Decision, run: Run) -> dict[str, Any]:
     """Map a Decision (in the context of its Run) to a feature dict for the outcome model.
 
@@ -197,7 +184,6 @@ __all__ = [
     "attribution_intervention_kind",
     "default_intervention_kind",
     "extract_features",
-    "first_observed_arm",
     "identifiability_stance",
     "is_valid_intervention",
     "parent_types",

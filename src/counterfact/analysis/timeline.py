@@ -1,5 +1,6 @@
 """The numeric step chronology used by every analysis consumer."""
 
+from collections.abc import Iterable
 from typing import overload
 
 from counterfact.analysis.facts import DecisionFact, RunFact, StepFact
@@ -49,4 +50,14 @@ def first_decision(
             )
         if decisions:
             return step.step_index, decisions[0]
+    return None
+
+
+def first_observed_arm(runs: Iterable[Run], decision_type: str) -> str | None:
+    """Return the first non-empty `chosen_action` for `decision_type` in corpus order."""
+    for run in runs:
+        for step in ordered_steps(run):
+            for decision in step.decisions:
+                if decision.decision_type == decision_type and decision.chosen_action:
+                    return decision.chosen_action
     return None
