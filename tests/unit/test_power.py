@@ -6,10 +6,12 @@ import math
 
 from counterfact.baselines import pass_rate_by_arm
 from counterfact.power import power_analysis
-from counterfact.schema import Decision, Outcome, Run, Step
+from counterfact.schema import Decision, DecisionTypeLiteral, Outcome, Run, Step
 
 
-def _arm_run(*, run_id: str, decision_type: str, action: str, outcome_pass: bool) -> Run:
+def _arm_run(
+    *, run_id: str, decision_type: DecisionTypeLiteral, action: str, outcome_pass: bool
+) -> Run:
     return Run(
         schema_version="0.1.0",
         run_id=run_id,

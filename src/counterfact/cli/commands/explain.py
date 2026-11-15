@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from counterfact.cli import loaders
+from counterfact.errors import CounterError
 
 load_run_file = loaders.load_run_file
 load_corpus_dir = loaders.load_corpus_dir
@@ -31,15 +33,19 @@ def run(args: argparse.Namespace) -> int:
         else (run_path.parent / f"counterfact-explain-{focal.run_id}.html")
     )
 
-    report = build_report(
-        focal,
-        corpus,
-        decision_type=args.decision_type,
-        seed=args.seed,
-        run_path=str(run_path),
-        corpus_dir=str(runs_dir),
-    )
-    html = render_html(report)
-    output.write_text(html)
+    try:
+        report = build_report(
+            focal,
+            corpus,
+            decision_type=args.decision_type,
+            seed=args.seed,
+            run_path=str(run_path),
+            corpus_dir=str(runs_dir),
+        )
+        html = render_html(report)
+        output.write_text(html)
+    except (CounterError, ValueError, OSError) as exc:
+        print(f"counterfact explain: {exc}", file=sys.stderr)
+        return 2
     print(str(output.resolve()))
     return 0

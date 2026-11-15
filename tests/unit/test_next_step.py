@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
 from counterfact.intervene import NextStep
 
 
-def _arm_row(arm: str, n: int, k: int, lo: float, hi: float) -> dict:
+def _arm_row(arm: str, n: int, k: int, lo: float, hi: float) -> dict[str, Any]:
     return {
         "arm": arm,
         "n": n,
@@ -19,7 +21,7 @@ def _arm_row(arm: str, n: int, k: int, lo: float, hi: float) -> dict:
     }
 
 
-def _full_increase_n_payload() -> dict:
+def _full_increase_n_payload() -> dict[str, Any]:
     return {
         "current_n": 30,
         "estimated_required_n": 1200,
@@ -32,7 +34,7 @@ def _full_increase_n_payload() -> dict:
     }
 
 
-def _full_broaden_payload() -> dict:
+def _full_broaden_payload() -> dict[str, Any]:
     return {
         "arm_name": "model_call",
         "missing_strata": ["large"],
@@ -41,7 +43,7 @@ def _full_broaden_payload() -> dict:
     }
 
 
-def _full_replay_payload() -> dict:
+def _full_replay_payload() -> dict[str, Any]:
     return {
         "intervention_target": "prompt_content",
         "replay_inputs_required": ["prompt_template", "latent_state_at_step"],
@@ -169,7 +171,7 @@ def test_next_step_add_arm_randomization_requires_policy() -> None:
 
 def test_next_step_unknown_action_raises() -> None:
     with pytest.raises(ValidationError):
-        NextStep(action="teleport", payload={}, human_text="…")  # type: ignore[arg-type]
+        NextStep(action="teleport", payload={}, human_text="…")  # pyright: ignore[reportArgumentType]  # unknown action on purpose
 
 
 def test_next_step_optional_suggested_command_is_accepted() -> None:

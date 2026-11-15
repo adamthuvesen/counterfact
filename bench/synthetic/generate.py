@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 from bench.synthetic.scm import SyntheticSCM
+from counterfact.corpus_io import IngestReceipt, write_corpus
+from counterfact.schema import Run
 
 
-def generate_traces(n: int, seed: int = 42, confound: bool = False) -> Iterator[dict]:
+def generate_traces(n: int, seed: int = 42, confound: bool = False) -> Iterator[dict[str, Any]]:
     """Yield `n` traces deterministically given the seed.
 
     `confound=True` opts into the showcase mode where `model_choice` is biased
@@ -22,7 +24,7 @@ def generate_traces(n: int, seed: int = 42, confound: bool = False) -> Iterator[
 
 
 def generate_corpus(n: int, seed: int, output_dir: str | Path, confound: bool = False) -> Path:
-    """Write `n` traces to `output_dir` as `syn-<i>.json` files. Returns the dir."""
+    """Publish `n` traces to `output_dir` as `syn-<i>.json` files with an ingest receipt."""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     existing = sorted(out.glob("*.json"))
@@ -31,7 +33,11 @@ def generate_corpus(n: int, seed: int, output_dir: str | Path, confound: bool = 
             f"output directory already contains JSON trace files: {out}. "
             "Use an empty directory for synthetic generation."
         )
-    for trace in generate_traces(n, seed=seed, confound=confound):
-        trace_path = out / f"{trace['run_id']}.json"
-        trace_path.write_text(json.dumps(trace, sort_keys=True, indent=2))
+    runs = [Run.model_validate(trace) for trace in generate_traces(n, seed=seed, confound=confound)]
+    receipt = IngestReceipt(
+        source_format="bench-synthetic",
+        source_file=f"seed={seed} confound={confound}",
+        generated_count=n,
+    )
+    write_corpus(runs, out, receipt, append=True)
     return out

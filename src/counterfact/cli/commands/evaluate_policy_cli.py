@@ -31,7 +31,8 @@ def _format(estimate: PolicyEstimate) -> str:
         )
     if estimate.diagnostics is not None:
         g = estimate.diagnostics
-        lines.append(f"cross-check: ICE {g.ice_delta:+.3f}, SNIS {g.snis_delta:+.3f}")
+        snis = f"{g.snis_delta:+.3f}" if g.snis_delta is not None else "unavailable"
+        lines.append(f"cross-check: ICE {g.ice_delta:+.3f}, SNIS {snis}")
         if g.matched_runs_delta is not None:
             lines.append(f"matched runs (descriptive, not causal): {g.matched_runs_delta:+.3f}")
         lines.append(

@@ -37,6 +37,7 @@ class ArmSupportRow(_Strict):
 class IdentifiabilityCoverage(_Strict):
     reachable: list[IdentifiabilityName] = Field(default_factory=list)
     unfittable_outcome_model: bool = False
+    unfittable_reason: Literal["single_class", "no_features"] | None = None
 
 
 class RubricCriterion(_Strict):
@@ -48,6 +49,7 @@ class RubricCriterion(_Strict):
     ]
     passed: bool
     reason: str
+    reason_code: Literal["empty_corpus", "single_class", "imbalanced", "support_gap"] | None = None
 
 
 class CorpusReadinessReport(_Strict):

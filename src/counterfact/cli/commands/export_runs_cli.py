@@ -10,6 +10,7 @@ load_corpus_dir = loaders.load_corpus_dir
 
 
 def run(args: argparse.Namespace) -> int:
+    from counterfact.corpus_io import CorpusIOError
     from counterfact.runrecord_export import export_runrecord_parquet
 
     if args.to != "runrecord-parquet":
@@ -19,7 +20,11 @@ def run(args: argparse.Namespace) -> int:
     if corpus is None:
         return 2
     output = args.output or (args.runs_dir / "runrecord.parquet")
-    receipt = export_runrecord_parquet(corpus, source_corpus=args.runs_dir, output_path=output)
+    try:
+        receipt = export_runrecord_parquet(corpus, source_corpus=args.runs_dir, output_path=output)
+    except CorpusIOError as exc:
+        print(f"counterfact export-runs: {exc}", file=sys.stderr)
+        return 2
     if args.json:
         print(receipt.model_dump_json(indent=2))
     else:
@@ -29,6 +34,8 @@ def run(args: argparse.Namespace) -> int:
         )
         print(f"receipt: {receipt_path.resolve()}")
         print(f"rows: {receipt.row_count}")
+        if receipt.excluded_ungraded_count:
+            print(f"excluded: {receipt.excluded_ungraded_count} ungraded run(s)")
         if receipt.warnings:
             print(f"warnings: {len(receipt.warnings)}")
     return 0

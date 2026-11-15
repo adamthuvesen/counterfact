@@ -6,10 +6,12 @@ from bench.synthetic import generate_traces
 from counterfact import build_dag, fit_outcome_model, intervene
 from counterfact.baselines import PassRateTable, pass_rate_by_arm
 from counterfact.intervene import CausalEstimate, IdentifiabilityStatus
-from counterfact.schema import Decision, Outcome, Run, Step
+from counterfact.schema import Decision, DecisionTypeLiteral, Outcome, Run, Step
 
 
-def _make_run(*, run_id: str, arms_for_decision: list[tuple[str, str]], outcome_pass: bool) -> Run:
+def _make_run(
+    *, run_id: str, arms_for_decision: list[tuple[DecisionTypeLiteral, str]], outcome_pass: bool
+) -> Run:
     """Build a minimal Run with one Step per (decision_type, chosen_action) pair."""
     steps: list[Step] = []
     for i, (decision_type, action) in enumerate(arms_for_decision):

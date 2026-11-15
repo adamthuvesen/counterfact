@@ -15,13 +15,16 @@ from counterfact.adapters._common import (
     randomization_warning,
     write_corpus,
 )
+from counterfact.corpus_io import read_text
 from counterfact.schema import Run
 
 
 def _read_mapping(path: Path) -> dict[str, Any]:
-    text = path.read_text()
+    text = read_text(path)
     try:
-        result: dict[str, Any] = json.loads(text)
+        result = json.loads(text)
+        if not isinstance(result, dict):
+            raise IngestError("mapping must be an object")
         return result
     except json.JSONDecodeError:
         return _read_simple_yaml_mapping(text)
@@ -153,7 +156,7 @@ def ingest_generic_jsonl(
     dropped_fields: set[str] = set()
     validation_errors: list[str] = []
 
-    for idx, line in enumerate(source_path.read_text().splitlines(), start=1):
+    for idx, line in enumerate(read_text(source_path).splitlines(), start=1):
         if not line.strip():
             continue
         try:
@@ -162,6 +165,8 @@ def ingest_generic_jsonl(
             validation_errors.append(f"record {idx}: invalid JSON: {exc}")
             continue
         try:
+            if not isinstance(source, dict):
+                raise IngestError("source record must be an object")
             if mode == "native":
                 payload = source
                 dropped: list[str] = []
@@ -189,8 +194,7 @@ def ingest_generic_jsonl(
         dropped_fields=sorted(dropped_fields),
         validation_errors=[],
     )
-    write_corpus(runs, output_dir, receipt)
-    return receipt
+    return write_corpus(runs, output_dir, receipt)
 
 
 __all__ = ["IngestError", "IngestReceipt", "ingest_generic_jsonl"]

@@ -11,10 +11,17 @@ Run:
 
 from __future__ import annotations
 
-import json
+import argparse
+import math
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import TypedDict
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from counterfact.corpus_io import CorpusIOError, load_corpus
+from counterfact.schema import Run
 
 _FAILURE_MODES = (
     "pass",
@@ -22,59 +29,101 @@ _FAILURE_MODES = (
     "public_failure",
     "hidden_semantic_failure",
     "timeout",
+    "output_limit",
     "exception",
 )
 
 
-def _model_attempts(run: dict[str, object]) -> list[tuple[str, object]]:
+class PilotReport(TypedDict):
+    n: int
+    fixtures: dict[str, int]
+    cost_usd: float
+    extraction_failures: dict[str, int]
+    failure_modes: dict[str, int]
+    failure_modes_by_fixture: dict[str, int]
+    failure_modes_by_model: dict[str, int]
+    table: dict[str, int]
+    gate_passed: bool
+    showcase_gate_passed: bool
+
+
+class _HiddenOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    fixture_id: str = Field(min_length=1)
+    public_pass: bool
+    hidden_pass: bool
+
+
+def _model_attempts(run: Run) -> list[tuple[str, object]]:
     attempts: list[tuple[str, object]] = []
-    for step in run["steps"]:  # type: ignore[index]
-        model_arm = None
-        for decision in step.get("decisions", []) or []:
-            if decision.get("decision_type") == "model_call":
-                model_arm = decision.get("chosen_action")
-        if model_arm is None:
-            continue
-        for obs in step.get("observations", []) or []:
-            content = obs.get("content", {})
-            attempts.append((str(model_arm), content.get("extracted_code")))
+    for step in run.steps:
+        model_arm = next(
+            (
+                decision.chosen_action
+                for decision in step.decisions
+                if decision.decision_type == "model_call"
+            ),
+            None,
+        )
+        if model_arm is not None:
+            attempts.extend(
+                (model_arm, obs.content.get("extracted_code")) for obs in step.observations
+            )
     return attempts
 
 
-def _stdout_tails(run: dict[str, object]) -> list[str]:
-    tails: list[str] = []
-    for step in run["steps"]:  # type: ignore[index]
-        for obs in step.get("observations", []) or []:
-            tail = obs.get("content", {}).get("stdout_tail")
-            if isinstance(tail, str):
-                tails.append(tail)
-    return tails
+def _stdout_tails(run: Run) -> list[str]:
+    return [
+        tail
+        for step in run.steps
+        for obs in step.observations
+        if isinstance(tail := obs.content.get("stdout_tail"), str)
+    ]
 
 
-def _failure_mode(run: dict[str, object]) -> str:
-    md = run["outcome"]["metadata"]  # type: ignore[index]
-    if md["hidden_pass"]:
+def _execution_statuses(run: Run) -> list[str]:
+    executions = [run.outcome.metadata.get("execution")]
+    executions.extend(
+        obs.content.get("execution") for step in run.steps for obs in step.observations
+    )
+    return [
+        str(value["status"])
+        for value in executions
+        if isinstance(value, dict) and "status" in value
+    ]
+
+
+def _failure_mode(run: Run, outcome: _HiddenOutcome) -> str:
+    statuses = _execution_statuses(run)
+    if run.outcome.verifier == "infrastructure_error" or "infrastructure_error" in statuses:
+        raise ValueError(f"{run.run_id}: infrastructure attempt cannot define a task outcome")
+    executions = [run.outcome.metadata.get("execution")]
+    executions.extend(
+        obs.content.get("execution") for step in run.steps for obs in step.observations
+    )
+    if any(
+        isinstance(value, dict) and value.get("failure_reason") == "output_limit"
+        for value in executions
+    ):
+        return "output_limit"
+    if outcome.hidden_pass:
         return "pass"
-
     tails = _stdout_tails(run)
-    if any("<pytest timed out" in tail for tail in tails):
+    if "workload_timeout" in statuses or any("<pytest timed out" in tail for tail in tails):
         return "timeout"
     if any("traceback" in tail.lower() for tail in tails):
         return "exception"
-    if not md["public_pass"]:
+    if not outcome.public_pass:
         return "public_failure"
-
     attempts = _model_attempts(run)
     if not attempts or attempts[-1][1] is None:
         return "format_failure"
     return "hidden_semantic_failure"
 
 
-def _final_model_arm(run: dict[str, object]) -> str:
+def _final_model_arm(run: Run) -> str:
     attempts = _model_attempts(run)
-    if not attempts:
-        return "unknown"
-    return attempts[-1][0]
+    return attempts[-1][0] if attempts else "unknown"
 
 
 def _showcase_gate(failure_modes: Counter[str], by_model: Counter[str]) -> bool:
@@ -89,10 +138,10 @@ def _showcase_gate(failure_modes: Counter[str], by_model: Counter[str]) -> bool:
     )
 
 
-def analyze(run_dir: Path) -> dict[str, object]:
-    traces = sorted(run_dir.glob("real-*.json"))
-    if not traces:
-        raise SystemExit(f"no traces under {run_dir}")
+def analyze(run_dir: Path) -> PilotReport:
+    runs = load_corpus(run_dir)
+    if not runs:
+        raise ValueError(f"no traces under {run_dir}")
     cells: Counter[tuple[bool, bool]] = Counter()
     cost_total = 0.0
     fixtures: Counter[str] = Counter()
@@ -100,32 +149,41 @@ def analyze(run_dir: Path) -> dict[str, object]:
     failure_modes: Counter[str] = Counter()
     failure_modes_by_fixture: Counter[str] = Counter()
     failure_modes_by_model: Counter[str] = Counter()
-    for path in traces:
-        run = json.loads(path.read_text())
-        md = run["outcome"]["metadata"]
-        if "public_pass" not in md or "hidden_pass" not in md:
-            raise SystemExit(
-                f"{path.name}: missing public_pass/hidden_pass in metadata (is this a v0 trace?)"
-            )
-        cells[(md["public_pass"], md["hidden_pass"])] += 1
-        fixtures[md["fixture_id"]] += 1
-        mode = _failure_mode(run)
+    for run in runs:
+        metadata = _HiddenOutcome.model_validate(
+            {key: run.outcome.metadata.get(key) for key in _HiddenOutcome.model_fields}
+        )
+        cells[(metadata.public_pass, metadata.hidden_pass)] += 1
+        fixtures[metadata.fixture_id] += 1
+        mode = _failure_mode(run, metadata)
         model_arm = _final_model_arm(run)
         failure_modes[mode] += 1
-        failure_modes_by_fixture[f"fixture={md['fixture_id']},mode={mode}"] += 1
+        failure_modes_by_fixture[f"fixture={metadata.fixture_id},mode={mode}"] += 1
         failure_modes_by_model[f"model={model_arm},mode={mode}"] += 1
-        for step in run["steps"]:
-            model_arm = None
-            for decision in step.get("decisions", []) or []:
-                if decision.get("decision_type") == "model_call":
-                    model_arm = decision.get("chosen_action")
-            for obs in step.get("observations", []) or []:
-                content = obs.get("content", {})
-                cost_total += content.get("cost_usd", 0.0)
-                if model_arm is not None and content.get("extracted_code") is None:
+        for step in run.steps:
+            chosen_model = next(
+                (
+                    decision.chosen_action
+                    for decision in step.decisions
+                    if decision.decision_type == "model_call"
+                ),
+                None,
+            )
+            for obs in step.observations:
+                content = obs.content
+                cost = content.get("cost_usd", 0.0)
+                if (
+                    isinstance(cost, bool)
+                    or not isinstance(cost, int | float)
+                    or not math.isfinite(cost)
+                    or cost < 0
+                ):
+                    raise ValueError(f"{run.run_id}: invalid cost_usd {cost!r}")
+                cost_total += cost
+                if chosen_model is not None and content.get("extracted_code") is None:
                     extraction_failures["total"] += 1
-                    extraction_failures[f"fixture={md['fixture_id']}"] += 1
-                    extraction_failures[f"model={model_arm}"] += 1
+                    extraction_failures[f"fixture={metadata.fixture_id}"] += 1
+                    extraction_failures[f"model={chosen_model}"] += 1
     n = sum(cells.values())
     return {
         "n": n,
@@ -155,7 +213,7 @@ def _count_table(title: str, rows: dict[str, int]) -> list[str]:
     ]
 
 
-def render(report: dict[str, object]) -> str:
+def render(report: PilotReport) -> str:
     table = report["table"]
     n = report["n"]
     cost = report["cost_usd"]
@@ -176,15 +234,15 @@ def render(report: dict[str, object]) -> str:
         )
     failure_mode_lines = _count_table(
         "Failure modes",
-        report["failure_modes"],  # type: ignore[arg-type]
+        report["failure_modes"],
     )
     failure_fixture_lines = _count_table(
         "Failure modes by fixture",
-        report["failure_modes_by_fixture"],  # type: ignore[arg-type]
+        report["failure_modes_by_fixture"],
     )
     failure_model_lines = _count_table(
         "Failure modes by model",
-        report["failure_modes_by_model"],  # type: ignore[arg-type]
+        report["failure_modes_by_model"],
     )
     return "\n".join(
         [
@@ -229,18 +287,22 @@ def render(report: dict[str, object]) -> str:
     )
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print(__doc__)
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("run_dir", type=Path)
+    args = parser.parse_args(argv)
+    try:
+        report = analyze(args.run_dir)
+        text = render(report)
+        notes = args.run_dir / "PILOT_NOTES.md"
+        notes.write_text(text + "\n")
+    except (CorpusIOError, ValueError, OSError) as exc:
+        print(f"counterfact analyze-pilot: {exc}", file=sys.stderr)
         return 2
-    run_dir = Path(argv[1])
-    report = analyze(run_dir)
-    print(render(report))
-    notes = run_dir / "PILOT_NOTES.md"
-    notes.write_text(render(report) + "\n")
+    print(text)
     print(f"\n(wrote {notes})")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main())

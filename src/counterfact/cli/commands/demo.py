@@ -3,15 +3,17 @@ from __future__ import annotations
 import argparse
 import sys
 
+from counterfact.analysis.timeline import first_observed_arm
 from counterfact.baselines import pass_rate_by_arm
 from counterfact.cli.constants import DEMO_CONTRAST_TEMPLATE, DEMO_CONTRAST_THRESHOLD
 from counterfact.cli.formatters import estimate_lines, format_pass_rate_table
 from counterfact.cli.helpers import first_step_for_decision_type
 from counterfact.cli.loaders import demo_runs_dir, load_trace_dir, synthetic_runs
+from counterfact.errors import CounterError
 from counterfact.intervene.degenerate import degenerate_estimate, outcome_classes
 from counterfact.intervene.estimate import CausalEstimate
 from counterfact.schema import Run
-from counterfact.taxonomy import default_intervention_kind, first_observed_arm
+from counterfact.taxonomy import default_intervention_kind
 
 
 def _load_demo_runs(args: argparse.Namespace) -> tuple[list[Run], str] | None:
@@ -22,7 +24,7 @@ def _load_demo_runs(args: argparse.Namespace) -> tuple[list[Run], str] | None:
             return runs, source
 
         runs_dir, source = demo_runs_dir(args.runs_dir)
-        loaded_runs = load_trace_dir(runs_dir, command="demo")
+        loaded_runs = load_trace_dir(runs_dir, command="demo") if runs_dir.exists() else []
         if loaded_runs is None:
             return None
         if loaded_runs:
@@ -69,7 +71,7 @@ def _demo_estimate(
     target: str,
     baseline: str | None,
 ) -> CausalEstimate:
-    from counterfact import fit_outcome_model, intervene
+    from counterfact import AnalysisCorpus, intervene
     from counterfact.dag import build_dag
 
     if len(outcome_classes(runs)) == 1:
@@ -87,7 +89,7 @@ def _demo_estimate(
     run, step = first_step_for_decision_type(runs, decision_type)
     return intervene(
         dag=build_dag(run),
-        model=fit_outcome_model(runs, seed=args.seed),
+        model=AnalysisCorpus(runs, seed=args.seed),
         step=step,
         intervention={intervention_kind: target},
         baseline=baseline,
@@ -114,7 +116,7 @@ def _print_contrast(
 
 
 def run(args: argparse.Namespace) -> int:
-    from counterfact.outcome.binary import binary_outcome_value
+    from counterfact.analysis.outcomes import binary_outcome_value
 
     loaded = _load_demo_runs(args)
     if loaded is None:
@@ -125,7 +127,7 @@ def run(args: argparse.Namespace) -> int:
     intervention_kind = default_intervention_kind(decision_type)
     try:
         target, baseline = _resolve_demo_arms(args, runs, decision_type)
-    except ValueError as exc:
+    except (CounterError, ValueError) as exc:
         print(f"counterfact demo: {exc}", file=sys.stderr)
         return 2
 
@@ -138,7 +140,7 @@ def run(args: argparse.Namespace) -> int:
             target=target,
             baseline=baseline,
         )
-    except ValueError as exc:
+    except (CounterError, ValueError) as exc:
         print(f"counterfact demo: {exc}", file=sys.stderr)
         return 2
 

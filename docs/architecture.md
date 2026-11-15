@@ -1,81 +1,70 @@
 # Architecture
 
-A five-minute orientation for someone evaluating this codebase. The README covers what `counterfact` does, and `docs/usage.md` covers how to drive it. This document explains why it is shaped the way it is and where to read first.
+`counterfact` separates trace storage, analysis inputs, estimands, and presentation. Start with [usage.md](usage.md) to run an analysis. Use [invariants.md](invariants.md) when changing causal behavior.
 
-## 1. Why this exists
+## Ownership and dependencies
 
-Naive pass-rate analysis on agent traces is misleading because logged decisions are confounded by upstream choices. Say model B passes 80% of the time and model A passes 60% in a trace corpus. The honest description is that B-runs ended in pass more often. The causal claim, "switching to model B improves pass rate by 20pp", is a different statement and usually a false one. In the corpus that produced those numbers, model B was only ever called when the agent had already chosen the easier tool. The descriptive 80% is real. The causal 20pp is a fiction wearing the same clothes.
+| Owner | Responsibility | Depends on |
+| --- | --- | --- |
+| `schema/` | Serialized `Run` contract and pure identity validation | Pydantic |
+| `taxonomy/` | Decision specifications, interventions, and causal parent types | Schema |
+| `analysis/` | Immutable corpus facts, chronology, outcomes, and feature extraction | Schema and taxonomy |
+| `dag/` | Inspectable graph for one logged trace | Schema and taxonomy |
+| `intervene/` | Focal interventions, corpus contrasts, identification checks, and estimators | Analysis, DAG, taxonomy, and shared logistic fitting |
+| `outcome/` | Optional descriptive logistic fit | Analysis |
+| `policy/` | Sequential policy estimands and estimation | Analysis, shared logistic fitting, and result contracts |
+| `corpus_io.py` | Native file selection, receipts, publication, and recovery | Schema |
+| `adapters/`, `tracing/` | Provider shape mapping and live capture | Schema and corpus IO |
+| `runrecord_export.py` | Versioned usage derivation and Parquet export | Schema and corpus IO |
+| CLI, diagnosis, explain | User-facing commands and result presentation | Domain APIs |
 
-`counterfact` exists to keep those two statements distinguishable. It will give you the descriptive number when you ask for one, and a causal estimate when the corpus actually supports one, and an honest "we cannot answer this from this data" when it does not. The library treats that third answer as a first-class output, not a failure mode.
+The schema owns decision-type names. The taxonomy gives each name one decision specification. Analysis owns chronology and feature extraction. Estimators and policy evaluation share the logistic fitter in `outcome/model.py`.
 
-## 2. The insight
+Corpus IO owns filesystem behavior outside the CLI. CLI loaders add stderr messages and exit codes. Analysis uses pure schema validation and never imports filesystem loaders.
 
-Identifiability comes first. Every causal answer carries a label (`identified`, `bounded`, or `unidentified`), and the label is the field that matters most. The README defines the labels, and [report §2](report.md#2-identification-as-a-data-check) gives the exact rules.
+## Analysis inputs
 
-The product stance is short: an honest `unidentified` beats a confident wrong number. The CLI, the HTML report, the attribution ranker, and the demos refuse to render numeric effects when the underlying estimate is unidentified.
+`AnalysisCorpus(runs, seed=0)` revalidates and snapshots the supplied traces. It rejects duplicate run IDs and duplicate numeric step indexes. It accepts binary outcomes and preserves the supplied population order.
 
-## 3. Pipeline
+Nested analysis facts are immutable. `corpus.runs` returns detached `Run` copies. Editing an original run or returned copy cannot change an existing analysis snapshot. DAGs also retain their own trace snapshot.
 
+Chronology follows numeric `step_index`, even when the serialized step list has another order. A decision in the same step as treatment is never an adjustment covariate.
+
+## Separate questions
+
+| API | Question | Localization |
+| --- | --- | --- |
+| `intervene(dag=..., model=corpus, step=..., decision_id=...)` | Population contrast selected by a focal decision and baseline | Refuses repeated decisions of that type in the focal trace |
+| `contrast(corpus=..., decision_type=..., intervention=..., baseline=...)` | Total effect of changing the first occurrence of that type | Keeps later occurrences downstream, with no focal trace |
+| `fit_outcome_model(runs)` | Descriptive probability fit over all intervenable decision features | A fitted model is optional for causal queries |
+| `evaluate_policy(runs, policy)` | Change the agent's rule at every controlled decision | Uses sequential history and reachable support |
+
+The focal trace selects the decision type and default baseline. The returned contrast remains a population estimate over the supplied corpus. It does not estimate an individualized counterfactual from focal covariates. Library `intervene` permits an external focal trace. CLI and explain inputs require matching corpus content for artifact integrity.
+
+An explicit decision ID resolves different decision types in one step. It cannot localize a repeated decision type. Attribution uses explicit IDs and can therefore evaluate mixed-type steps.
+
+A corpus contrast requires distinct target and baseline arms. It excludes runs that never reach the treatment. Two first occurrences of the same type in one step leave treatment ambiguous and produce a refusal.
+
+## Estimation and results
+
+```text
+Run -> AnalysisCorpus -> query-specific treatment and earlier history
+                              |
+                      identification check
+                              |
+             AIPW contrast / bounds / structured refusal
+                              |
+                        CausalEstimate
 ```
-trace JSON ──► Run (schema/models.py)
-                │
-                ▼
-            DAG (dag/graph.py)              ← decision-type taxonomy
-                │
-                ▼
-        outcome model (outcome/model.py)    ← corpus validation + logistic fit
-                │
-                ▼
-        intervention (intervene/api.py + dispatch.py)  ← stance dispatch
-                │
-                ▼
-        estimators (intervene/estimators.py) ← randomization check, AIPW / IPW / g-formula, Manski
-                │
-                ▼
-    CausalEstimate (intervene/estimate.py)
-        ├── identifiability label
-        ├── outcome_delta? (contrast vs baseline, only if identified)
-        ├── diagnostics? (g-formula and IPW cross-checks, propensity overlap)
-        ├── bounds? (Manski, when arms have support but no logged randomization)
-        └── next_step (always)
-```
 
-A trace is parsed into a strict `Run`. The `Run` becomes a per-trace DAG built from logged structure. There is no graph learning; the edges come from a typed taxonomy of decision kinds. An intervention asks "what is `E[Y | do(target)] - E[Y | do(baseline)]` for this decision?". The engine first checks the corpus: does every run log the propensity of its chosen arm, and did both arms have positive probability? If yes, it estimates the contrast with cross-fitted AIPW. The covariates are only the decisions logged before the treatment, so no mediator is adjusted for. If no, it returns Manski bounds. The `CausalEstimate` label tells you which happened.
+Causal queries construct their own treatment design and nuisance fits. They do not require a preliminary fit over every decision. `intervene` still accepts an `OutcomeModel` and uses its corpus snapshot.
 
-## 4. The honesty contract
+`identified` requires checked assignment probabilities and positive probability for both arms. Missing support produces guidance. Missing randomization can produce Manski bounds. Some `bounded` questions have no justified interval.
 
-The code path next to each invariant enforces it.
+Sampling intervals and identification bounds are separate fields. AIPW influence-function intervals remain unbounded by probability limits. Result models validate labels, payloads, interval order, and interval methods. Results are immutable, and `model_copy(update=...)` validates replacements.
 
-- **`identified` requires logged randomization, checked on the data.** A taxonomy stance alone never produces a point estimate. Without logged propensities, or with a positivity violation, the answer is `bounded` with Manski bounds. Enforced in `src/counterfact/intervene/estimators.py` (`randomization_gaps`).
-- **The adjustment set holds only pre-treatment decisions.** Adjusting for a later decision, such as a retry after the model call, would estimate a controlled direct effect, not the total effect. Enforced in `treatment_data`.
-- **Single-class corpora become `unidentified` with a structured `next_step`.** A logistic regression on no-variation data cannot fit, and saying so is the answer. Enforced in `src/counterfact/outcome/model.py`.
-- **`pass_rate_by_arm` returns a `PassRateTable`, not a `CausalEstimate`.** The two are deliberately distinct types so a descriptive table cannot be silently mistaken for a causal claim downstream. Defined in `src/counterfact/baselines.py`.
-- **Every `CausalEstimate` has a `next_step`.** Even `identified` ones, where the action might be `none`, carry the field. The shape is uniform so consumers never have to special-case "what do I show the user when there is no number to show?". Defined in `src/counterfact/intervene/estimate.py`.
-- **Replay-required interventions return `unidentified` with a `replay_required` next_step.** Editing a prompt or a hidden state is a structural change the corpus cannot answer; the engine refuses to estimate and tells you what replay would be needed instead. Enforced in `src/counterfact/intervene/api.py`.
+## Publication and execution boundaries
 
-## 5. Where to read first
+[Corpus IO and format migration](migration.md) describes new-directory ingest, locked live append, receipt validation, and interrupted-write recovery.
 
-Reading order if you have fifteen minutes and want to evaluate the codebase instead of skim it.
-
-1. **`src/counterfact/schema/models.py`** - the producer/consumer contract. Understand `Run`, `Step`, `Decision`, and `Outcome` first; everything else is a transformation over these.
-2. **`src/counterfact/taxonomy/types.py`** - the decision-type taxonomy. This drives DAG edges and marks some interventions as valid and others as structurally unanswerable.
-3. **`src/counterfact/dag/graph.py`** - how a single trace becomes an inspectable graph. The graph is built from logged structure, not learned.
-4. **`src/counterfact/outcome/model.py`** - featurization and corpus validation. Notice the single-class refusal path.
-5. **`src/counterfact/intervene/`** - `api.py` is the `intervene()` entry point, `dispatch.py` routes each question by decision type, and `estimators.py` holds the randomization check, AIPW, and Manski bounds.
-6. **`src/counterfact/intervene/estimate.py`** - the `CausalEstimate` and `NextStep` schemas. The output shape is the contract with every downstream consumer.
-7. **`src/counterfact/policy/evaluate.py`** - off-policy evaluation of whole agent policies over decision sequences: identification per controlled decision, then cross-fitted sequential doubly robust estimation.
-8. **`src/counterfact/attribute/failure.py`** - per-decision attribution ranking that powers `counterfact diagnose`.
-9. **`bench/synthetic/scenarios.py`** and **`bench/synthetic/suite.py`** - the benchmark that scores the engine against causal models with exact true effects.
-
-## 6. Why bench/ is separate
-
-`bench/` contains two things that do not belong in the published library.
-
-- `bench/synthetic/` - a deterministic structural causal model that generates traces with known ground-truth effects. `tests/acceptance/test_scm_recovery.py` runs against it to check that the engine recovers the truth within tolerance.
-- `bench/real/` - a real coding-agent harness that calls actual LLMs (via `litellm`) on fixture coding tasks and writes counterfact-shaped traces. It costs money to run, requires a `.counterfact/approved` approval receipt, and halts at 80% of its budget cap.
-
-The wheel ships only `src/counterfact`, which keeps the package small. The harness needs a checkout and the `bench` extra (`uv sync --extra dev --extra bench`).
-
----
-
-For the deeper "what to read when working on X" routing map aimed at AI agents, see [`docs/repo-context.md`](repo-context.md).
+`bench/` stays outside the wheel. It contains deterministic synthetic benchmarks and the paid real-agent harness. Generated Python executes in Docker with resource limits and no container network. The host performs provider calls. [The harness guide](../bench/real/README.md) describes approval, spend accounting, execution failures, and verifier limits.

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
 from typing import Any
 
+from counterfact.analysis.facts import DecisionFact
+from counterfact.errors import InvalidInterventionError
 from counterfact.schema import Decision
 from counterfact.taxonomy import valid_interventions
 
@@ -21,8 +25,9 @@ def canonical_intervention_value(intervention_kind: str, value: Any) -> str:
     """Normalize user-supplied intervention values without rewriting string arms."""
     if intervention_kind == "temperature":
         numeric_value = _coerce_finite_number(value)
-        if numeric_value is not None:
-            return canonical_feature_value(numeric_value)
+        if numeric_value is None:
+            raise InvalidInterventionError("temperature must be a finite numeric value")
+        return canonical_feature_value(numeric_value)
     return canonical_feature_value(value)
 
 
@@ -33,7 +38,7 @@ def intervention_feature_family(decision_type: str, intervention_kind: str) -> s
     return decision_type
 
 
-def decision_feature_values(decision: Decision) -> list[tuple[str, str]]:
+def decision_feature_values(decision: Decision | DecisionFact) -> list[tuple[str, str]]:
     """Return `(feature_family, value)` pairs contributed by one decision."""
     if not valid_interventions(decision.decision_type):
         return []
@@ -50,9 +55,9 @@ def decision_feature_values(decision: Decision) -> list[tuple[str, str]]:
     return values
 
 
-def _model_temperature(metadata: dict[str, Any]) -> Any | None:
+def _model_temperature(metadata: Mapping[str, Any]) -> Any | None:
     model_config = metadata.get("model_config")
-    if isinstance(model_config, dict) and model_config.get("temperature") is not None:
+    if isinstance(model_config, Mapping) and model_config.get("temperature") is not None:
         return model_config["temperature"]
     return metadata.get("temperature")
 
@@ -61,11 +66,16 @@ def _coerce_finite_number(value: Any) -> float | int | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, int | float):
-        return value
+        try:
+            return value if math.isfinite(value) else None
+        except OverflowError:
+            return None
     if isinstance(value, str):
         try:
             parsed = float(value.strip())
         except ValueError:
+            return None
+        if not math.isfinite(parsed):
             return None
         if parsed.is_integer():
             return int(parsed)

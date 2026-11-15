@@ -107,9 +107,6 @@ def _model_decision(i: int, model: str, propensity: float | None, *, policy: str
     )
 
 
-# --- randomized: the textbook case every estimator should pass --------------
-
-
 def _p_main(tool: str, model: str) -> float:
     return _sigmoid(_TOOL_LOGIT[tool] + _MODEL_LOGIT[model])
 
@@ -127,8 +124,6 @@ def _randomized(rng: random.Random, i: int, force_model: str | None) -> dict[str
     )
 
 
-# --- logged confounding: the arm depends on an earlier logged decision ------
-
 _P_SONNET_GIVEN_TOOL = {"run_tests": 0.8, "inspect_file": 0.2, "search_docs": 0.2}
 
 
@@ -144,9 +139,6 @@ def _confounded_sampler(name: str, p_success: Callable[[str, str], float]) -> Sa
     return sample
 
 
-# --- interaction: the outcome model's main-effects form is wrong ------------
-
-
 def _p_interaction(tool: str, model: str) -> float:
     # sonnet helps a lot after running the tests and hurts after searching docs.
     shift = 0.0
@@ -160,8 +152,6 @@ def _p_interaction(tool: str, model: str) -> float:
 def _interaction_effect() -> float:
     return sum(_p_interaction(t, TARGET) - _p_interaction(t, BASELINE) for t in TOOLS) / 3
 
-
-# --- unlogged confounder: hidden difficulty drives the arm and the outcome --
 
 _P_SONNET_GIVEN_HARD = {True: 0.25, False: 0.75}
 
@@ -187,8 +177,6 @@ def _hidden_sampler(name: str, *, log_propensity: bool) -> Sampler:
 
     return sample
 
-
-# --- post-treatment retry: a mediator logged after the treatment ------------
 
 _P_RETRY_AFTER_FAIL = 0.9
 _P_RETRY_AFTER_PASS = 0.1
@@ -229,9 +217,6 @@ def _post_treatment(rng: random.Random, i: int, force_model: str | None) -> dict
         [_model_decision(i, model, p, policy="uniform"), retry_decision],
         passed,
     )
-
-
-# --- positivity violation: deterministic routing, honestly logged -----------
 
 
 def _positivity(rng: random.Random, i: int, force_model: str | None) -> dict[str, Any]:

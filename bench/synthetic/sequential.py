@@ -57,7 +57,7 @@ def policy_value(model_rule: ModelRule, retry_rule: RetryRule) -> float:
     total = 0.0
     for hard in (True, False):
         p_u = P_HARD if hard else 1 - P_HARD
-        models = {model_rule: 1.0} if model_rule else {m: 0.5 for m in MODELS}
+        models = {model_rule: 1.0} if model_rule else dict.fromkeys(MODELS, 0.5)
         for model, p_m in models.items():
             p_pass = p_first_pass(hard, model)
             # A run that passed first time succeeds whatever it does next.

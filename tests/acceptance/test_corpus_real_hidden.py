@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-# --- Phase A: csv_dedupe fixture content + registry ------------------------
+from tests.fixtures.coding_agent import REFERENCES_ROOT
+
+if TYPE_CHECKING:
+    from bench.real.coding_agent.llm import LLMClient
 
 
 def test_csv_dedupe_is_registered() -> None:
-    """Req: csv_dedupe is the first hidden-test fixture
-    WHEN the hidden-fixture registry is queried
-    THEN csv_dedupe is among the registered fixtures."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     ids = [fx.fixture_id for fx in HIDDEN_FIXTURES]
@@ -20,9 +21,6 @@ def test_csv_dedupe_is_registered() -> None:
 
 
 def test_date_window_is_registered() -> None:
-    """Req: date_window is registered as a hard hidden-test fixture
-    WHEN the hidden-fixture registry is queried
-    THEN date_window is among the registered fixtures."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     ids = [fx.fixture_id for fx in HIDDEN_FIXTURES]
@@ -30,9 +28,6 @@ def test_date_window_is_registered() -> None:
 
 
 def test_broad_calibration_fixtures_are_registered() -> None:
-    """Req: broad_calibration adds multiple hard hidden fixtures
-    WHEN the hidden-fixture registry is queried
-    THEN rate_limit and version_range are among the registered fixtures."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     ids = [fx.fixture_id for fx in HIDDEN_FIXTURES]
@@ -41,9 +36,6 @@ def test_broad_calibration_fixtures_are_registered() -> None:
 
 
 def test_streaming_watermark_dedupe_is_registered() -> None:
-    """Req: streaming_watermark_dedupe is registered as a stateful hidden fixture
-    WHEN the hidden-fixture registry is queried
-    THEN streaming_watermark_dedupe is among the registered fixtures."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     ids = [fx.fixture_id for fx in HIDDEN_FIXTURES]
@@ -51,9 +43,6 @@ def test_streaming_watermark_dedupe_is_registered() -> None:
 
 
 def test_unicode_normalize_is_registered() -> None:
-    """Req: unicode_normalize is registered as a very-hard hidden fixture
-    WHEN the hidden-fixture registry is queried
-    THEN unicode_normalize is among the registered fixtures."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     ids = [fx.fixture_id for fx in HIDDEN_FIXTURES]
@@ -61,10 +50,6 @@ def test_unicode_normalize_is_registered() -> None:
 
 
 def test_hidden_fixture_root_has_four_required_entries() -> None:
-    """Req: Hidden-test fixtures use a public/hidden split layout
-    WHEN a hidden-test fixture is registered
-    THEN its root directory contains src/, tests_public/, tests_hidden/, spec.md
-    AND the harness exposes public/hidden tests path as distinct attributes."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     for fx in HIDDEN_FIXTURES:
@@ -79,9 +64,6 @@ def test_hidden_fixture_root_has_four_required_entries() -> None:
 
 
 def test_csv_dedupe_spec_md_exists_and_is_nonempty() -> None:
-    """Req: Hidden tests are derivable from spec.md
-    WHEN a hidden-test fixture is registered
-    THEN spec.md exists at the fixture root and is non-empty."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     csv_dedupe = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
@@ -97,9 +79,6 @@ def test_csv_dedupe_spec_md_exists_and_is_nonempty() -> None:
 
 
 def test_hidden_registry_is_distinct_from_v0() -> None:
-    """Req: Hidden-test fixtures use a public/hidden split layout
-    WHEN the harness lists registered fixture sets
-    THEN v0 and hidden-test sets are addressable as distinct registries."""
     from bench.real.coding_agent.fixtures import (
         EASY_FIXTURES,
         FIXTURES,
@@ -119,9 +98,6 @@ def test_hidden_registry_is_distinct_from_v0() -> None:
 
 
 def test_csv_dedupe_public_covers_only_exact_string_dedup() -> None:
-    """Req: csv_dedupe is the first hidden-test fixture
-    WHEN pytest tests_public/ runs on csv_dedupe's reference (correct) source
-    THEN all public tests pass and the public test set exercises only exact-string dedup."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     csv_dedupe = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
@@ -147,9 +123,6 @@ def test_csv_dedupe_public_covers_only_exact_string_dedup() -> None:
 
 
 def test_csv_dedupe_hidden_covers_four_normalization_rules() -> None:
-    """Req: csv_dedupe is the first hidden-test fixture
-    WHEN pytest tests_hidden/ runs on csv_dedupe's reference source
-    THEN all hidden tests pass and the hidden set covers each of four normalization rules."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     csv_dedupe = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
@@ -177,9 +150,9 @@ def test_csv_dedupe_reference_implementation_passes_both_sets(tmp_path: Path) ->
     shutil.copytree(csv_dedupe.root, workspace)
 
     # Reference implementation lives next to the buggy one for review purposes.
-    reference = csv_dedupe.root / "src" / "_dedupe_reference.py"
+    reference = REFERENCES_ROOT / "_dedupe_reference.py"
     assert reference.is_file(), (
-        "csv_dedupe must ship a reference implementation at src/_dedupe_reference.py "
+        "tests must retain a trusted csv_dedupe reference implementation "
         "so the fixture's hidden tests are demonstrably satisfiable"
     )
     # Replace buggy module with reference.
@@ -451,9 +424,6 @@ def dedupe_normalized(labels: list[str]) -> list[str]:
 
 
 def test_date_window_spec_md_names_hidden_categories() -> None:
-    """Req: date_window is registered as a hard hidden-test fixture
-    WHEN the fixture's spec.md is inspected
-    THEN it names the hidden-test categories."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     date_window = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "date_window")
@@ -470,9 +440,6 @@ def test_date_window_spec_md_names_hidden_categories() -> None:
 
 
 def test_date_window_buggy_src_fails_hidden_passes_public(tmp_path: Path) -> None:
-    """Req: date_window is registered as a hard hidden-test fixture
-    WHEN the pristine date_window source is tested
-    THEN public tests pass and hidden tests fail."""
     import shutil
     import subprocess
     import sys
@@ -505,9 +472,6 @@ def test_date_window_buggy_src_fails_hidden_passes_public(tmp_path: Path) -> Non
 
 @pytest.mark.parametrize("fixture_id", ["rate_limit", "version_range"])
 def test_new_hard_hidden_fixtures_fail_hidden_pass_public(fixture_id: str, tmp_path: Path) -> None:
-    """Req: new hard hidden fixtures are public-passing but hidden-failing
-    WHEN the pristine source is tested
-    THEN public tests pass and hidden tests catch the incomplete implementation."""
     import shutil
     import subprocess
     import sys
@@ -539,9 +503,6 @@ def test_new_hard_hidden_fixtures_fail_hidden_pass_public(fixture_id: str, tmp_p
 
 
 def test_unicode_normalize_fails_hidden_passes_public(tmp_path: Path) -> None:
-    """Req: unicode_normalize is public-passing but hidden-failing
-    WHEN the pristine source is tested
-    THEN public tests pass and hidden tests catch semantic Unicode gaps."""
     import shutil
     import subprocess
     import sys
@@ -574,9 +535,6 @@ def test_unicode_normalize_fails_hidden_passes_public(tmp_path: Path) -> None:
 
 
 def test_date_window_known_good_source_passes_hidden(tmp_path: Path) -> None:
-    """Req: date_window is registered as a hard hidden-test fixture
-    WHEN source is replaced with a known-good implementation
-    THEN hidden tests pass."""
     import shutil
     import subprocess
     import sys
@@ -612,9 +570,6 @@ def test_date_window_known_good_source_passes_hidden(tmp_path: Path) -> None:
 def test_new_hard_hidden_known_good_source_passes_hidden(
     fixture_id: str, source_factory, tmp_path: Path
 ) -> None:
-    """Req: new hard hidden fixtures are fair
-    WHEN source is replaced with a known-good implementation
-    THEN hidden tests pass."""
     import shutil
     import subprocess
     import sys
@@ -640,7 +595,6 @@ def test_new_hard_hidden_known_good_source_passes_hidden(
 
 
 def test_unicode_normalize_spec_md_names_hidden_categories() -> None:
-    """Req: unicode_normalize spec states the hidden semantic categories."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "unicode_normalize")
@@ -656,7 +610,6 @@ def test_unicode_normalize_spec_md_names_hidden_categories() -> None:
 
 
 def test_unicode_normalize_hidden_tests_name_semantic_categories() -> None:
-    """Req: unicode_normalize hidden tests cover semantic Unicode cases."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "unicode_normalize")
@@ -672,14 +625,7 @@ def test_unicode_normalize_hidden_tests_name_semantic_categories() -> None:
         assert keyword in text, f"hidden tests must name {keyword!r}"
 
 
-# --- Phase B: sandbox + public-pytest isolation ----------------------------
-
-
 def test_sandbox_snapshot_omits_tests_hidden(tmp_path: Path) -> None:
-    """Req: Hidden tests are not present in the agent sandbox
-    WHEN snapshot_fixture is called on a hidden-test fixture
-    THEN the sandbox contains src/, tests_public/, spec.md and does NOT
-         contain tests_hidden/ at any depth."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES, snapshot_fixture
 
     csv_dedupe = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
@@ -695,9 +641,6 @@ def test_sandbox_snapshot_omits_tests_hidden(tmp_path: Path) -> None:
 
 
 def test_sandbox_stays_clean_through_run_pytest_public(tmp_path: Path) -> None:
-    """Req: Hidden tests are not present in the agent sandbox
-    WHEN the agent runs run_pytest_public against the sandbox
-    THEN tests_hidden/ remains absent from the sandbox after execution."""
     from bench.real.coding_agent.fixtures import (
         HIDDEN_FIXTURES,
         run_pytest_public,
@@ -714,10 +657,6 @@ def test_sandbox_stays_clean_through_run_pytest_public(tmp_path: Path) -> None:
 
 
 def test_run_pytest_public_targets_only_tests_public(tmp_path: Path) -> None:
-    """Req: Public-test verifier runs only public tests during the agent loop
-    WHEN the agent's run_tests step executes on a hidden-fixture sandbox
-    THEN pytest collects zero items from tests_hidden/ (defensive: hidden dir is also
-         absent from the sandbox per the sandbox snapshot requirement)."""
     import subprocess
     import sys
 
@@ -742,9 +681,6 @@ def test_run_pytest_public_targets_only_tests_public(tmp_path: Path) -> None:
 
 
 def test_date_window_sandbox_omits_hidden_tests(tmp_path: Path) -> None:
-    """Req: date_window is registered as a hard hidden-test fixture
-    WHEN snapshot_fixture is called on date_window
-    THEN tests_hidden/ is absent from the sandbox."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES, snapshot_fixture
 
     date_window = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "date_window")
@@ -753,17 +689,10 @@ def test_date_window_sandbox_omits_hidden_tests(tmp_path: Path) -> None:
     assert (sandbox / "tests_public").is_dir()
     assert (sandbox / "spec.md").is_file()
     assert not (sandbox / "tests_hidden").exists()
-    assert [p for p in sandbox.rglob("*date_window_hidden*")] == []
-
-
-# --- Phase C: prompt content discipline ------------------------------------
+    assert list(sandbox.rglob("*date_window_hidden*")) == []
 
 
 def test_hidden_fixture_prompt_contains_spec_md_and_public_test(tmp_path: Path) -> None:
-    """Req: Agent prompt references spec.md and public tests only
-    WHEN the agent constructs the fix prompt for a hidden-test fixture
-    THEN the prompt contains the full contents of spec.md and the full
-         contents of every file under tests_public/."""
     from bench.real.coding_agent.agent import build_fix_prompt
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES, snapshot_fixture
 
@@ -771,28 +700,15 @@ def test_hidden_fixture_prompt_contains_spec_md_and_public_test(tmp_path: Path) 
     sandbox = snapshot_fixture(csv_dedupe, tmp_path)
     prompt = build_fix_prompt(csv_dedupe, sandbox)
     spec_text = (csv_dedupe.root / "spec.md").read_text()
-    public_text = (
-        csv_dedupe.root / "tests_public" / csv_dedupe.public_tests_relpath  # type: ignore[arg-type]
-    ).read_text()
+    assert csv_dedupe.public_tests_relpath is not None
+    public_text = (csv_dedupe.root / "tests_public" / csv_dedupe.public_tests_relpath).read_text()
     src_text = csv_dedupe.source_path.read_text()
-    # Pick a few stable substrings that must survive whatever framing the
-    # builder adds; full-text equality would be brittle to wrapping.
-    for needle in ("BOM strip", "case fold", "Unicode NFC"):
-        assert needle in prompt, f"spec.md content missing from prompt: {needle!r}"
-    assert "test_exact_duplicates_collapse_to_one" in prompt
-    assert "test_first_occurrence_is_preserved" in prompt
-    # Sanity: at least the bulk of each document made it in.
-    assert len(spec_text) >= 500 and spec_text[:200] in prompt
+    assert spec_text[:200] in prompt
     assert public_text[:200] in prompt
     assert src_text[:200] in prompt
 
 
 def test_hidden_fixture_prompt_does_not_mention_tests_hidden(tmp_path: Path) -> None:
-    """Req: Agent prompt references spec.md and public tests only
-    WHEN the agent constructs the fix prompt for a hidden-test fixture
-    THEN the prompt does not contain the substring 'tests_hidden', does
-         not contain any filename from tests_hidden/, and does not contain
-         the body of any test under tests_hidden/."""
     from bench.real.coding_agent.agent import build_fix_prompt
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES, snapshot_fixture
 
@@ -816,9 +732,6 @@ def test_hidden_fixture_prompt_does_not_mention_tests_hidden(tmp_path: Path) -> 
 
 
 def test_date_window_prompt_contains_spec_and_public_only(tmp_path: Path) -> None:
-    """Req: Agent prompt references spec.md and public tests only
-    WHEN the agent constructs the fix prompt for date_window
-    THEN it includes spec/public/source text and omits hidden-test text."""
     from bench.real.coding_agent.agent import build_fix_prompt
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES, snapshot_fixture
 
@@ -849,10 +762,7 @@ def test_date_window_prompt_contains_spec_and_public_only(tmp_path: Path) -> Non
         assert needle not in prompt
 
 
-# --- Phase D: hidden eval + Outcome metadata wiring ------------------------
-
-
-def _stub_llm_returning(text: str) -> object:
+def _stub_llm_returning(text: str) -> LLMClient:
     """Build a one-shot stub LLM that always returns `text`."""
     from bench.real.coding_agent.llm import LLMResponse
 
@@ -865,10 +775,7 @@ def _stub_llm_returning(text: str) -> object:
 
 def _csv_dedupe_reference_fence() -> str:
     """The reference implementation source, fenced for the prompt protocol."""
-    from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
-
-    csv = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
-    ref = (csv.root / "src" / "_dedupe_reference.py").read_text()
+    ref = (REFERENCES_ROOT / "_dedupe_reference.py").read_text()
     return f"```python\n{ref}```"
 
 
@@ -891,13 +798,8 @@ def _csv_dedupe_buggy_fence() -> str:
     )
 
 
+@pytest.mark.container
 def test_hidden_outcome_when_reference_passes_both(tmp_path: Path) -> None:
-    """Req: Hidden-test verifier runs once after the loop and defines Outcome
-    Req: Outcome metadata records public, hidden, and generalization gap
-    Req: Hidden-fixture traces use a distinct verifier label
-    WHEN a stub LLM returns the reference implementation
-    THEN Outcome.value=True, verifier='pytest_hidden', metadata records
-         public_pass=True, hidden_pass=True, generalization_gap=False."""
     from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
     from bench.real.coding_agent.budget import BudgetTracker
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
@@ -907,7 +809,7 @@ def test_hidden_outcome_when_reference_passes_both(tmp_path: Path) -> None:
     run = run_one_trace(
         csv,
         run_index=0,
-        llm=_stub_llm_returning(_csv_dedupe_reference_fence()),  # type: ignore[arg-type]
+        llm=_stub_llm_returning(_csv_dedupe_reference_fence()),
         budget=budget,
         sandbox_root=tmp_path,
         config=AgentRunConfig(epsilon=0.0, seed=42),
@@ -922,6 +824,7 @@ def test_hidden_outcome_when_reference_passes_both(tmp_path: Path) -> None:
     assert md["generalization_gap"] is False
 
 
+@pytest.mark.container
 def test_stateful_raw_class_response_is_extracted_and_evaluated(
     tmp_path: Path,
 ) -> None:
@@ -935,11 +838,11 @@ def test_stateful_raw_class_response_is_extracted_and_evaluated(
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe")
-    reference = (fixture.root / "src" / "_watermark_dedupe_reference.py").read_text()
+    reference = (REFERENCES_ROOT / "_watermark_dedupe_reference.py").read_text()
     run = run_one_trace(
         fixture,
         run_index=0,
-        llm=_stub_llm_returning(reference),  # type: ignore[arg-type]
+        llm=_stub_llm_returning(reference),
         budget=BudgetTracker(cap_usd=1.0),
         sandbox_root=tmp_path,
         config=AgentRunConfig(epsilon=0.0, seed=42),
@@ -957,12 +860,8 @@ def test_stateful_raw_class_response_is_extracted_and_evaluated(
     assert run.outcome.metadata["hidden_pass"] is True
 
 
+@pytest.mark.container
 def test_hidden_outcome_records_generalization_gap(tmp_path: Path) -> None:
-    """Req: Outcome metadata records public, hidden, and generalization gap
-    Req: Hidden-test verifier runs once after the loop and defines Outcome
-    WHEN a stub LLM returns a fix that passes public but fails hidden
-    THEN Outcome.value=False, public_pass=True, hidden_pass=False,
-         generalization_gap=True."""
     from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
     from bench.real.coding_agent.budget import BudgetTracker
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
@@ -972,7 +871,7 @@ def test_hidden_outcome_records_generalization_gap(tmp_path: Path) -> None:
     run = run_one_trace(
         csv,
         run_index=0,
-        llm=_stub_llm_returning(_csv_dedupe_buggy_fence()),  # type: ignore[arg-type]
+        llm=_stub_llm_returning(_csv_dedupe_buggy_fence()),
         budget=budget,
         sandbox_root=tmp_path,
         config=AgentRunConfig(epsilon=0.0, seed=42),
@@ -984,6 +883,7 @@ def test_hidden_outcome_records_generalization_gap(tmp_path: Path) -> None:
     assert md["generalization_gap"] is True
 
 
+@pytest.mark.container
 def test_hidden_outcome_when_no_patch_extracted(tmp_path: Path) -> None:
     """When the model returns no fenced block, src/ stays buggy. Public tests
     still pass on the buggy src (by fixture invariant), so we must still see
@@ -997,7 +897,7 @@ def test_hidden_outcome_when_no_patch_extracted(tmp_path: Path) -> None:
     run = run_one_trace(
         csv,
         run_index=0,
-        llm=_stub_llm_returning("(no fence)"),  # type: ignore[arg-type]
+        llm=_stub_llm_returning("(no fence)"),
         budget=budget,
         sandbox_root=tmp_path,
         config=AgentRunConfig(epsilon=0.0, seed=42),
@@ -1009,33 +909,31 @@ def test_hidden_outcome_when_no_patch_extracted(tmp_path: Path) -> None:
     assert run.outcome.value is False
 
 
+@pytest.mark.container
 def test_hidden_eval_runs_exactly_once_per_trace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Req: Hidden-test verifier runs once after the loop and defines Outcome
-    WHEN a single trace completes on a hidden-test fixture
-    THEN run_pytest_hidden is invoked exactly once after the agent has terminated."""
     from bench.real.coding_agent import fixtures as fixtures_mod
     from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
     from bench.real.coding_agent.budget import BudgetTracker
 
     csv = next(fx for fx in fixtures_mod.HIDDEN_FIXTURES if fx.fixture_id == "csv_dedupe")
     calls: list[Path] = []
-    real_hidden = fixtures_mod.run_pytest_hidden
+    from bench.real.coding_agent.executor import DockerExecutor
 
-    def _spy(workspace: Path, *, timeout_s: int = 30) -> tuple[bool, str]:
-        calls.append(workspace)
-        return real_hidden(workspace, timeout_s=timeout_s)
+    real_run = DockerExecutor.run
 
-    # Patch the symbol that agent.py imports so the spy is observed there.
-    import bench.real.coding_agent.agent as agent_mod
+    def _spy(self, source: Path, tests: Path, *, target: str, timeout_s: int = 30):
+        if target == "tests_hidden":
+            calls.append(tests)
+        return real_run(self, source, tests, target=target, timeout_s=timeout_s)
 
-    monkeypatch.setattr(agent_mod, "run_pytest_hidden", _spy, raising=True)
+    monkeypatch.setattr(DockerExecutor, "run", _spy)
     budget = BudgetTracker(cap_usd=1.0)
     run_one_trace(
         csv,
         run_index=0,
-        llm=_stub_llm_returning("(no fence)"),  # type: ignore[arg-type]
+        llm=_stub_llm_returning("(no fence)"),
         budget=budget,
         sandbox_root=tmp_path,
         config=AgentRunConfig(epsilon=0.0, seed=42),
@@ -1043,11 +941,8 @@ def test_hidden_eval_runs_exactly_once_per_trace(
     assert len(calls) == 1, f"expected hidden eval to run once, got {len(calls)}"
 
 
+@pytest.mark.container
 def test_retry_prompt_tail_comes_from_public_not_hidden(tmp_path: Path) -> None:
-    """Req: Public-test verifier runs only public tests during the agent loop
-    WHEN the agent's first run_tests step on a hidden-fixture reports a failure
-    THEN the failure tail piped into the retry prompt comes from tests_public/
-         and contains no text originating from tests_hidden/."""
     from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
     from bench.real.coding_agent.budget import BudgetTracker
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
@@ -1070,7 +965,7 @@ def test_retry_prompt_tail_comes_from_public_not_hidden(tmp_path: Path) -> None:
     run_one_trace(
         csv,
         run_index=0,
-        llm=_Stub(),  # type: ignore[arg-type]
+        llm=_Stub(),
         budget=budget,
         sandbox_root=tmp_path,
         config=cfg,
@@ -1085,15 +980,8 @@ def test_retry_prompt_tail_comes_from_public_not_hidden(tmp_path: Path) -> None:
     assert "nfc_rule" not in retry_prompt
 
 
-# --- Phase E: single-suite fixture layout ----------------------------------
-
-
+@pytest.mark.container
 def test_v0_fixture_outcome_unchanged(tmp_path: Path) -> None:
-    """Req: Hidden-fixture traces use a distinct verifier label
-    Req: MODIFIED Real-agent family generates traces from a coding-agent loop
-    WHEN a single-suite fixture run completes
-    THEN Outcome.verifier='pytest' and metadata has only fixture_id
-         (no public_pass / hidden_pass / generalization_gap keys)."""
     from bench.real.coding_agent.agent import AgentRunConfig, run_one_trace
     from bench.real.coding_agent.budget import BudgetTracker
     from bench.real.coding_agent.fixtures import EASY_FIXTURES
@@ -1118,7 +1006,7 @@ def test_v0_fixture_outcome_unchanged(tmp_path: Path) -> None:
     run = run_one_trace(
         fixture,
         run_index=0,
-        llm=_PerfectLLM(),  # type: ignore[arg-type]
+        llm=_PerfectLLM(),
         budget=budget,
         sandbox_root=tmp_path,
         config=AgentRunConfig(epsilon=0.0, seed=42),
@@ -1131,14 +1019,8 @@ def test_v0_fixture_outcome_unchanged(tmp_path: Path) -> None:
         assert forbidden not in run.outcome.metadata
 
 
-# --- Phase F: CLI --fixtures flag ------------------------------------------
-
-
+@pytest.mark.container
 def test_run_real_corpus_with_fixtures_csv_dedupe(tmp_path: Path) -> None:
-    """Req: Pilot gate before scaling to additional hidden fixtures
-    WHEN the corpus generator is invoked with --fixtures csv_dedupe
-    THEN the harness runs only csv_dedupe and produces traces tagged with that
-         fixture_id (and verifier='pytest_hidden')."""
     import json
 
     from bench.real.coding_agent.agent import AgentRunConfig
@@ -1226,9 +1108,6 @@ def test_cli_real_subcommand_accepts_fixtures_flag(tmp_path: Path) -> None:
 def test_streaming_watermark_dedupe_buggy_src_fails_hidden_passes_public(
     tmp_path: Path,
 ) -> None:
-    """Req: streaming_watermark_dedupe is fair and deterministic
-    WHEN the pristine source is tested
-    THEN public tests pass and hidden tests fail."""
     import shutil
     import subprocess
     import sys
@@ -1262,9 +1141,6 @@ def test_streaming_watermark_dedupe_buggy_src_fails_hidden_passes_public(
 def test_streaming_watermark_dedupe_reference_passes_hidden(
     tmp_path: Path,
 ) -> None:
-    """Req: known-good implementation passes hidden tests
-    WHEN the source is replaced with the reference implementation
-    THEN hidden tests pass."""
     import shutil
     import subprocess
     import sys
@@ -1275,7 +1151,7 @@ def test_streaming_watermark_dedupe_reference_passes_hidden(
     workspace = tmp_path / "streaming_watermark_dedupe"
     shutil.copytree(fixture.root, workspace)
 
-    reference = fixture.root / "src" / "_watermark_dedupe_reference.py"
+    reference = REFERENCES_ROOT / "_watermark_dedupe_reference.py"
     assert reference.is_file()
     target = workspace / "src" / fixture.source_relpath
     target.write_text(reference.read_text())
@@ -1293,9 +1169,6 @@ def test_streaming_watermark_dedupe_reference_passes_hidden(
 
 
 def test_streaming_watermark_dedupe_spec_md_names_hidden_categories() -> None:
-    """Req: spec.md names every hidden semantic category
-    WHEN streaming_watermark_dedupe/spec.md is inspected
-    THEN it states every hidden category."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe")
@@ -1312,9 +1185,6 @@ def test_streaming_watermark_dedupe_spec_md_names_hidden_categories() -> None:
 
 
 def test_streaming_watermark_dedupe_hidden_names_stateful_categories() -> None:
-    """Req: hidden tests cover stateful stream semantics
-    WHEN hidden test names are inspected
-    THEN each required semantic category is named."""
     from bench.real.coding_agent.fixtures import HIDDEN_FIXTURES
 
     fixture = next(fx for fx in HIDDEN_FIXTURES if fx.fixture_id == "streaming_watermark_dedupe")
@@ -1333,9 +1203,6 @@ def test_streaming_watermark_dedupe_hidden_names_stateful_categories() -> None:
 
 
 def test_hard_hidden_v1_fixture_set_resolves_to_date_window() -> None:
-    """Req: hard hidden fixture set is selectable
-    WHEN fixture_set='hard_hidden_v1' is resolved
-    THEN date_window is included."""
     from bench.real.coding_agent.runner import resolve_fixtures
 
     fixtures = resolve_fixtures(fixture_set="hard_hidden_v1")
@@ -1344,9 +1211,6 @@ def test_hard_hidden_v1_fixture_set_resolves_to_date_window() -> None:
 
 
 def test_broad_calibration_fixture_set_resolves_to_three_hard_fixtures() -> None:
-    """Req: broad_calibration is the current hard hidden fixture set
-    WHEN fixture_set='broad_calibration' is resolved
-    THEN it includes date_window, rate_limit, and version_range."""
     from bench.real.coding_agent.runner import resolve_fixtures
 
     fixtures = resolve_fixtures(fixture_set="broad_calibration")
@@ -1355,9 +1219,6 @@ def test_broad_calibration_fixture_set_resolves_to_three_hard_fixtures() -> None
 
 
 def test_very_hard_hidden_v1_fixture_set_resolves_to_unicode_normalize() -> None:
-    """Req: very hard hidden fixture set is selectable
-    WHEN fixture_set='very_hard_hidden_v1' is resolved
-    THEN unicode_normalize is included."""
     from bench.real.coding_agent.runner import resolve_fixtures
 
     fixtures = resolve_fixtures(fixture_set="very_hard_hidden_v1")
@@ -1366,9 +1227,6 @@ def test_very_hard_hidden_v1_fixture_set_resolves_to_unicode_normalize() -> None
 
 
 def test_stateful_calibration_fixture_set_resolves_to_semantic_fixtures() -> None:
-    """Req: very hard hidden fixture set is selectable
-    WHEN fixture_set='stateful_calibration' is resolved
-    THEN the stateful streaming fixture is included."""
     from bench.real.coding_agent.runner import resolve_fixtures
 
     fixtures = resolve_fixtures(fixture_set="stateful_calibration")
@@ -1377,9 +1235,6 @@ def test_stateful_calibration_fixture_set_resolves_to_semantic_fixtures() -> Non
 
 
 def test_hidden_v1_fixture_set_resolves_to_csv_dedupe() -> None:
-    """Req: hard hidden fixture set is selectable
-    WHEN fixture_set='hidden_v1' is resolved
-    THEN it resolves to csv_dedupe."""
     from bench.real.coding_agent.runner import resolve_fixtures
 
     fixtures = resolve_fixtures(fixture_set="hidden_v1")

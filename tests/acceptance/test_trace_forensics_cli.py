@@ -137,7 +137,11 @@ def test_diagnose_cli__missing_run_exits_2(
     rc = main(["diagnose", str(tmp_path / "missing.json")])
 
     assert rc == 2
-    assert "run JSON not found" in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "counterfact diagnose: cannot read" in captured.err
+    assert str(tmp_path / "missing.json") in captured.err
+    assert "Traceback" not in captured.err
 
 
 def test_diagnose_cli__focal_not_in_corpus_exits_2(
@@ -153,8 +157,11 @@ def test_diagnose_cli__focal_not_in_corpus_exits_2(
     rc = main(["diagnose", str(paths[0]), "--runs-dir", str(other_dir)])
 
     assert rc == 2
-    err = capsys.readouterr().err
-    assert "not found" in err
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "focal run 'intruder-run' is not present in the supplied corpus" in captured.err
+    assert str(other_dir) in captured.err
+    assert "Traceback" not in captured.err
     assert other_paths[0].exists()
 
 
@@ -255,6 +262,7 @@ def test_ingest_and_export_cli__write_receipts(
     assert rc == 0
     assert (out_dir / "ingest-receipt.json").exists()
     assert "wrote 1 trace" in capsys.readouterr().out
+    _label_tasks(out_dir, "forensics-fixture")
 
     export_path = tmp_path / "runrecord.parquet"
     rc = main(
@@ -273,3 +281,13 @@ def test_ingest_and_export_cli__write_receipts(
     assert export_path.with_suffix(".parquet.receipt.json").exists()
     for forbidden in ("switch", "hold", "hedge_on_cost", "drop_from_shortlist"):
         assert forbidden not in out
+
+
+def _label_tasks(run_dir: Path, task_id: str) -> None:
+    """Give ingested runs the task id export version 3 requires, as a user would."""
+    for path in run_dir.glob("*.json"):
+        data = json.loads(path.read_text())
+        if "metadata" not in data:
+            continue
+        data["metadata"].setdefault("extra", {})["task_id"] = task_id
+        path.write_text(json.dumps(data))

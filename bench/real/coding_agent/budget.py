@@ -27,10 +27,17 @@ class BudgetTracker:
     spent_usd: float = 0.0
 
     def __post_init__(self) -> None:
-        if self.cap_usd <= 0:
-            raise ValueError(f"cap_usd must be > 0; got {self.cap_usd!r}")
-        if not (0.0 < self.halt_fraction <= 1.0):
+        if isinstance(self.cap_usd, bool) or not math.isfinite(self.cap_usd) or self.cap_usd <= 0:
+            raise ValueError(f"cap_usd must be finite and > 0; got {self.cap_usd!r}")
+        if isinstance(self.halt_fraction, bool) or not (0.0 < self.halt_fraction <= 1.0):
             raise ValueError(f"halt_fraction must be in (0, 1]; got {self.halt_fraction!r}")
+
+        if (
+            isinstance(self.spent_usd, bool)
+            or not math.isfinite(self.spent_usd)
+            or self.spent_usd < 0
+        ):
+            raise ValueError(f"spent_usd must be finite and nonnegative; got {self.spent_usd!r}")
 
     @property
     def halt_threshold(self) -> float:
@@ -41,7 +48,7 @@ class BudgetTracker:
         return self.halt_threshold - self.spent_usd
 
     def add(self, usd: float) -> None:
-        if not math.isfinite(usd):
+        if isinstance(usd, bool) or not math.isfinite(usd):
             raise ValueError(f"spend must be finite; got {usd!r}")
         if usd < 0:
             raise ValueError(f"cannot add negative spend: {usd!r}")

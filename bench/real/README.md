@@ -1,51 +1,106 @@
 # Real-agent harness
 
-`counterfact bench real` runs a coding agent on small Python repair tasks and writes one trace per run. The agent's model, tool, and retry choices are randomized with logged propensities, so the traces support causal estimates. The tasks are described in [coding_agent/fixtures/README.md](coding_agent/fixtures/README.md).
+`counterfact bench real` runs a coding agent on fixed Python repair tasks and writes native traces. Model, tool, and retry policies log their assignment probabilities. Analysis still checks support before making causal claims.
 
-The harness calls LLM APIs and costs money. It refuses to start until `.counterfact/approved` holds a JSON approval receipt that matches the exact command: trace count, budget cap, output directory, fixture set, model map, and randomization config. If the receipt is missing or stale, the command prints the JSON to write. The run halts at 80% of its budget cap.
+This command makes external provider calls and can spend money. Obtain approval for the exact command before running it. `.counterfact/approved` must cover the requested trace count and match the budget, destination, fixtures, model map, and randomization configuration. Agents never write this receipt; see the Enforced Rules table in [AGENTS.md](../../AGENTS.md).
 
-## Contents
+The wheel excludes `bench/`. Use a checkout with the `bench` extra for every command on this page.
 
-| Name | Kind | Purpose |
-| --- | --- | --- |
-| `smoke_mixed_outcome/` | corpus | The real-trace demo corpus. |
-| `single_class_refusal/` | corpus | Checks that the engine refuses a corpus with one outcome class. |
-| `routed_trial/` | corpus | 800 traces from the routed trial. The engine agrees with the randomized estimate. |
-| `broad_calibration` | fixture set | `date_window`, `rate_limit`, `version_range`. |
-| `stateful_calibration` | fixture set | `streaming_watermark_dedupe`, a harder stateful task. |
+## Execution prerequisites
 
-- **`smoke_mixed_outcome/`** holds 120 `streaming_watermark_dedupe` traces from the `stateful_calibration` fixture set, with the model randomized 50/50 (`--model-epsilon 1.0 --tool-epsilon 0.0 --retry-epsilon 0.0`). The pass rate is 0.467, and both model arms have passes and failures. All 64 failures are valid patches that miss a hidden-test behavior, not malformed patches. `counterfact demo` reads this corpus.
-- **`single_class_refusal/`** holds three `csv_dedupe` traces that all pass. `counterfact analyze corpus` must never accept it, and `intervene` must return `unidentified` on it.
+Generated Python runs in Docker. Fixture files and the Docker runtime probe are checked before credential lookup or client creation. The host performs provider calls.
 
-## Run a corpus
+Build and verify the pinned image without provider calls:
 
 ```bash
-counterfact bench real --n 60 \
+uv run --locked python scripts/check_container.py --build
+```
+
+The complete gate builds the image, reusing Docker's cache, and runs the checks:
+
+```bash
+make check-container
+```
+
+Use `uv run --locked python scripts/check_container.py` to check an existing image without building it.
+
+The verifier supports native Linux arm64 and amd64 containers. Its image recipe is pinned, and its tag derives from the recipe contents. Preflight checks Python, pytest, user ID, locale, and timezone.
+
+Docker disables container networking, uses a read-only root filesystem, removes capabilities, and runs an unprivileged user. Source and tests enter through read-only mounts. Writable work uses temporary filesystems with resource limits.
+
+Each execution receives a fresh source snapshot. The verifier checks its manifest and file digests before running tests. A byte mismatch produces an infrastructure error. Reference implementations live under `tests/fixtures/coding_agent/references/`, outside runtime fixture sources.
+
+Host output capture stops at its byte limit. Docker logging is disabled. Output-limit failures carry `failure_reason="output_limit"` and remain distinct in pilot analysis.
+
+This boundary limits host exposure. It does not establish the execution environment of historical committed corpora. Candidate code and tests share the pytest workload. A candidate can inspect mounted tests or interfere with verification, so passing tests do not prove resistance to cheating.
+
+Docker startup, cleanup, or verifier failures stop the run as infrastructure errors. These attempts stay under `.checkpoints/attempts/` and do not become completed corpus rows. Task test failures and workload timeouts remain graded outcomes.
+
+## Spend and resume
+
+The budget halts at 80% of the approved cap. Actual provider charges can arrive after a call, so the halt is conservative accounting rather than a guaranteed billing ceiling.
+
+The append-only ledger records a pending call before provider execution and a priced entry after cost becomes known. A call ID prevents double counting between new ledger entries and completed traces. Legacy entries remain conservative additional spend.
+
+An unknown charge stops the run and blocks resume. Reconcile the provider charge before continuing. Missing or malformed ledger records never become zero-cost calls.
+
+One runner owns the output lock. Resume checks fixture, model, seed, and randomization identity. A different configuration requires a new destination. Completed trace files publish atomically. Infrastructure attempts and incomplete calls remain separately visible.
+
+## Corpora and fixtures
+
+| Name | Purpose |
+| --- | --- |
+| `smoke_mixed_outcome/` | Committed real demo corpus with both outcomes in both model arms |
+| `single_class_refusal/` | Single-class anchor that must refuse causal estimation |
+| `routed_trial/` | Committed routed experiment with an independent randomized comparison |
+| `broad_calibration` | Fixture set containing `date_window`, `rate_limit`, and `version_range` |
+| `stateful_calibration` | Fixture set containing `streaming_watermark_dedupe` |
+
+Fixture specifications live in [coding_agent/fixtures/README.md](coding_agent/fixtures/README.md). Corpus notes record historical provenance. [Routed trial results](routed_trial/RESULTS.md) hold the current reanalysis.
+
+## Approved corpus command
+
+After approval, this command runs a stateful corpus:
+
+```bash
+uv run --locked counterfact bench real --n 60 \
   --fixture-set stateful_calibration \
   --model-epsilon 1.0 --tool-epsilon 0.0 --retry-epsilon 0.0 \
   --budget-cap 10 \
   --output-dir bench/real/pilot_stateful
-counterfact analyze corpus bench/real/pilot_stateful
-python -m bench.real.analyze_pilot bench/real/pilot_stateful
 ```
 
-`analyze corpus` checks whether the corpus has enough outcome variation and arm support for causal estimates. `analyze_pilot` breaks the failures down by mode. A useful corpus has failures in both model arms that come from task behavior, not from malformed patches or harness errors. Output under `bench/real/pilot_*` is gitignored. Committing a corpus is a manual step.
-
-## Routed trial
-
-`--model-route-by-fixture` turns one command into an experiment with its own randomized benchmark. Each run is randomized into one of two logged designs for the first `model_call`:
-
-- `trial`: P(large) = 0.5 on every fixture. Its difference in pass rates is an unbiased estimate of the true effect.
-- `fixture_router`: P(large) is set per fixture. Fixtures differ in difficulty, so a naive comparison of these runs is confounded, as with a production router that escalates hard tasks.
+These inspection commands make no provider calls:
 
 ```bash
-counterfact bench real --n 800 \
+uv run --locked counterfact analyze corpus bench/real/pilot_stateful
+uv run --locked python -m bench.real.analyze_pilot bench/real/pilot_stateful
+```
+
+The analyzer reports support readiness. The pilot analysis distinguishes hidden semantic failures, malformed patches, and harness errors. Promotion remains an explicit curation decision. Pilot directories and checkpoints stay local.
+
+## Routed design
+
+`--model-route-by-fixture` randomizes runs between two designs for the first model call:
+
+- `trial` assigns `large` with probability 0.5 on each fixture.
+- `fixture_router` uses logged fixture-specific probabilities. Different fixture difficulty can confound the marginal pass-rate gap.
+
+After separate approval, this command reproduces the design with new provider calls:
+
+```bash
+uv run --locked counterfact bench real --n 800 \
   --fixtures streaming_watermark_dedupe,date_window,rate_limit,csv-stats \
   --model-route-by-fixture streaming_watermark_dedupe=0.85,date_window=0.7,rate_limit=0.3,csv-stats=0.15 \
   --tool-epsilon 0.0 --retry-epsilon 0.0 \
   --budget-cap 18 \
   --output-dir bench/real/pilot_routed_trial
-python -m bench.real.analyze_routed_trial bench/real/pilot_routed_trial
 ```
 
-The analysis compares the naive gap and the engine's AIPW estimate on the routed runs against the trial estimate. It then removes the propensities from the routed runs and checks that the engine refuses. The route map must name exactly the run's fixtures, with every probability strictly between 0 and 1. The committed run is in `routed_trial/`, with its results in [routed_trial/RESULTS.md](routed_trial/RESULTS.md). [Report §6](../../docs/report.md#6-real-agent-trial) explains the design.
+Reanalyze the committed corpus without provider calls:
+
+```bash
+uv run --locked python -m bench.real.analyze_routed_trial bench/real/routed_trial
+```
+
+The analysis compares a first-occurrence corpus contrast with the trial estimate. Removing logged propensities must remove point identification. The route map must cover exactly the selected fixtures, with probabilities strictly between zero and one. [The report](../../docs/report.md#6-real-agent-trial) explains the statistical limits.

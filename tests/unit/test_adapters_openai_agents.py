@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,11 +18,12 @@ from counterfact.schema import Run
 FIXTURE_DIR = Path(__file__).parent.parent / "fixtures/adapters/openai_agents"
 
 
-def _load(name: str) -> dict:
+def _load(name: str) -> dict[str, Any]:
     return json.loads((FIXTURE_DIR / name).read_text())
 
 
 def test_minimal_trace_writes_run_with_required_outcome(tmp_path: Path) -> None:
+    tmp_path = tmp_path / "corpus"
     receipt = ingest_openai_agents(FIXTURE_DIR / "minimal.json", tmp_path, outcome=True)
 
     assert receipt.generated_count == 1
@@ -154,6 +156,7 @@ def test_metadata_extra_carries_root_name() -> None:
 
 
 def test_ingest_writes_receipt_with_randomization_warning(tmp_path: Path) -> None:
+    tmp_path = tmp_path / "corpus"
     ingest_openai_agents(FIXTURE_DIR / "with_handoff.json", tmp_path)
     receipt = json.loads((tmp_path / "ingest-receipt.json").read_text())
     assert receipt["source_format"] == "openai-agents"

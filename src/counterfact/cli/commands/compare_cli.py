@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 from counterfact.cli import formatters, loaders
+from counterfact.errors import CounterError
 
 load_run_file = loaders.load_run_file
 load_corpus_dir = loaders.load_corpus_dir
@@ -21,25 +23,29 @@ def run(args: argparse.Namespace) -> int:
     if right is None:
         return 2
 
-    diagnosis = None
-    if args.runs_dir is not None:
-        corpus = load_corpus_dir(args.runs_dir, command="compare")
-        if corpus is None:
-            return 2
-        focal = left if args.focal == "left" else right
-        if not require_focal_in_corpus(focal, corpus, args.runs_dir, command="compare"):
-            return 2
-        diagnosis = build_diagnosis(
-            focal,
-            corpus,
-            decision_type=args.decision_type,
-            top_k=args.top_k,
-            seed=args.seed,
-            run_path=str(args.left_run_json if args.focal == "left" else args.right_run_json),
-            corpus_dir=str(args.runs_dir),
-        )
+    try:
+        diagnosis = None
+        if args.runs_dir is not None:
+            corpus = load_corpus_dir(args.runs_dir, command="compare")
+            if corpus is None:
+                return 2
+            focal = left if args.focal == "left" else right
+            if not require_focal_in_corpus(focal, corpus, args.runs_dir, command="compare"):
+                return 2
+            diagnosis = build_diagnosis(
+                focal,
+                corpus,
+                decision_type=args.decision_type,
+                top_k=args.top_k,
+                seed=args.seed,
+                run_path=str(args.left_run_json if args.focal == "left" else args.right_run_json),
+                corpus_dir=str(args.runs_dir),
+            )
 
-    comparison = compare_traces(left, right, diagnosis=diagnosis)
+        comparison = compare_traces(left, right, diagnosis=diagnosis)
+    except (CounterError, ValueError) as exc:
+        print(f"counterfact compare: {exc}", file=sys.stderr)
+        return 2
     if args.json:
         print(comparison.model_dump_json(indent=2, exclude_none=True))
     else:

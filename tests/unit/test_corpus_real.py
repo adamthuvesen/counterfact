@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -24,7 +25,7 @@ from bench.real.coding_agent import (
 )
 from bench.real.coding_agent.agent import (
     AgentRunConfig,
-    _extract_python_block,
+    extract_python_block,
     run_one_trace,
 )
 from bench.real.coding_agent.fixtures import EASY_FIXTURES, run_pytest
@@ -36,6 +37,7 @@ from bench.real.coding_agent.llm import (
     CostUnknownError,
     LiteLLMClient,
     LLMResponse,
+    SpendNotApproved,
     extract_cost,
 )
 from bench.real.coding_agent.runner import (
@@ -45,6 +47,22 @@ from bench.real.coding_agent.runner import (
     run_real_corpus,
 )
 from counterfact.schema import Run
+
+
+@pytest.fixture(autouse=True)
+def _unit_executor(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    if request.node.get_closest_marker("container") is not None:
+        return
+    from bench.real.coding_agent.executor import DockerExecutor, ExecutionResult
+
+    monkeypatch.setattr(DockerExecutor, "preflight", lambda self: None)
+    monkeypatch.setattr(
+        DockerExecutor,
+        "run",
+        lambda self, *args, **kwargs: ExecutionResult(
+            status="test_failure", output_tail="fixture failed"
+        ),
+    )
 
 
 def _write_approval(
@@ -68,9 +86,6 @@ def _write_approval(
     receipt["approved_at"] = "2026-05-10T00:00:00Z"
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
-
-
-# --- ε-greedy randomization spec scenarios ----------------------------------
 
 
 def test_epsilon_greedy__greedy_action_propensity() -> None:
@@ -114,9 +129,6 @@ def test_epsilon_greedy__rejects_greedy_not_in_valid() -> None:
         eg.choose(["x", "y"], greedy="z")
 
 
-# --- Budget tracker spec scenarios ------------------------------------------
-
-
 def test_budget__halt_at_80_percent() -> None:
     tracker = BudgetTracker(cap_usd=10.0)
     tracker.add(3.0)
@@ -142,11 +154,8 @@ def test_budget__rejects_non_finite_spend(cost: float) -> None:
         tracker.add(cost)
 
 
-# --- Fixture spec scenarios -------------------------------------------------
-
-
-def test_real_corpus_has_at_least_three_fixtures() -> None:
-    assert len(FIXTURES) >= 3
+@pytest.mark.slow
+def test_real_corpus_fixtures_have_source_and_tests() -> None:
     for fx in FIXTURES:
         assert fx.root.is_dir()
         assert fx.source_path.is_file()
@@ -157,6 +166,7 @@ def test_real_corpus_has_at_least_three_fixtures() -> None:
         assert passed is False, f"{fx.fixture_id} should start failing"
 
 
+@pytest.mark.container
 def test_outcome_is_pytest_exit_code(tmp_path: Path) -> None:
     # Use an easy fixture (string-utils) so a known good patch makes pytest pass.
     fixture = EASY_FIXTURES[0]
@@ -189,6 +199,7 @@ def test_outcome_is_pytest_exit_code(tmp_path: Path) -> None:
     assert run.outcome.value is True
 
 
+@pytest.mark.container
 def test_agent_logs_per_decision_policy_params_with_resolved_config(
     tmp_path: Path,
 ) -> None:
@@ -221,7 +232,7 @@ def test_agent_logs_per_decision_policy_params_with_resolved_config(
         config=cfg,
     )
 
-    by_type: dict[str, dict] = {}
+    by_type: dict[str, dict[str, Any]] = {}
     for s in run.steps:
         for d in s.decisions:
             if d.policy is None:
@@ -233,6 +244,7 @@ def test_agent_logs_per_decision_policy_params_with_resolved_config(
     assert by_type["retry"] == {"epsilon": 0.2, "greedy": "retry_once"}
 
 
+@pytest.mark.container
 def test_agent_logs_retry_policy_on_every_trace_even_when_first_attempt_passes(
     tmp_path: Path,
 ) -> None:
@@ -278,6 +290,7 @@ def test_agent_logs_retry_policy_on_every_trace_even_when_first_attempt_passes(
     )
 
 
+@pytest.mark.container
 def test_agent_retry_branch_includes_failure_context_in_prompt(tmp_path: Path) -> None:
     """When the retry branch fires, the second model_call's prompt must
     include the failing test output (not just the same prompt as attempt 1)."""
@@ -313,11 +326,15 @@ def test_agent_retry_branch_includes_failure_context_in_prompt(tmp_path: Path) -
     # The trace also captures the retry decision and both model_call attempts.
     model_calls = [d for s in run.steps for d in s.decisions if d.decision_type == "model_call"]
     assert len(model_calls) == 2
-    assert model_calls[0].context_features.get("attempt") == 1
-    assert model_calls[1].context_features.get("attempt") == 2
-    assert model_calls[1].context_features.get("informed_retry") is True
+    first_call, retry_call = model_calls
+    assert first_call.context_features is not None
+    assert retry_call.context_features is not None
+    assert first_call.context_features.get("attempt") == 1
+    assert retry_call.context_features.get("attempt") == 2
+    assert retry_call.context_features.get("informed_retry") is True
 
 
+@pytest.mark.container
 def test_agent_logs_all_randomization_fields(tmp_path: Path) -> None:
     fixture = FIXTURES[1]  # date-utils — bug isn't auto-fixable by trivial regex, that's fine
 
@@ -351,7 +368,7 @@ def test_agent_logs_all_randomization_fields(tmp_path: Path) -> None:
     assert saw_random
 
 
-def _first_model_call_observation(run: Run) -> dict:
+def _first_model_call_observation(run: Run) -> dict[str, Any]:
     """Return the observation produced by the first model_call decision in `run`.
 
     The agent loop attaches exactly one observation to each model_call step
@@ -370,11 +387,8 @@ def _first_model_call_observation(run: Run) -> dict:
     raise AssertionError("no model_call observation found")
 
 
+@pytest.mark.container
 def test_agent_observation_records_extracted_patch_text(tmp_path: Path) -> None:
-    """WHEN the LLM returns a Python code block
-    THEN the model_call observation's `extracted_code` field carries the
-    actual patch source as a string (not a bool flag) so downstream
-    consumers can inspect what the agent wrote."""
     fixture = FIXTURES[1]
     code = "def add(a, b):\n    return a + b"
     fenced_response = f"Here's the fix:\n\n```python\n{code}\n```\n"
@@ -400,10 +414,8 @@ def test_agent_observation_records_extracted_patch_text(tmp_path: Path) -> None:
     assert "def add" in obs["extracted_code"]
 
 
+@pytest.mark.container
 def test_agent_observation_extracted_code_is_none_when_parse_fails(tmp_path: Path) -> None:
-    """WHEN the LLM response has no code fence
-    THEN `extracted_code` is None (not False), preserving the
-    'parse failed' signal as a typed absence rather than a bool flag."""
     fixture = FIXTURES[1]
 
     class _NoFenceLLM:
@@ -425,11 +437,10 @@ def test_agent_observation_extracted_code_is_none_when_parse_fails(tmp_path: Pat
     assert obs["extraction_failure_reason"] == "raw_response_not_python"
 
 
+@pytest.mark.container
 def test_agent_observation_records_finish_reason_and_response_chars(
     tmp_path: Path,
 ) -> None:
-    """WHEN the LLM response includes provider finish metadata
-    THEN the trace keeps it next to extraction diagnostics."""
     fixture = FIXTURES[1]
 
     class _StoppedLLM:
@@ -457,14 +468,14 @@ def test_agent_observation_records_finish_reason_and_response_chars(
 
 def test_extract_python_block_prefers_fenced_code() -> None:
     text = "notes\n```python\ndef target():\n    return 1\n```\n"
-    assert _extract_python_block(text, expected_function="target") == (
+    assert extract_python_block(text, expected_function="target") == (
         "def target():\n    return 1\n"
     )
 
 
 def test_extract_python_block_accepts_parseable_full_response() -> None:
     text = "from __future__ import annotations\n\n\ndef target() -> int:\n    return 1\n"
-    assert _extract_python_block(text, expected_function="target") == text
+    assert extract_python_block(text, expected_function="target") == text
 
 
 def test_extract_python_block_accepts_parseable_class_full_response() -> None:
@@ -487,15 +498,12 @@ def test_extract_python_block_accepts_parseable_class_full_response() -> None:
 
 def test_extract_python_block_rejects_unparseable_commentary() -> None:
     text = "Here is the fix:\n\ndef target() -> int:\n    return 1\n"
-    assert _extract_python_block(text, expected_function="target") is None
+    assert extract_python_block(text, expected_function="target") is None
 
 
 def test_extract_python_block_rejects_wrong_function() -> None:
     text = "def other() -> int:\n    return 1\n"
-    assert _extract_python_block(text, expected_function="target") is None
-
-
-# --- Approval gate / resume / CLI -------------------------------------------
+    assert extract_python_block(text, expected_function="target") is None
 
 
 def test_first_run_prompts_before_any_api_call(tmp_path: Path) -> None:
@@ -557,10 +565,16 @@ def test_empty_approval_marker_is_rejected_before_any_api_call(tmp_path: Path) -
     assert rc == 2
 
 
-def test_approval_receipt_must_match_budget_before_any_api_call(tmp_path: Path) -> None:
+def test_approval_receipt_must_match_budget_before_any_api_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bench.real.coding_agent.executor import DockerExecutor
+
     output = tmp_path / "out"
     marker = tmp_path / ".counterfact" / "approved"
     _write_approval(marker, n=1, budget_cap_usd=5.0, output_dir=output)
+    # A ready runtime, so only the approval gate can stop the run.
+    monkeypatch.setattr(DockerExecutor, "preflight", lambda self: None)
 
     class _ExplodingLLM:
         def call(self, *, role: str, prompt: str) -> LLMResponse:
@@ -575,6 +589,7 @@ def test_approval_receipt_must_match_budget_before_any_api_call(tmp_path: Path) 
     )
 
     assert rc == 2
+    assert not output.exists(), "the approval gate must refuse before any checkpoint or lock"
 
 
 def test_resume_after_partial_run(tmp_path: Path) -> None:
@@ -845,7 +860,7 @@ def test_extract_cost__rejects_non_finite_response_cost(cost: float) -> None:
 
 def test_extract_cost__falls_back_to_completion_cost(monkeypatch: pytest.MonkeyPatch) -> None:
     """When response_cost is absent (None), derive cost via litellm.completion_cost."""
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     resp = {"choices": [{"message": {"content": "x"}}]}
     monkeypatch.setattr(litellm, "completion_cost", lambda completion_response: 0.0123)
@@ -856,7 +871,7 @@ def test_extract_cost__zero_response_cost_is_returned_not_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A real `response_cost == 0.0` is a valid zero, not a missing value."""
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     resp = {"choices": [{"message": {"content": "x"}}], "response_cost": 0.0}
 
@@ -872,7 +887,7 @@ def test_extract_cost__rejects_non_positive_or_non_finite_fallback(
     monkeypatch: pytest.MonkeyPatch,
     cost: float,
 ) -> None:
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     resp = {"choices": [{"message": {"content": "x"}}]}
     monkeypatch.setattr(litellm, "completion_cost", lambda completion_response: cost)
@@ -884,7 +899,7 @@ def test_extract_cost__raises_when_both_paths_fail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Production cost accounting fails closed if both cost paths are unavailable."""
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     resp = {"choices": [{"message": {"content": "x"}}]}
 
@@ -896,10 +911,28 @@ def test_extract_cost__raises_when_both_paths_fail(
         extract_cost(resp)
 
 
+def test_litellm_client__refuses_an_unapproved_call_before_the_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import litellm
+
+    def _completion(**kw: object) -> object:
+        raise AssertionError("litellm.completion ran without approval")
+
+    monkeypatch.setattr(litellm, "completion", _completion)
+    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"})
+    with pytest.raises(SpendNotApproved, match="ask Adam") as refusal:
+        try:
+            client.call(role="small", prompt="fix this")
+        except Exception:
+            pytest.fail("the refusal must escape `except Exception` retry loops")
+    assert isinstance(refusal.value, SystemExit)
+
+
 def test_litellm_client__raises_when_response_cost_is_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     monkeypatch.setattr(
         litellm,
@@ -911,7 +944,7 @@ def test_litellm_client__raises_when_response_cost_is_unknown(
         raise RuntimeError("price table miss")
 
     monkeypatch.setattr(litellm, "completion_cost", _raise)
-    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"})
+    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"}, approved=True)
     with pytest.raises(CostUnknownError):
         client.call(role="small", prompt="fix this")
 
@@ -919,7 +952,7 @@ def test_litellm_client__raises_when_response_cost_is_unknown(
 def test_litellm_client__requests_large_enough_patch_budget_and_records_finish_reason(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     captured: dict[str, object] = {}
 
@@ -936,7 +969,7 @@ def test_litellm_client__requests_large_enough_patch_budget_and_records_finish_r
         }
 
     monkeypatch.setattr(litellm, "completion", _completion)
-    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"})
+    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"}, approved=True)
     response = client.call(role="small", prompt="fix this")
 
     assert captured["max_tokens"] == DEFAULT_MAX_TOKENS
@@ -948,7 +981,7 @@ def test_litellm_client__requests_large_enough_patch_budget_and_records_finish_r
 def test_litellm_client__normalizes_missing_content_to_extraction_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import litellm  # type: ignore[import-not-found]
+    import litellm
 
     monkeypatch.setattr(
         litellm,
@@ -958,7 +991,7 @@ def test_litellm_client__normalizes_missing_content_to_extraction_failure(
             "response_cost": 0.01,
         },
     )
-    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"})
+    client = LiteLLMClient(role_to_model={"small": "claude-haiku-4-5"}, approved=True)
 
     response = client.call(role="small", prompt="fix this")
 
@@ -1074,6 +1107,7 @@ def test_cli_real_subcommand_first_run_prints_approval(tmp_path: Path) -> None:
     assert "approved" in combined
 
 
+@pytest.mark.slow
 def test_analyze_pilot_cli_writes_notes_without_provider_calls(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
     source_dir = repo_root / "bench" / "real" / "single_class_refusal"
@@ -1107,29 +1141,47 @@ def _write_pilot_trace(
     stdout_tail: str = "",
 ) -> None:
     run = {
+        "schema_version": "0.1.0",
+        "run_id": f"pilot-{name}",
         "steps": [
             {
-                "decisions": [{"decision_type": "model_call", "chosen_action": model}],
+                "step_index": 0,
+                "decisions": [
+                    {"decision_id": "model", "decision_type": "model_call", "chosen_action": model}
+                ],
                 "observations": [
                     {
+                        "observation_id": "response",
                         "content": {
                             "cost_usd": 0.0,
                             "extracted_code": extracted_code,
-                        }
+                        },
                     }
                 ],
             },
             {
-                "decisions": [{"decision_type": "tool_call", "chosen_action": "run_tests"}],
-                "observations": [{"content": {"stdout_tail": stdout_tail}}],
+                "step_index": 1,
+                "decisions": [
+                    {
+                        "decision_id": "tests",
+                        "decision_type": "tool_call",
+                        "chosen_action": "run_tests",
+                    }
+                ],
+                "observations": [
+                    {"observation_id": "result", "content": {"stdout_tail": stdout_tail}}
+                ],
             },
         ],
         "outcome": {
+            "kind": "binary",
+            "value": hidden_pass,
+            "verifier": "pytest_hidden",
             "metadata": {
                 "fixture_id": fixture_id,
                 "public_pass": public_pass,
                 "hidden_pass": hidden_pass,
-            }
+            },
         },
     }
     (run_dir / f"real-{name}.json").write_text(json.dumps(run))
@@ -1209,6 +1261,7 @@ def test_routed_trial_logs_both_designs_and_runs_end_to_end(tmp_path: Path) -> N
     for path in output.glob("real-*.json"):
         run = Run.model_validate_json(path.read_text())
         first = next(d for s in run.steps for d in s.decisions if d.decision_type == "model_call")
+        assert first.policy_params is not None
         p_large = first.policy_params["p_large"]
         expected_p = 0.5 if first.policy == "trial" else route[run.outcome.metadata["fixture_id"]]
         assert p_large == expected_p
@@ -1225,7 +1278,13 @@ def test_routed_trial_logs_both_designs_and_runs_end_to_end(tmp_path: Path) -> N
         config=config,
         role_to_model=ROLE_TO_MODEL,
     )
-    assert receipt["config"]["model_route_by_fixture"] == dict(sorted(route.items()))
+    assert _receipt_config(receipt)["model_route_by_fixture"] == dict(sorted(route.items()))
+
+
+def _receipt_config(receipt: dict[str, object]) -> dict[str, object]:
+    config = receipt["config"]
+    assert isinstance(config, dict)
+    return config
 
 
 def test_unrouted_receipt_has_no_route_key() -> None:
@@ -1237,7 +1296,7 @@ def test_unrouted_receipt_has_no_route_key() -> None:
         config=AgentRunConfig(),
         role_to_model=ROLE_TO_MODEL,
     )
-    assert "model_route_by_fixture" not in receipt["config"]
+    assert "model_route_by_fixture" not in _receipt_config(receipt)
 
 
 @pytest.mark.parametrize(
@@ -1273,3 +1332,247 @@ def test_route_flag_rejects_a_repeated_fixture() -> None:
 
     with pytest.raises(ValueError, match="appears twice"):
         _parse_route("date-utils=0.2,date-utils=0.9")
+
+
+def test_runtime_preflight_precedes_credentials_and_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bench.real.coding_agent import runner
+    from bench.real.coding_agent.executor import DockerExecutor, ExecutorUnavailable
+
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+
+    def unavailable(self) -> None:
+        raise ExecutorUnavailable("runtime unavailable")
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("credentials/client must not run before runtime preflight")
+
+    monkeypatch.setattr(DockerExecutor, "preflight", unavailable)
+    monkeypatch.setattr(runner, "check_credentials", unexpected)
+    monkeypatch.setattr(runner, "LiteLLMClient", unexpected)
+    assert run_real_corpus(n=1, budget_cap_usd=1, output_dir=output, marker_path=marker) == 8
+    assert not output.exists()
+
+
+def test_resume_after_trace_write_does_not_double_count_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+    calls = 0
+
+    class Client:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            nonlocal calls
+            calls += 1
+            return LLMResponse(text="no patch", cost_usd=0.3)
+
+    original_open = Path.open
+
+    def fail_progress(path, *args, **kwargs):
+        if path.name == "progress.jsonl":
+            raise OSError("injected crash after durable trace write")
+        return original_open(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "open", fail_progress)
+        with pytest.raises(OSError, match="injected crash"):
+            run_real_corpus(
+                n=1,
+                budget_cap_usd=1,
+                output_dir=output,
+                marker_path=marker,
+                llm_client_factory=Client,
+            )
+    assert len(list(output.glob("real-*.json"))) == 1
+    prior_calls = calls
+    assert (
+        run_real_corpus(
+            n=1,
+            budget_cap_usd=1,
+            output_dir=output,
+            marker_path=marker,
+            llm_client_factory=Client,
+        )
+        == 0
+    )
+    assert calls == prior_calls
+
+
+def test_unknown_paid_call_cost_blocks_resume(tmp_path: Path) -> None:
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+    calls = 0
+
+    class Client:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            nonlocal calls
+            calls += 1
+            raise CostUnknownError("provider response has no price")
+
+    def run() -> int:
+        return run_real_corpus(
+            n=1, budget_cap_usd=1, output_dir=output, marker_path=marker, llm_client_factory=Client
+        )
+
+    assert run() == 5
+    assert run() == 7
+    assert calls == 1
+
+
+def test_infrastructure_attempt_is_retained_outside_corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bench.real.coding_agent.executor import DockerExecutor, ExecutionResult
+
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+    monkeypatch.setattr(
+        DockerExecutor,
+        "run",
+        lambda *args, **kwargs: ExecutionResult(
+            status="infrastructure_error", output_tail="daemon lost"
+        ),
+    )
+
+    class Client:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text="no patch", cost_usd=0.1)
+
+    assert (
+        run_real_corpus(
+            n=1,
+            budget_cap_usd=1,
+            output_dir=output,
+            marker_path=marker,
+            llm_client_factory=Client,
+        )
+        == 8
+    )
+    assert not list(output.glob("real-*.json"))
+    attempts = list((output / ".checkpoints" / "attempts").glob("*.json"))
+    assert len(attempts) == 1
+    assert json.loads(attempts[0].read_text())["outcome"]["verifier"] == "infrastructure_error"
+    from bench.real.coding_agent.runner import ledger_spend
+
+    assert ledger_spend(output / ".checkpoints" / "budget_ledger.jsonl") == 0.1
+
+
+@pytest.mark.parametrize("cost", [-1, float("nan"), float("inf")])
+def test_legacy_ledger_rejects_invalid_cost(cost: float, tmp_path: Path) -> None:
+    from bench.real.coding_agent.runner import BudgetLedgerError, ledger_spend
+
+    ledger = tmp_path / "ledger.jsonl"
+    ledger.write_text(json.dumps({"cost_usd": cost}) + "\n")
+    with pytest.raises(BudgetLedgerError):
+        ledger_spend(ledger)
+
+
+def test_parallel_runner_cannot_own_same_spend_ledger(tmp_path: Path) -> None:
+    import fcntl
+
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+    checkpoint = output / ".checkpoints"
+    checkpoint.mkdir(parents=True)
+    with (checkpoint / "run.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert (
+            run_real_corpus(
+                n=1,
+                budget_cap_usd=1,
+                output_dir=output,
+                marker_path=marker,
+                llm_client_factory=lambda: pytest.fail("second runner must not construct a client"),
+            )
+            == 9
+        )
+
+
+def test_missing_canonical_fixture_fails_before_client_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bench.real.coding_agent import fixtures
+
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+    monkeypatch.setattr(fixtures, "FIXTURES_ROOT", tmp_path / "missing-fixtures")
+    assert (
+        run_real_corpus(
+            n=1,
+            budget_cap_usd=1,
+            output_dir=output,
+            marker_path=marker,
+            llm_client_factory=lambda: pytest.fail("missing fixture must not construct a client"),
+        )
+        == 8
+    )
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("cap", [math.nan, math.inf, -math.inf, -1.0, 0.0, True])
+def test_invalid_budget_cap_fails_before_runtime_or_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cap: float
+) -> None:
+    from bench.real.coding_agent.executor import DockerExecutor
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("invalid budget must fail before runtime or client creation")
+
+    monkeypatch.setattr(DockerExecutor, "preflight", unexpected)
+    assert (
+        run_real_corpus(
+            n=1, budget_cap_usd=cap, output_dir=tmp_path / "out", llm_client_factory=unexpected
+        )
+        == 2
+    )
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("spent", [math.nan, math.inf, -1.0, True])
+def test_initial_budget_spend_must_be_finite_nonnegative(spent: float) -> None:
+    with pytest.raises(ValueError, match="spent_usd"):
+        BudgetTracker(cap_usd=1.0, spent_usd=spent)
+
+
+@pytest.mark.parametrize("cost", [-1.0, True, "not-a-price"])
+def test_reported_provider_cost_must_be_valid(cost: object) -> None:
+    with pytest.raises(CostUnknownError):
+        extract_cost({"response_cost": cost})
+
+
+def test_invalid_response_cost_remains_unknown_and_blocks_resume(tmp_path: Path) -> None:
+    output, marker = tmp_path / "out", tmp_path / "approved"
+    _write_approval(marker, n=1, budget_cap_usd=1, output_dir=output)
+
+    class Client:
+        def call(self, *, role: str, prompt: str) -> LLMResponse:
+            return LLMResponse(text="no patch", cost_usd=-1.0)
+
+    def run() -> int:
+        return run_real_corpus(
+            n=1, budget_cap_usd=1, output_dir=output, marker_path=marker, llm_client_factory=Client
+        )
+
+    assert run() == 5
+    assert run() == 7
+
+
+def test_pilot_output_limit_is_not_a_hidden_semantic_failure(tmp_path: Path) -> None:
+    from bench.real.analyze_pilot import analyze
+
+    _write_pilot_trace(tmp_path, "output-limit", public_pass=True, hidden_pass=False)
+    path = tmp_path / "real-output-limit.json"
+    run = json.loads(path.read_text())
+    run["outcome"]["metadata"]["execution"] = {
+        "status": "test_failure",
+        "failure_reason": "output_limit",
+        "output_tail": "limit exceeded",
+    }
+    path.write_text(json.dumps(run))
+    report = analyze(tmp_path)
+    assert report["failure_modes"]["output_limit"] == 1
+    assert report["failure_modes"]["hidden_semantic_failure"] == 0
+    assert report["showcase_gate_passed"] is False

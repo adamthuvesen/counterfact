@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -11,7 +12,7 @@ from pydantic import ValidationError
 FIXTURE_PATH = Path(__file__).parent.parent / "fixtures" / "canonical_run.json"
 
 
-def _fixture() -> dict:
+def _fixture() -> dict[str, Any]:
     return json.loads(FIXTURE_PATH.read_text())
 
 
@@ -102,7 +103,7 @@ def test_outcome_tagged_union__continuous_outcome_rejected_at_intervene_time() -
     with pytest.raises(UnsupportedOutcomeError):
         intervene(
             dag=dag,
-            model=_ContinuousModel(),
+            model=_ContinuousModel(),  # pyright: ignore[reportArgumentType]  # non-binary model on purpose
             step=1,
             intervention={"tool_choice": "inspect_file"},
         )
@@ -178,7 +179,7 @@ def test_decisions_log_randomization__chosen_action_must_be_valid_action() -> No
 def test_decisions_log_randomization__propensity_must_be_in_zero_one_inclusive() -> None:
     from counterfact.schema import Decision
 
-    base = dict(decision_id="d-bad", decision_type="tool_call")
+    base: dict[str, Any] = {"decision_id": "d-bad", "decision_type": "tool_call"}
     with pytest.raises(ValidationError):
         Decision(**base, propensity=0.0)
     with pytest.raises(ValidationError):

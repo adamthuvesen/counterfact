@@ -12,9 +12,11 @@ dist/
 *.egg-info/
 .eggs/
 .pytest_cache/
-.mypy_cache/
 .ruff_cache/
-.coverage
+.coverage*
+coverage.xml
+.hypothesis/
+.import_linter_cache/
 htmlcov/
 .tox/
 
@@ -32,9 +34,13 @@ htmlcov/
 *.local.json
 
 # Claude / agent local state
-.agents/
-.claude/
-.codex/
+.agents/*
+!.agents/skills/
+.claude/*
+!.claude/settings.json
+!.claude/skills
+.codex/*
+!.codex/hooks.json
 .claude/settings.local.json
 .claude/projects/
 worktrees/
@@ -51,6 +57,7 @@ checkpoints/
 *.sqlite
 
 # Counterfact runtime artifacts
+.verify/
 .counterfact/
 bench/real/runs/
 bench/real/runs_pilot_*/

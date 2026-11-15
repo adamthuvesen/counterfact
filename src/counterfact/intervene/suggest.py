@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from counterfact.analysis.facts import RunFact
 from counterfact.bench_flags import (
     MIN_BENCH_N,
     MODEL_GREEDY_CHOICES,
@@ -129,7 +130,9 @@ def suggest_harness_command(
     return " ".join(parts)
 
 
-def fit_suggestion_to_corpus(estimate: CausalEstimate, runs: Iterable[Run]) -> CausalEstimate:
+def fit_suggestion_to_corpus(
+    estimate: CausalEstimate, runs: Iterable[Run | RunFact]
+) -> CausalEstimate:
     """Point `suggested_command` at the corpus's own fixtures, or drop it.
 
     The command reruns `bench real`, whose verifier logs `fixture_id` on every
@@ -142,7 +145,7 @@ def fit_suggestion_to_corpus(estimate: CausalEstimate, runs: Iterable[Run]) -> C
         return estimate
     fixture_ids = [run.outcome.metadata.get("fixture_id") for run in runs]
     if fixture_ids and all(isinstance(f, str) for f in fixture_ids):
-        fixtures = ",".join(sorted(set(fixture_ids)))  # type: ignore[arg-type]
+        fixtures = ",".join(sorted(set(fixture_ids)))  # pyright: ignore[reportArgumentType]  # all() above checks each is a str
         updated = {
             **payload,
             "suggested_command": command.replace(

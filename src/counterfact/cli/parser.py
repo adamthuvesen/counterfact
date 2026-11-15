@@ -6,7 +6,6 @@ import argparse
 from pathlib import Path
 
 from counterfact.bench_flags import (
-    FIXTURE_SET_CHOICES,
     MODEL_GREEDY_CHOICES,
     RETRY_GREEDY_CHOICES,
 )
@@ -27,7 +26,7 @@ from counterfact.cli.commands import (
     ingest_openai_agents_cli,
     intervene_cli,
 )
-from counterfact.cli.constants import DEFAULT_DEMO_RUNS_DIR
+from counterfact.cli.constants import DEFAULT_DEMO_RUNS_DIR, FIXTURE_SET_CHOICES
 
 positive_int = argparse_types.positive_int
 

@@ -20,22 +20,20 @@ import pytest
 from counterfact.attribute import AttributionEntry, FailureAttribution
 from counterfact.diagnose import build_diagnosis_pair
 from counterfact.explain import build_report, render_html
-from counterfact.explain.render_html import _arm_names, _node_label
+from counterfact.explain._dag_svg import _node_label
+from counterfact.explain._decision_cards import _arm_names
 from counterfact.explain.report import ExplainReport
 from counterfact.intervene.estimate import (
     CausalEstimate,
     DistributionSummary,
+    EstimatorDiagnostics,
     IdentifiabilityStatus,
     IdentificationBounds,
     InterventionQuery,
     NextStep,
 )
-from counterfact.schema import Decision, Metadata, Outcome, Run
+from counterfact.schema import Decision, Metadata, Observation, Outcome, Run
 from tests.conftest import single_class_refusal_corpus, synthetic_corpus
-
-# ---------------------------------------------------------------------------
-# Fixtures and helpers
-# ---------------------------------------------------------------------------
 
 FIXED_NOW = datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC)
 
@@ -82,11 +80,25 @@ def _identified_estimate() -> CausalEstimate:
             decision_type="model_call",
             intervention_kind="model_choice",
             target="small",
+            baseline="large",
             step=1,
         ),
         identifiability=IdentifiabilityStatus.IDENTIFIED,
         estimand="E[Y | do(model=small)]",
         outcome_delta=DistributionSummary(point=0.332, ci_low=0.179, ci_high=0.493),
+        diagnostics=EstimatorDiagnostics(
+            n_used=30,
+            n_excluded=0,
+            n_target=10,
+            n_baseline=20,
+            n_folds=5,
+            g_formula_delta=0.332,
+            ipw_delta=0.332,
+            min_propensity_target=0.5,
+            min_propensity_baseline=0.5,
+            effective_n_target=10,
+            effective_n_baseline=20,
+        ),
         assumptions=["positivity holds for model_call"],
         warnings=[],
         next_step=NextStep(
@@ -214,10 +226,6 @@ def _collect_data_decision_ids(html: str) -> tuple[list[str], list[str]]:
     return parser.values, parser.classes
 
 
-def _count_substring(html: str, needle: str) -> int:
-    return html.count(needle)
-
-
 def _extract_section(html: str, h2_text: str) -> str:
     """Return the substring between `<h2>{h2_text}</h2>` and the next `<h2>`.
 
@@ -312,11 +320,6 @@ def _hand_built_report(
     )
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 def test_render__starts_with_doctype_and_lang() -> None:
     report = _build_synthetic_report()
     html = render_html(report, now=FIXED_NOW)
@@ -349,10 +352,10 @@ def test_render__timeline_omits_raw_observation_content() -> None:
                 step.model_copy(
                     update={
                         "observations": [
-                            {
-                                "observation_id": "o-secret",
-                                "content": {"stdout_tail": "RAW_OBSERVATION_SECRET"},
-                            }
+                            Observation(
+                                observation_id="o-secret",
+                                content={"stdout_tail": "RAW_OBSERVATION_SECRET"},
+                            )
                         ]
                     }
                 )
@@ -788,15 +791,15 @@ def test_render__rejects_no_external_assets_with_strict_check() -> None:
     assert "<link " not in html or "http" not in html.split("<link", 1)[-1].split(">", 1)[0]
 
 
-def test_render_field__escapes_plain_strings_and_passes_raw_through() -> None:
+def test_field__escapes_plain_strings_and_passes_raw_through() -> None:
     from counterfact.explain._html import raw
-    from counterfact.explain.render_html import _render_field
+    from counterfact.explain._verdict import _field
 
-    escaped = _render_field("note", "<script>alert(1)</script>")
+    escaped = _field("note", "<script>alert(1)</script>", "note")
     assert "<script>alert(1)</script>" not in escaped
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in escaped
 
-    passthrough = _render_field("items", raw("<ul><li>a</li></ul>"))
+    passthrough = _field("items", raw("<ul><li>a</li></ul>"), "items")
     assert "<ul><li>a</li></ul>" in passthrough
 
 
@@ -805,15 +808,10 @@ def test_render_field__escapes_plain_strings_and_passes_raw_through() -> None:
     ["badge ident-identified", "badge ident-unidentified", "Descriptive baseline"],
 )
 def test_render__sentinel_strings_present(field: str) -> None:
-    report = _build_synthetic_report()
-    html = render_html(report, now=FIXED_NOW)
     if field == "badge ident-unidentified":
-        # Synthetic corpus may produce some unidentified entries depending
-        # on attribution selection — but the spec only guarantees the
-        # status appears when a card with that status exists.
-        if not any(
-            e.identifiability == IdentifiabilityStatus.UNIDENTIFIED
-            for e in report.attribution.entries
-        ):
-            pytest.skip("no unidentified entries in this synthetic corpus")
+        corpus = single_class_refusal_corpus()
+        report = build_report(corpus[0], corpus, seed=42)
+    else:
+        report = _build_synthetic_report()
+    html = render_html(report, now=FIXED_NOW)
     assert field in html

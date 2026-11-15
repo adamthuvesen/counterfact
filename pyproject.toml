@@ -7,7 +7,7 @@ name = "counterfact"
 version = "0.1.0"
 description = "Causal attribution for agent traces with first-class identifiability labels."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 license = { text = "MIT" }
 authors = [
     { name = "Adam Thuvesen", email = "adam.thuvesen@mentimeter.com" },
@@ -19,7 +19,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
@@ -38,11 +37,12 @@ dev = [
     "pytest>=9.1,<10",
     "pytest-cov>=7.1,<8",
     "pytest-xdist>=3.8,<4",
-    "ruff>=0.17.2,<0.18",
-    "mypy>=2.4,<3",
-    "jupyter>=1.1,<2",
+    "ruff==0.17.4",
+    "basedpyright==1.40.2",
+    "ipykernel>=7,<8",
     "nbconvert>=7.17,<8",
-    "litellm>=1.106,<2",
+    "hypothesis>=6,<7",
+    "import-linter>=2,<3",
 ]
 
 [project.urls]
@@ -56,49 +56,127 @@ counterfact = "counterfact.cli:main"
 packages = ["src/counterfact"]
 
 # Editable installs only: expose the bench harness on sys.path from the repo
-# root so `uv pip install -e ".[dev]"` keeps `counterfact bench` working.
+# root so the locked development install keeps `counterfact bench` working.
 # The built wheel still contains only `src/counterfact`.
 [tool.hatch.build]
 dev-mode-dirs = ["src", "."]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -ra --strict-markers -m 'not container'"
+markers = [
+    "container: real Docker execution boundary checks (run with make check-container)",
+    "slow: subprocess or integration checks that run in make slow, not make check",
+]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
-extend-exclude = ["notebooks"]
+target-version = "py314"
+
+# The demo notebook is committed as is (its builder is tag archive/counterfact-notebook-builder-2026-11-11),
+# so it is linted but not formatted.
+[tool.ruff.format]
+exclude = ["notebooks/*.ipynb"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "RUF"]
-ignore = ["B008"]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "PGH003", "PGH004", "PTH", "RUF", "TID251"]
+ignore = ["B008", "E501"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"counterfact.schema.Run.model_validate_json".msg = "Read run files with counterfact.corpus_io.load_run or load_corpus. Only src/counterfact/corpus_io.py and src/counterfact/analysis/corpus.py may call Run.model_validate_json."
+"counterfact.schema.models.Run.model_validate_json".msg = "Read run files with counterfact.corpus_io.load_run or load_corpus. Only src/counterfact/corpus_io.py and src/counterfact/analysis/corpus.py may call Run.model_validate_json."
 
 [tool.ruff.lint.per-file-ignores]
-"scripts/build_demo_notebook.py" = ["E501", "RUF001", "RUF002"]
+# corpus_io owns run-file parsing. AnalysisCorpus re-parses its in-memory snapshots.
+"src/counterfact/corpus_io.py" = ["TID251"]
+"src/counterfact/analysis/corpus.py" = ["TID251"]
 
 [tool.coverage.run]
-source = ["src/counterfact"]
-# Branch coverage is intentionally off: tests subprocess-invoke the
-# `counterfact` CLI, which creates non-branch coverage files that conflict
-# with branch data on combine. Statement coverage with the 80% gate is the
-# meaningful signal.
-branch = false
-omit = ["bench/*", "tests/*"]
+source_pkgs = ["counterfact", "bench", "scripts"]
+branch = true
+parallel = true
+patch = ["subprocess"]
+relative_files = true
+omit = ["*/bench/real/coding_agent/fixtures/*"]
 
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
+include_namespace_packages = true
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
 ]
 
-[tool.mypy]
-python_version = "3.13"
-files = ["src/counterfact"]
-warn_return_any = true
-warn_unused_ignores = true
-no_implicit_optional = true
-check_untyped_defs = true
+[tool.basedpyright]
+include = ["src/counterfact", "bench", "scripts", "tests"]
+exclude = ["bench/real/coding_agent/fixtures"]
+pythonVersion = "3.14"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "strict"
+enableTypeIgnoreComments = false
+reportUnnecessaryTypeIgnoreComment = "error"
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownLambdaType = false
+reportMissingTypeStubs = false
+
+[[tool.basedpyright.executionEnvironments]]
+root = "tests"
+extraPaths = [".", "src"]
+reportMissingParameterType = false
+reportPrivateUsage = false
+
+[tool.importlinter]
+root_packages = ["counterfact", "bench"]
+
+[[tool.importlinter.contracts]]
+name = "Scientific code must not import CLI, presentation, integrations, corpus_io, or bench; pass data in from the caller"
+type = "forbidden"
+source_modules = [
+    "counterfact.analysis", "counterfact.attribute", "counterfact.baselines",
+    "counterfact.dag", "counterfact.errors", "counterfact.intervene",
+    "counterfact.outcome", "counterfact.policy", "counterfact.schema",
+    "counterfact.stats", "counterfact.taxonomy", "counterfact.trace_localization",
+]
+forbidden_modules = [
+    "counterfact.cli", "counterfact.adapters", "counterfact.tracing",
+    "counterfact.explain", "counterfact.corpus_analyzer", "counterfact.ingest",
+    "counterfact.runrecord_export", "counterfact.corpus_io", "bench",
+]
+
+[[tool.importlinter.contracts]]
+name = "Presentation must not import CLI, adapters, tracing, or bench; take loaded data as arguments"
+type = "forbidden"
+source_modules = ["counterfact.explain", "counterfact.corpus_analyzer"]
+forbidden_modules = ["counterfact.cli", "counterfact.adapters", "counterfact.tracing", "bench"]
+
+[[tool.importlinter.contracts]]
+name = "Domain layers import only lower layers; move shared code to a lower layer such as counterfact.schema"
+type = "layers"
+layers = [
+    "counterfact.cli",
+    "counterfact.compare",
+    "counterfact.diagnose",
+    "counterfact.explain | counterfact.corpus_analyzer",
+    "counterfact.attribute | counterfact.policy",
+    "counterfact.intervene",
+    "counterfact.outcome | counterfact.dag | counterfact.baselines",
+    "counterfact.analysis",
+    "counterfact.taxonomy",
+    "counterfact.errors | counterfact.schema | counterfact.stats",
+]
+
+[[tool.importlinter.contracts]]
+name = "Import order is tracing, then adapters, then corpus_io, then schema; never import upward"
+type = "layers"
+layers = [
+    "counterfact.tracing",
+    "counterfact.adapters",
+    "counterfact.corpus_io",
+    "counterfact.schema",
+]

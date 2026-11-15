@@ -27,13 +27,16 @@ binary outcome is the Manski no-assumption interval.
 
 from __future__ import annotations
 
-import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 import numpy as np
 
-from counterfact.outcome.binary import binary_outcome_value
-from counterfact.outcome.features import decision_feature_values
+from counterfact.analysis.assignment import has_mass as has_mass
+from counterfact.analysis.facts import DecisionFact, RunFact
+from counterfact.analysis.features import decision_feature_values
+from counterfact.analysis.outcomes import binary_outcome_value
+from counterfact.analysis.timeline import first_decision, ordered_steps
 from counterfact.outcome.model import fit_logistic
 from counterfact.schema import Decision, Run
 from counterfact.stats import Z_95
@@ -45,7 +48,7 @@ MAX_CROSS_FIT_FOLDS = 5
 class TreatmentRow:
     arm: str
     propensity: float | None
-    decision: Decision
+    decision: Decision | DecisionFact
     covariates: tuple[str, ...]
     outcome: int
 
@@ -54,6 +57,7 @@ class TreatmentRow:
 class TreatmentData:
     rows: list[TreatmentRow]
     n_excluded: int
+    ambiguities: tuple[str, ...] = ()
 
     def arm_count(self, arm: str) -> int:
         return sum(1 for r in self.rows if r.arm == arm)
@@ -68,20 +72,19 @@ class ContrastEstimate:
     n_folds: int
 
 
-def treatment_data(runs: list[Run], decision_type: str, feature_family: str) -> TreatmentData:
+def treatment_data(
+    runs: Iterable[Run | RunFact], decision_type: str, feature_family: str
+) -> TreatmentData:
     """One row per run that reaches a `decision_type` decision with an arm, keyed on its first."""
     rows: list[TreatmentRow] = []
     excluded = 0
+    ambiguities: list[str] = []
     for run in runs:
-        located = next(
-            (
-                (step.step_index, d)
-                for step in run.steps
-                for d in step.decisions
-                if d.decision_type == decision_type
-            ),
-            None,
-        )
+        try:
+            located = first_decision(run, decision_type)
+        except ValueError as exc:
+            ambiguities.append(str(exc))
+            continue
         arm = logged_arm(located[1], feature_family) if located is not None else None
         if located is None or arm is None:
             excluded += 1
@@ -89,7 +92,7 @@ def treatment_data(runs: list[Run], decision_type: str, feature_family: str) -> 
         treatment_step, decision = located
         covariates = tuple(
             f"{family}::{value}"
-            for step in run.steps
+            for step in ordered_steps(run)
             if step.step_index < treatment_step
             for earlier in step.decisions
             for family, value in decision_feature_values(earlier)
@@ -106,10 +109,10 @@ def treatment_data(runs: list[Run], decision_type: str, feature_family: str) -> 
                 outcome=int(binary_outcome_value(run)),
             )
         )
-    return TreatmentData(rows=rows, n_excluded=excluded)
+    return TreatmentData(rows=rows, n_excluded=excluded, ambiguities=tuple(ambiguities))
 
 
-def logged_arm(decision: Decision, feature_family: str) -> str | None:
+def logged_arm(decision: Decision | DecisionFact, feature_family: str) -> str | None:
     """The canonical arm `decision` chose within `feature_family`, if it logged one."""
     for family, value in decision_feature_values(decision):
         if family == feature_family:
@@ -139,37 +142,6 @@ def randomization_gaps(data: TreatmentData, arms: tuple[str, str]) -> list[str]:
                 f"for {arm!r} cannot be reconstructed from the log"
             )
     return gaps
-
-
-def has_mass(decision: Decision, chosen: str, propensity: float | None, arm: str) -> bool | None:
-    """Whether the logged policy gave `arm` positive probability; None when unknowable."""
-    if chosen == arm:
-        return True
-    valid = decision.valid_actions or []
-    if arm not in valid:
-        return False
-    if len(valid) == 2:
-        # The other arm's probability is 1 - P(chosen).
-        return propensity is not None and propensity < 1.0
-    # Policy names emitted by this repo's harnesses: `uniform` (bench/synthetic)
-    # and `epsilon_greedy` (bench/real/coding_agent/randomize.py). A named policy
-    # counts only when the logged propensity matches what it implies; metadata
-    # that contradicts itself proves nothing.
-    params = decision.policy_params or {}
-    n = len(valid)
-    if decision.policy == "uniform" and _matches(propensity, 1.0 / n):
-        return True
-    if decision.policy == "epsilon_greedy" and "epsilon" in params and "greedy" in params:
-        epsilon = float(params["epsilon"])
-        chose_greedy = chosen == params["greedy"]
-        expected = (1.0 - epsilon) + epsilon / n if chose_greedy else epsilon / n
-        if _matches(propensity, expected):
-            return epsilon > 0 or params["greedy"] == arm
-    return None
-
-
-def _matches(logged: float | None, expected: float) -> bool:
-    return logged is not None and math.isclose(logged, expected, rel_tol=1e-9, abs_tol=1e-9)
 
 
 def adjustment_set(data: TreatmentData) -> list[str]:

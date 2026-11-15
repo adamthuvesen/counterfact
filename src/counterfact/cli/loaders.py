@@ -5,59 +5,38 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from pydantic import ValidationError
-
 from counterfact.cli.constants import BENCH_UNAVAILABLE_MESSAGE, DEFAULT_DEMO_RUNS_DIR
-from counterfact.schema import Run
+from counterfact.corpus_io import CorpusIOError, load_corpus, load_run
+from counterfact.schema import Run, require_focal
 
 
 def load_trace_dir(path: Path, *, command: str) -> list[Run] | None:
-    if not path.exists():
-        return []
-    if not path.is_dir():
-        print(f"counterfact {command}: trace directory not found: {path}", file=sys.stderr)
-        return None
     return load_corpus_dir(path, command=command)
 
 
 def load_run_file(path: Path, *, command: str) -> Run | None:
-    if not path.exists() or not path.is_file():
-        print(f"counterfact {command}: run JSON not found: {path}", file=sys.stderr)
-        return None
     try:
-        return Run.model_validate_json(path.read_text())
-    except (OSError, ValidationError, ValueError) as exc:
-        print(f"counterfact {command}: failed to parse {path}: {exc}", file=sys.stderr)
+        return load_run(path)
+    except CorpusIOError as exc:
+        print(f"counterfact {command}: {exc}", file=sys.stderr)
         return None
 
 
 def load_corpus_dir(path: Path, *, command: str) -> list[Run] | None:
-    if not path.exists() or not path.is_dir():
-        print(f"counterfact {command}: corpus directory not found: {path}", file=sys.stderr)
+    try:
+        return load_corpus(path)
+    except CorpusIOError as exc:
+        print(f"counterfact {command}: {exc}", file=sys.stderr)
         return None
-    corpus: list[Run] = []
-    for trace_path in sorted(path.glob("*.json")):
-        if trace_path.name.endswith("receipt.json"):
-            continue
-        try:
-            corpus.append(Run.model_validate_json(trace_path.read_text()))
-        except (OSError, ValidationError, ValueError) as exc:
-            print(
-                f"counterfact {command}: failed to parse {trace_path}: {exc}",
-                file=sys.stderr,
-            )
-            return None
-    return corpus
 
 
 def require_focal_in_corpus(focal: Run, corpus: list[Run], runs_dir: Path, *, command: str) -> bool:
-    if focal.run_id in {run.run_id for run in corpus}:
-        return True
-    print(
-        f"counterfact {command}: focal run_id={focal.run_id!r} not found in {runs_dir}",
-        file=sys.stderr,
-    )
-    return False
+    try:
+        require_focal(focal, corpus)
+    except ValueError as exc:
+        print(f"counterfact {command}: {exc} in {runs_dir}", file=sys.stderr)
+        return False
+    return True
 
 
 def load_focal_and_corpus(

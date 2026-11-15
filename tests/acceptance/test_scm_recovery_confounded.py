@@ -22,17 +22,18 @@ from bench.synthetic import (
 )
 from counterfact import build_dag, fit_outcome_model, intervene, pass_rate_by_arm
 from counterfact.intervene import IdentifiabilityStatus
+from counterfact.outcome.model import OutcomeModel
 from counterfact.schema import Run
 
 
 @pytest.fixture(scope="module")
-def confounded_corpus() -> tuple[list[Run], object]:
+def confounded_corpus() -> tuple[list[Run], OutcomeModel]:
     runs = [Run.model_validate(t) for t in generate_traces(n=1000, seed=42, confound=True)]
     model = fit_outcome_model(runs, seed=42)
     return runs, model
 
 
-def _arm_gap(model: object, runs: list[Run]) -> float:
+def _arm_gap(model: OutcomeModel, runs: list[Run]) -> float:
     dag = build_dag(runs[0])
     estimate = intervene(
         dag=dag, model=model, step=2, intervention={"model_choice": "sonnet"}, baseline="haiku"
@@ -43,7 +44,7 @@ def _arm_gap(model: object, runs: list[Run]) -> float:
 
 
 def test_engine_recovers_do_calculus_arm_gap_within_tolerance(
-    confounded_corpus: tuple[list[Run], object],
+    confounded_corpus: tuple[list[Run], OutcomeModel],
 ) -> None:
     """Engine's g-formula recovers the do-calculus arm gap within ±0.05."""
     runs, model = confounded_corpus
@@ -59,7 +60,7 @@ def test_engine_recovers_do_calculus_arm_gap_within_tolerance(
 
 
 def test_engine_beats_naive_on_confounded_corpus(
-    confounded_corpus: tuple[list[Run], object],
+    confounded_corpus: tuple[list[Run], OutcomeModel],
 ) -> None:
     """The engine's deviation from the do-calculus truth is strictly smaller
     than the descriptive baseline's deviation. This is the showcase claim:

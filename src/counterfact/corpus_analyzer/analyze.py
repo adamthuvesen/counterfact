@@ -8,7 +8,11 @@ no LLM calls, no filesystem writes.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Literal
 
+from counterfact.analysis import AnalysisCorpus
+from counterfact.analysis.outcomes import binary_outcome_value
+from counterfact.analysis.timeline import ordered_steps
 from counterfact.baselines import pass_rate_by_arm
 from counterfact.corpus_analyzer.report import (
     ArmSupportRow,
@@ -21,13 +25,9 @@ from counterfact.corpus_analyzer.report import (
 from counterfact.corpus_analyzer.rubric import DEFAULT_THRESHOLDS, RubricThresholds
 from counterfact.dag import build_dag
 from counterfact.errors import (
-    InsufficientOutcomeSupportError,
     InvalidInterventionError,
 )
 from counterfact.intervene import intervene
-from counterfact.outcome import fit_outcome_model
-from counterfact.outcome.binary import binary_outcome_value
-from counterfact.outcome.model import OutcomeModel
 from counterfact.schema import Run
 from counterfact.taxonomy import DECISION_TYPES, valid_interventions
 
@@ -72,39 +72,36 @@ def _intervention_kinds_for(decision_type: str) -> tuple[str, ...]:
     return tuple(sorted(valid_interventions(decision_type)))
 
 
-def _index_single_decision_steps(
+def _index_decisions(
     runs: list[Run],
-) -> dict[tuple[str, str], tuple[Run, int]]:
+) -> dict[tuple[str, str], tuple[Run, int, str]]:
     """Build a (decision_type, chosen_action) -> (run, step_index) index.
 
     The probe loop hits this lookup in a triple loop; computing it once turns
     the inner search from O(runs * steps) per probe into O(1).
     """
-    index: dict[tuple[str, str], tuple[Run, int]] = {}
+    index: dict[tuple[str, str], tuple[Run, int, str]] = {}
     for run in runs:
-        for step in run.steps:
-            if len(step.decisions) != 1:
-                continue
-            d = step.decisions[0]
-            if not d.chosen_action:
-                continue
-            key = (d.decision_type, d.chosen_action)
-            index.setdefault(key, (run, step.step_index))
+        for step in ordered_steps(run):
+            for decision in step.decisions:
+                if not decision.chosen_action:
+                    continue
+                key = (decision.decision_type, decision.chosen_action)
+                index.setdefault(key, (run, step.step_index, decision.decision_id))
     return index
 
 
-def _unfittable_coverage() -> tuple[IdentifiabilityCoverage, set[str]]:
+def _unfittable_coverage(
+    reason: Literal["single_class", "no_features"] = "single_class",
+) -> tuple[IdentifiabilityCoverage, set[str]]:
     return (
-        IdentifiabilityCoverage(reachable=["unidentified"], unfittable_outcome_model=True),
+        IdentifiabilityCoverage(
+            reachable=["unidentified"],
+            unfittable_outcome_model=True,
+            unfittable_reason=reason,
+        ),
         set(),
     )
-
-
-def _fit_probe_model(runs: list[Run]) -> OutcomeModel | None:
-    try:
-        return fit_outcome_model(runs, seed=_PROBE_SEED)
-    except InsufficientOutcomeSupportError:
-        return None
 
 
 def _arms_by_decision_type(arms: list[ArmSupportRow]) -> dict[str, list[str]]:
@@ -116,9 +113,9 @@ def _arms_by_decision_type(arms: list[ArmSupportRow]) -> dict[str, list[str]]:
 
 def _probe_reachable_identifiability(
     *,
-    model: OutcomeModel,
+    model: AnalysisCorpus,
     arms_by_dt: dict[str, list[str]],
-    step_index: dict[tuple[str, str], tuple[Run, int]],
+    step_index: dict[tuple[str, str], tuple[Run, int, str]],
 ) -> tuple[set[IdentifiabilityName], set[str]]:
     reachable: set[IdentifiabilityName] = set()
     identified_decision_types: set[str] = set()
@@ -131,12 +128,13 @@ def _probe_reachable_identifiability(
                 baseline = next((other for other in dt_arms if other != arm), None)
                 if located is None or baseline is None:
                     continue
-                run, step_idx = located
+                run, step_idx, decision_id = located
                 try:
                     est = intervene(
                         dag=build_dag(run),
                         model=model,
                         step=step_idx,
+                        decision_id=decision_id,
                         intervention={kind: baseline},
                         baseline=arm,
                     )
@@ -161,12 +159,11 @@ def _identifiability_coverage(
     if len(classes) < 2:
         # Single-class corpus — outcome model can't fit. Only the unidentified
         # paths (always-replay, degenerate) are reachable through the engine.
-        # We mark that explicitly so the rubric reasoning is honest.
         return _unfittable_coverage()
 
-    model = _fit_probe_model(runs)
-    if model is None:
-        return _unfittable_coverage()
+    model = AnalysisCorpus(runs, seed=_PROBE_SEED)
+    if not model.feature_index:
+        return _unfittable_coverage("no_features")
 
     # Precompute once: intervention kinds per decision type and a single-step
     # lookup index. Both were recomputed inside the triple loop before, which
@@ -174,7 +171,7 @@ def _identifiability_coverage(
     reachable, identified_decision_types = _probe_reachable_identifiability(
         model=model,
         arms_by_dt=_arms_by_decision_type(arms),
-        step_index=_index_single_decision_steps(runs),
+        step_index=_index_decisions(runs),
     )
 
     # Stable order for the report
@@ -195,6 +192,7 @@ def _score_outcome_balance(
             name="outcome_balance",
             passed=False,
             reason="outcome_balance: empty corpus vs at least 1 trace",
+            reason_code="empty_corpus",
         )
     pr = balance.pass_rate
     lo = thresholds.min_pass_rate
@@ -205,6 +203,7 @@ def _score_outcome_balance(
         name="outcome_balance",
         passed=False,
         reason=f"outcome_balance: pass_rate={pr:.3f} outside [{lo:.3f}, {hi:.3f}]",
+        reason_code="single_class" if balance.n_pass == 0 or balance.n_fail == 0 else "imbalanced",
     )
 
 
@@ -260,13 +259,21 @@ def _score_identifiability(
             name="identifiability_coverage", passed=True, reason="identifiability_coverage: ok"
         )
     if coverage.unfittable_outcome_model:
+        detail = (
+            "single-class corpus"
+            if coverage.unfittable_reason == "single_class"
+            else "no intervenable decision features"
+        )
         return RubricCriterion(
             name="identifiability_coverage",
             passed=False,
             reason=(
                 "identifiability_coverage: outcome model unfittable "
-                "(single-class corpus); no identified results possible"
+                f"({detail}); no identified results possible"
             ),
+            reason_code="single_class"
+            if coverage.unfittable_reason == "single_class"
+            else "support_gap",
         )
     reachable_str = ",".join(coverage.reachable) if coverage.reachable else "(none)"
     return RubricCriterion(
@@ -350,7 +357,9 @@ def analyze(
     Returns a `CorpusReadinessReport`. The function is deterministic, makes
     no LLM calls, and writes no files. Empty inputs are reported (not raised).
     """
-    runs_list: list[Run] = list(runs)
+    runs_list = list(runs)
+    if runs_list:
+        runs_list = AnalysisCorpus(runs_list, seed=_PROBE_SEED).runs
     balance = _outcome_balance(runs_list)
     arms = _arm_support(runs_list)
     coverage, identified_dts = _identifiability_coverage(runs_list, arms)

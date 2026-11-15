@@ -12,3 +12,8 @@ These are the honesty guarantees `counterfact` defends. A change that weakens an
 - `pass_rate_by_arm()` is descriptive, not causal. Keep that distinction visible in demos, docs, tests, and CLI output.
 - Synthetic SCM tests should remain deterministic by seed and recover the known headline effect within the acceptance tolerance.
 - Policy evaluation follows the same rules at every controlled decision: logged propensities, positive probability for the policy's action, and history from strictly earlier steps only. The matched-runs average stays labeled descriptive.
+
+- Sampling intervals carry their estimator method. AIPW intervals are not clipped to probability limits. Policy intervals use their sequential method.
+- `bounded` does not promise an interval. `unidentified` carries neither a point estimate nor identification bounds.
+- Focal targeting selects a population contrast. It does not identify an individualized or occurrence-specific effect. Explicit IDs cannot resolve repeated-type focal ambiguity.
+- Analysis facts snapshot validated inputs. Mutating source traces or returned result views must not change an existing analysis.

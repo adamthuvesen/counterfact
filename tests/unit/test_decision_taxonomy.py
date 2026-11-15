@@ -5,14 +5,10 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from counterfact.schema import Decision, Run
-
-# --- registry ---------------------------------------------------------------
+from counterfact.schema import Decision, Outcome, Run
 
 
 def test_registry__all_six_types_are_present() -> None:
-    """WHEN counterfact.taxonomy.DECISION_TYPES is enumerated
-    THEN it contains exactly the six v0 names, no more and no fewer."""
     from counterfact.taxonomy import DECISION_TYPES
 
     assert set(DECISION_TYPES) == {
@@ -26,35 +22,24 @@ def test_registry__all_six_types_are_present() -> None:
 
 
 def test_registry__unknown_decision_types_are_rejected() -> None:
-    """WHEN a trace with Decision(decision_type="reflect") is loaded
-    THEN the system raises a pydantic.ValidationError referencing the unknown type."""
     with pytest.raises(ValidationError) as exc_info:
-        Decision(decision_id="d-x", decision_type="reflect")  # type: ignore[arg-type]
+        Decision(decision_id="d-x", decision_type="reflect")  # pyright: ignore[reportArgumentType]  # unknown type on purpose
     assert "reflect" in str(exc_info.value)
 
 
-# --- valid interventions ----------------------------------------------------
-
-
 def test_valid_interventions__tool_call_declares_tool_choice() -> None:
-    """WHEN the runtime queries valid_interventions("tool_call")
-    THEN the result includes "tool_choice"."""
     from counterfact.taxonomy import valid_interventions
 
     assert "tool_choice" in valid_interventions("tool_call")
 
 
 def test_valid_interventions__tool_call_rejects_model_choice() -> None:
-    """WHEN the runtime queries is_valid_intervention("tool_call", "model_choice")
-    THEN the result is False."""
     from counterfact.taxonomy import is_valid_intervention
 
     assert is_valid_intervention("tool_call", "model_choice") is False
 
 
 def test_valid_interventions__model_call_exact_set() -> None:
-    """WHEN the runtime queries valid_interventions("model_call")
-    THEN the result is exactly {model_choice, prompt_template, prompt_content, temperature}."""
     from counterfact.taxonomy import valid_interventions
 
     assert set(valid_interventions("model_call")) == {
@@ -65,39 +50,25 @@ def test_valid_interventions__model_call_exact_set() -> None:
     }
 
 
-# --- identifiability stance --------------------------------------------------
-
-
 def test_identifiability_stance__prompt_content_is_always_replay() -> None:
-    """WHEN identifiability_stance("model_call", "prompt_content") is queried
-    THEN the result is "always-replay"."""
     from counterfact.taxonomy import identifiability_stance
 
     assert identifiability_stance("model_call", "prompt_content") == "always-replay"
 
 
 def test_identifiability_stance__tool_choice_requires_randomized_support() -> None:
-    """WHEN identifiability_stance("tool_call", "tool_choice") is queried
-    THEN the result is "requires-randomized-support"."""
     from counterfact.taxonomy import identifiability_stance
 
     assert identifiability_stance("tool_call", "tool_choice") == "requires-randomized-support"
 
 
-# --- parent declarations -----------------------------------------------------
-
-
 def test_parent_types__tool_call_lists_plan_step_as_parent() -> None:
-    """WHEN parent_types("tool_call") is queried
-    THEN "plan_step" is in the result."""
     from counterfact.taxonomy import parent_types
 
     assert "plan_step" in parent_types("tool_call")
 
 
 def test_parent_types__termination_has_no_required_parents() -> None:
-    """WHEN parent_types("termination") is queried
-    THEN the result is allowed to be empty (no required parents)."""
     from counterfact.taxonomy import parent_types
 
     parents = parent_types("termination")
@@ -106,12 +77,7 @@ def test_parent_types__termination_has_no_required_parents() -> None:
     assert all(isinstance(p, str) for p in parents)
 
 
-# --- feature extraction ------------------------------------------------------
-
-
 def test_feature_extraction__tool_call_extracts_tool_name_and_step_index() -> None:
-    """WHEN extract_features(decision, run) is called for a tool_call decision
-    THEN the returned dict contains keys "tool_name" and "step_index" with correct values."""
     from counterfact.schema import Step
     from counterfact.taxonomy import extract_features
 
@@ -125,7 +91,7 @@ def test_feature_extraction__tool_call_extracts_tool_name_and_step_index() -> No
         schema_version="0.1.0",
         run_id="r-feat",
         steps=[step],
-        outcome={"kind": "binary", "value": True, "verifier": "pytest"},
+        outcome=Outcome(kind="binary", value=True, verifier="pytest"),
     )
     feats = extract_features(decision, run)
     assert feats["tool_name"] == "run_tests"
@@ -133,8 +99,6 @@ def test_feature_extraction__tool_call_extracts_tool_name_and_step_index() -> No
 
 
 def test_feature_extraction__unknown_decision_type_raises() -> None:
-    """WHEN extract_features is called for a decision-type-string not in DECISION_TYPES
-    THEN the system raises a KeyError or UnknownDecisionTypeError."""
     from counterfact.errors import UnknownDecisionTypeError
     from counterfact.taxonomy import extract_features
 
@@ -148,7 +112,7 @@ def test_feature_extraction__unknown_decision_type_raises() -> None:
         schema_version="0.1.0",
         run_id="r-x",
         steps=[],
-        outcome={"kind": "binary", "value": True, "verifier": "pytest"},
+        outcome=Outcome(kind="binary", value=True, verifier="pytest"),
     )
     with pytest.raises((KeyError, UnknownDecisionTypeError)):
-        extract_features(_Stub(), run)  # type: ignore[arg-type]
+        extract_features(_Stub(), run)  # pyright: ignore[reportArgumentType]  # unknown type on purpose

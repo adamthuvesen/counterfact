@@ -4,7 +4,7 @@ This page covers getting traces in, every CLI command, and the core Python objec
 
 ## Getting traces in
 
-You can capture traces live while your agent runs, or ingest a trace dump after the fact. Both paths share one mapping, so `corpus/<id>.json` is byte-equivalent whichever way you produced it.
+You can capture traces live while your agent runs, or ingest a trace dump after the fact. Both paths share one mapping. Equivalent source records and explicit outcomes produce the same native run. Live OpenAI capture can preserve an absent outcome as categorical `unknown`. Malformed outcome markers still fail.
 
 ```text
 your agent run ─┬─► live tracer  ─┐
@@ -24,8 +24,8 @@ your agent run ─┬─► live tracer  ─┐
 Offline ingest:
 
 ```bash
-uv run counterfact ingest claude-agent-sdk traces.jsonl --output-dir corpus/
-uv run counterfact diagnose corpus/<session-id>.json --runs-dir corpus/
+uv run --locked counterfact ingest claude-agent-sdk traces.jsonl --output-dir corpus/
+uv run --locked counterfact diagnose corpus/<session-id>.json --runs-dir corpus/
 ```
 
 `traces.jsonl` is one session per line, each line either a JSON object `{"messages": [...]}` or a JSON array of message dicts. There is no mapping file: counterfact reads `session_id`, `ToolUseBlock`, `AssistantMessage.model`, and `ResultMessage.is_error` directly.
@@ -48,8 +48,8 @@ async with ClaudeAgentTracer(output_dir=Path("corpus/")) as tracer:
 Offline ingest:
 
 ```bash
-uv run counterfact ingest openai-agents trace.json --output-dir corpus/ --outcome pass
-uv run counterfact diagnose corpus/<trace-id>.json --runs-dir corpus/
+uv run --locked counterfact ingest openai-agents trace.json --output-dir corpus/ --outcome pass
+uv run --locked counterfact diagnose corpus/<trace-id>.json --runs-dir corpus/
 ```
 
 `--outcome pass|fail` is required when the trace has neither a root error nor a `counterfact.outcome` marker span. counterfact never infers pass/fail from "no error". That would manufacture a confidence the data does not support.
@@ -70,24 +70,26 @@ add_trace_processor(
 )
 ```
 
+Offline ingest creates a new destination. Live tracers explicitly append and reject collisions or inconsistent receipts. See [migration.md](migration.md#ingest-publication) for interrupted-write recovery and legacy corpus behavior.
+
 ## CLI
 
 ### Diagnose A Failed Trace
 
 ```bash
-uv run counterfact diagnose bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000000.json \
+uv run --locked counterfact diagnose bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000001.json \
   --runs-dir bench/real/smoke_mixed_outcome \
   --top-k 3
 ```
 
-Use `--json` to emit the reusable diagnosis artifact. Numeric effects appear only when the underlying `CausalEstimate` is identified or bounded; unsupported entries carry concrete `next_step` guidance instead.
+Use `--json` to emit the reusable diagnosis artifact. Point estimates appear only for `identified` results. A `bounded` result may carry identification bounds. Unsupported entries carry concrete `next_step` guidance.
 
 Use `--html report.html` to write a self-contained diagnosis report with the same ranked decisions, trace context, and support diagnostics, with numeric effects hidden for `unidentified` decisions. `--json --html report.html` keeps stdout as JSON and writes the HTML path notification to stderr.
 
 ### Compare Two Traces
 
 ```bash
-uv run counterfact compare pass.json fail.json
+uv run --locked counterfact compare pass.json fail.json
 ```
 
 This is a descriptive trace diff: outcome, steps, decision actions, and observation counts. Add `--runs-dir <corpus> --focal right` to overlay a corpus-backed diagnosis for one side. Without a corpus, `compare` does not make causal claims.
@@ -95,7 +97,7 @@ This is a descriptive trace diff: outcome, steps, decision actions, and observat
 ### Explain A Trace
 
 ```bash
-uv run counterfact explain bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000000.json \
+uv run --locked counterfact explain bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000000.json \
   --runs-dir bench/real/smoke_mixed_outcome \
   --output report.html
 ```
@@ -105,24 +107,24 @@ This writes a self-contained HTML report and prints its absolute path. The repor
 ### Intervene On A Decision
 
 ```bash
-uv run counterfact intervene bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000000.json \
+uv run --locked counterfact intervene bench/real/smoke_mixed_outcome/real-streaming_watermark_dedupe-000000.json \
   --runs-dir bench/real/smoke_mixed_outcome \
   --decision-id d-000000-model-1 \
   --set model_choice=small
 ```
 
-This trace chose `large`, so the answer is the contrast `E[Y | do(small)] - E[Y | do(large)]`. On the committed corpus it is `identified` at -0.656 [-0.792, -0.519], with g-formula and IPW cross-checks. Pass `--baseline <arm>` to contrast against an arm other than the logged one.
+This trace chose `large`, so the answer is `E[Y | do(small)] - E[Y | do(large)]`. Pass `--baseline <arm>` to choose another baseline. The result includes identification checks and estimator diagnostics.
 
 Decision IDs are listed in the trace timeline rendered by `counterfact explain`.
 
 Use `--json` or `--output estimate.json` to emit the reusable `CausalEstimate` artifact.
 
-Prefer `--decision-id` for precise targeting. `--step <n>` is accepted only when the step contains exactly one decision.
+Prefer `--decision-id` for precise targeting. `--step <n>` requires exactly one decision. An explicit ID supports different decision types in one step. Repeated decisions of the same type still refuse focal localization. Use Python `contrast` for the same first-occurrence population question without a focal trace.
 
 Useful trace-level questions:
 
 - wrong model choice: `--set model_choice=small`
-- logged temperature choice: `--set temperature=0.7`. Temperature is logged as metadata, not as a randomized arm, so this returns `bounded` with Manski bounds
+- logged temperature choice: `--set temperature=0.7`. Temperature is logged as metadata, not as a randomized arm, so this returns `bounded` with Manski bounds. It needs a corpus that logs temperature; the smoke corpus does not
 - bad tool choice: `--set tool_choice=run_tests`
 - missed retry: `--set retry_policy=retry_once`
 - stopped too early: inspect the termination decision in `counterfact explain`
@@ -131,7 +133,7 @@ Useful trace-level questions:
 ### Analyze A Corpus
 
 ```bash
-uv run counterfact analyze corpus bench/real/smoke_mixed_outcome
+uv run --locked counterfact analyze corpus bench/real/smoke_mixed_outcome
 ```
 
 The analyzer checks whether a trace corpus has enough support for counterfactual trace diagnosis and intervention estimates. It reports; it does not promote, score, rank, or rename anything.
@@ -139,7 +141,7 @@ The analyzer checks whether a trace corpus has enough support for counterfactual
 ### Ingest Generic JSONL
 
 ```bash
-uv run counterfact ingest generic-jsonl source.jsonl \
+uv run --locked counterfact ingest generic-jsonl source.jsonl \
   --mapping mapping.json \
   --output-dir traces/
 ```
@@ -166,17 +168,26 @@ The command writes native `Run` JSON files plus `ingest-receipt.json` with warni
 ### Export To Parquet
 
 ```bash
-uv run counterfact export-runs bench/real/smoke_mixed_outcome \
+uv run --locked counterfact export-runs bench/real/smoke_mixed_outcome \
   --to runrecord-parquet \
   --output /tmp/counterfact-runs.parquet
 ```
 
-This writes one parquet row per run (agent identity, outcome, cost, tokens, provenance) plus a receipt that records how each column was derived. Use it to load a corpus into your own analysis tools. `counterfact` does no population-level scoring itself.
+This writes one eval-audit `RunRecord` row per run and a versioned derivation receipt. The columns, types, and enum values are exactly those of eval-audit's `RunRecord`.
+
+- Each run needs a task id: `metadata.extra.task_id`, or the `outcome.metadata.fixture_id` that `bench real` logs. A run without one stops the export. eval-audit pairs rows on `task_id`, so the run id cannot stand in.
+- Each run needs a `model_call` decision, because eval-audit requires `model_id`.
+- Runs with a nonbinary outcome are excluded. The output prints `excluded: N ungraded run(s)` and the receipt records `excluded_ungraded_count`.
+- Untracked tokens export as `0`, the value eval-audit documents for untracked tokens. `rerun_metadata.tokens_in_source` and `tokens_out_source` are `not_available` for those rows.
+- `metadata.extra.timestamp` must be an ISO 8601 string with a UTC offset.
+- `rerun_metadata` keeps the counterfact-only provenance as strings: `model_ids`, `cost_sources`, token sources, and `counterfact_cost_provenance`.
+
+[Migration](migration.md#parquet-export-version-3) gives the cost provenance mapping.
 
 ### Evaluate A Policy
 
 ```bash
-uv run counterfact evaluate-policy corpus/ --policy sonnet_retry_on_fail.json --observation-key tests_passed
+uv run --locked counterfact evaluate-policy corpus/ --policy sonnet_retry_on_fail.json --observation-key tests_passed
 ```
 
 `sonnet_retry_on_fail.json` declares what the agent should do at each decision type it controls. Every other decision stays as logged:
@@ -200,7 +211,7 @@ The answer is V(policy) - V(logged), or V(policy) - V(baseline) with `--baseline
 ### Benchmark The Estimator
 
 ```bash
-uv run counterfact bench suite --seeds 500 --markdown docs/benchmark-results.md
+uv run --locked counterfact bench suite --seeds 500 --markdown docs/benchmark-results.md
 ```
 
 This scores the naive table, an adjust-everything g-formula, and the engine on every scenario in `bench/synthetic/scenarios.py`. It is deterministic and local. See [report §5](report.md#5-results) for the results.
@@ -208,36 +219,45 @@ This scores the naive table, an adjust-everything g-formula, and the engine on e
 ### Generate Synthetic Traces
 
 ```bash
-uv run counterfact bench synthetic --n 500 --seed 42 --output-dir /tmp/counterfact-syn
+uv run --locked counterfact bench synthetic --n 500 --seed 42 --output-dir /tmp/counterfact-syn
 ```
 
 This is deterministic and local.
 
 ## Python API
 
+The synthetic example requires a checkout. Causal queries use a validated snapshot and do not need a descriptive global fit.
+
 ```python
 from bench.synthetic import generate_traces
-from counterfact import build_dag, fit_outcome_model, intervene, pass_rate_by_arm
+from counterfact import AnalysisCorpus, build_dag, contrast, intervene, pass_rate_by_arm
 from counterfact.schema import Run
 
 runs = [Run.model_validate(trace) for trace in generate_traces(n=500, seed=42)]
-
+corpus = AnalysisCorpus(runs, seed=42)
 table = pass_rate_by_arm(runs, "model_call")
-model = fit_outcome_model(runs, seed=42)
-dag = build_dag(runs[0])
 
-estimate = intervene(
-    dag=dag,
-    model=model,
-    step=2,
+population = contrast(
+    corpus=corpus,
+    decision_type="model_call",
     intervention={"model_choice": "sonnet"},
     baseline="haiku",
 )
 
-print(table)
-print(estimate.identifiability)
-print(estimate.outcome_delta)
-print(estimate.next_step)
+focal = runs[0]
+step = next(s for s in focal.steps if any(d.decision_type == "model_call" for d in s.decisions))
+decision = next(d for d in step.decisions if d.decision_type == "model_call")
+target = "sonnet" if decision.chosen_action == "haiku" else "haiku"
+focal_query = intervene(
+    dag=build_dag(focal),
+    model=corpus,
+    step=step.step_index,
+    decision_id=decision.decision_id,
+    intervention={"model_choice": target},
+)
+
+print(population.identifiability, population.outcome_delta)
+print(focal_query.query, focal_query.next_step)
 ```
 
 ## Concepts
@@ -245,14 +265,16 @@ print(estimate.next_step)
 - `Run`: one agent trace with steps, decisions, observations, and a final outcome.
 - `Decision`: a logged choice such as `model_call`, `tool_call`, `retry`, `plan_step`, `memory_read`, or `termination`.
 - `build_dag()`: builds an inspectable per-trace graph from logged structure. The graph is not learned from data.
-- `fit_outcome_model()`: validates a corpus and fits a transparent binary outcome model over it. Single-class corpora return `unidentified` instead of pretending to fit.
-- `intervene()`: estimates `E[Y | do(target)] - E[Y | do(baseline)]` for one decision and returns a structured `CausalEstimate`. The baseline defaults to the arm the trace chose.
+- `AnalysisCorpus`: validates binary traces and snapshots immutable analysis facts. Returned run copies cannot mutate the snapshot.
+- `contrast()`: estimates the first-occurrence total effect with an explicit baseline. Later occurrences remain downstream.
+- `fit_outcome_model()`: fits a descriptive logistic model. Single-class or featureless inputs raise `InsufficientOutcomeSupportError`.
+- `intervene()`: uses a focal decision to select a population contrast. The baseline defaults to the focal action. The library permits an external focal trace. CLI analysis requires corpus membership. It does not estimate an individualized counterfactual.
 - `evaluate_policy()`: estimates how success would change if the agent followed a `Policy` at the decision types it controls, and returns a `PolicyEstimate` with the same identifiability labels.
 - `pass_rate_by_arm()`: descriptive baseline, not a causal claim.
 
 ## Real-Agent Trace Corpora
 
-The real-agent harness can call external LLM APIs and spend money. The local demo, synthetic generator, analyzer, and tests do not require provider credentials.
+The real-agent harness can call external LLM APIs and spend money. The local demo, synthetic generator, analyzer, and offline tests do not require provider credentials. Docker tests additionally require the verifier image.
 
-Do not run real-agent benchmarks as routine validation. `counterfact bench real` refuses to start until `.counterfact/approved` contains a JSON approval receipt matching the command's trace count, budget cap, output directory, fixture set, model map, and randomization config. See [`bench/real/README.md`](../bench/real/README.md) for fixture sets, the routed-trial design, and budgeted commands.
+Do not run real-agent benchmarks as routine validation. `counterfact bench real` refuses to start until `.counterfact/approved` contains a JSON approval receipt covering the requested trace count and matching the budget, output directory, fixtures, model map, and randomization config. See [`bench/real/README.md`](../bench/real/README.md) for fixture sets, the routed-trial design, and budgeted commands.
 

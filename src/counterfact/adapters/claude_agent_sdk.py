@@ -20,10 +20,10 @@ from counterfact.adapters._common import (
     IngestError,
     IngestReceipt,
     StepBuilder,
-    randomization_warning,
     strict_bool,
-    write_corpus,
+    write_sdk_corpus,
 )
+from counterfact.corpus_io import read_text
 from counterfact.schema import Decision, Metadata, Observation, Outcome, Run, Step
 from counterfact.schema.models import SCHEMA_VERSION
 
@@ -258,6 +258,8 @@ def run_from_messages(messages: list[dict[str, Any]]) -> Run:
         raise IngestError("claude-agent-sdk message stream is empty")
 
     for idx, msg in enumerate(messages):
+        if not isinstance(msg, dict):  # pyright: ignore[reportUnnecessaryIsInstance]  # untrusted JSON input
+            raise IngestError(f"record {idx}: message must be a JSON object")
         if _message_type(msg) not in _KNOWN_MESSAGE_TYPES:
             raise IngestError(
                 f"record {idx}: unknown message type {_message_type(msg)!r}; "
@@ -302,11 +304,10 @@ def run_from_messages(messages: list[dict[str, Any]]) -> Run:
     steps.steps.append(_terminal_step(result_msg, run_id=run_id, step_index=steps.next_step_index))
 
     metadata_extra: dict[str, Any] = {"source_format": SOURCE_FORMAT}
-    if result_msg is not None:
-        for key in ("total_cost_usd", "usage", "model_usage", "duration_ms", "duration_api_ms"):
-            value = result_msg.get(key)
-            if value is not None:
-                metadata_extra[key] = value
+    for key in ("total_cost_usd", "usage", "model_usage", "duration_ms", "duration_api_ms"):
+        value = result_msg.get(key)
+        if value is not None:
+            metadata_extra[key] = value
 
     return Run(
         schema_version=SCHEMA_VERSION,
@@ -332,10 +333,8 @@ def ingest_claude_agent_sdk(
     output directory.
     """
 
-    text = source_path.read_text()
+    text = read_text(source_path)
     runs: list[Run] = []
-    warnings = [randomization_warning(SOURCE_FORMAT)]
-
     for line_no, raw_line in enumerate(text.splitlines(), start=1):
         if not raw_line.strip():
             continue
@@ -361,14 +360,9 @@ def ingest_claude_agent_sdk(
             raise IngestError(f"{source_path}: line {line_no}: {exc}") from exc
         runs.append(run)
 
-    receipt = IngestReceipt(
-        source_format=SOURCE_FORMAT,
-        source_file=str(source_path),
-        generated_count=len(runs),
-        warnings=warnings,
+    return write_sdk_corpus(
+        runs, output_dir, source_format=SOURCE_FORMAT, source_file=str(source_path)
     )
-    write_corpus(runs, output_dir, receipt)
-    return receipt
 
 
 __all__ = [

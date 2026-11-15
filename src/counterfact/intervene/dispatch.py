@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from counterfact.analysis import AnalysisCorpus
 from counterfact.dag import DAG
 from counterfact.intervene.estimate import (
     CausalEstimate,
@@ -36,15 +37,14 @@ from counterfact.intervene.support import (
     missing_arms_for,
     replay_inputs_for,
 )
-from counterfact.outcome.model import OutcomeModel
 from counterfact.taxonomy import IdentifiabilityStance
 
 
 @dataclass(frozen=True)
 class InterveneContext:
     dag: DAG
-    model: OutcomeModel
-    step: int
+    model: AnalysisCorpus
+    step: int | None
     query: InterventionQuery
     intervention_kind: str
     target_value: Any
@@ -375,7 +375,19 @@ def handle_randomized_support(ctx: InterveneContext) -> CausalEstimate:
     baseline = ctx.baseline_arm_name
     if baseline is None:
         raise ValueError("randomized-support contrasts require a resolved baseline arm")
-    data = treatment_data(ctx.model.runs, ctx.decision_type, ctx.feature_family)
+    data = treatment_data(ctx.model.facts, ctx.decision_type, ctx.feature_family)
+    if data.ambiguities:
+        return build_broaden_arm_support_estimate(
+            ctx.query,
+            reason="; ".join(data.ambiguities),
+            observed_rows=[],
+            missing_arms=[],
+            missing_strata=list(data.ambiguities),
+            human_text=(
+                "Log one unambiguous first decision per type and step "
+                "before estimating this contrast."
+            ),
+        )
     missing = [arm for arm in (ctx.target_arm_name, baseline) if data.arm_count(arm) == 0]
     if missing:
         return handle_no_support(ctx, missing)
@@ -393,7 +405,7 @@ def _contrast_estimand(ctx: InterveneContext, baseline: str) -> str:
     return f"E[Y | do({family}={ctx.target_arm_name})] - E[Y | do({family}={baseline})]"
 
 
-_STANCE_HANDLERS: dict[IdentifiabilityStance, Callable[[InterveneContext], CausalEstimate]] = {
+STANCE_HANDLERS: dict[IdentifiabilityStance, Callable[[InterveneContext], CausalEstimate]] = {
     "always-replay": handle_always_replay,
     "requires-back-door-adjustment": handle_back_door_bounded,
     "requires-randomized-support": handle_randomized_support,

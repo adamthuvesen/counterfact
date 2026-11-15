@@ -16,14 +16,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from counterfact.adapters._common import (
-    IngestError,
-    IngestReceipt,
-    randomization_warning,
-    read_existing_receipt_count,
-    write_corpus,
-)
-from counterfact.adapters.openai_agents import SOURCE_FORMAT, run_from_trace
+from counterfact.adapters._common import write_sdk_corpus
+from counterfact.adapters.openai_agents import SOURCE_FORMAT, MissingOutcomeError, run_from_trace
 from counterfact.schema import Outcome, Run
 
 logger = logging.getLogger(__name__)
@@ -52,19 +46,9 @@ class CounterfactSpanProcessor:
         self.outcome_verifier = outcome_verifier
         self.outcome_provider = outcome_provider
         self._spans_by_trace: dict[str, list[dict[str, Any]]] = {}
-        self._trace_metadata: dict[str, dict[str, Any]] = {}
-        # Track traces written by this processor instance; seeded from any
-        # pre-existing receipt on first write so a restarted session keeps
-        # extending the count rather than overwriting it with 1.
-        self._cumulative_count = 0
-        self._seeded_from_disk = False
-
-    # --- TracingProcessor interface ------------------------------------------
 
     def on_trace_start(self, trace: Any) -> None:
-        meta = _maybe_export(trace)
-        if meta and "id" in meta:
-            self._trace_metadata[meta["id"]] = meta
+        return None
 
     def on_trace_end(self, trace: Any) -> None:
         trace_meta = _maybe_export(trace) or {}
@@ -72,28 +56,25 @@ class CounterfactSpanProcessor:
         if trace_id is None:
             return
         spans = self._spans_by_trace.pop(trace_id, [])
-        self._trace_metadata.pop(trace_id, None)
         if not spans:
             return
         run = self._build_run(trace_id=str(trace_id), spans=spans)
-        if not self._seeded_from_disk:
-            self._cumulative_count = read_existing_receipt_count(self.output_dir)
-            self._seeded_from_disk = True
-        self._cumulative_count += 1
-        receipt = IngestReceipt(
-            source_format=SOURCE_FORMAT,
-            source_file="<live-processor>",
-            generated_count=self._cumulative_count,
-            warnings=[randomization_warning(SOURCE_FORMAT)],
-        )
+        warnings: list[str] = []
         if run.outcome.kind != "binary":
-            receipt.warnings.append(
+            warnings.append(
                 f"trace {trace_id!r}: no binary outcome could be derived; "
                 f"wrote categorical outcome={run.outcome.value!r} so the trace "
                 "is preserved without faking success/fail. Provide an "
                 "outcome_provider to label it."
             )
-        write_corpus([run], self.output_dir, receipt)
+        write_sdk_corpus(
+            [run],
+            self.output_dir,
+            source_format=SOURCE_FORMAT,
+            source_file="<live-processor>",
+            append=True,
+            warnings=warnings,
+        )
 
     def on_span_start(self, span: Any) -> None:
         # Most useful state arrives at span_end (timings, outputs).
@@ -110,13 +91,10 @@ class CounterfactSpanProcessor:
 
     def shutdown(self) -> None:
         self._spans_by_trace.clear()
-        self._trace_metadata.clear()
 
     def force_flush(self) -> None:
         # In-process buffering only — nothing async to drain.
         return None
-
-    # --- helpers -------------------------------------------------------------
 
     def _build_run(self, *, trace_id: str, spans: list[dict[str, Any]]) -> Run:
         trace_payload = {"trace_id": trace_id, "spans": spans}
@@ -127,7 +105,7 @@ class CounterfactSpanProcessor:
 
         try:
             return run_from_trace(trace_payload, outcome=override)
-        except IngestError:
+        except MissingOutcomeError:
             # Fall back to a categorical "unknown" outcome rather than dropping
             # the trace. Preserves the run for inspection while refusing to
             # invent a binary success/fail. Other exceptions (real bugs)

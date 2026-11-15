@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 ROLE_TO_MODEL: dict[str, str] = {
     "small": "claude-haiku-4-5-20251001",
@@ -34,10 +34,15 @@ class LLMResponse:
     text: str
     cost_usd: float
     finish_reason: str | None = None
+    model_id: str | None = None
 
 
 class CostUnknownError(RuntimeError):
     """Raised when a production LLM response cannot be priced safely."""
+
+
+class SpendNotApproved(SystemExit):
+    """A paid model call without approval. A SystemExit, so `except Exception` cannot retry it."""
 
 
 class LLMClient(Protocol):
@@ -55,21 +60,25 @@ def extract_cost(resp: object) -> float:
        computes cost from token usage and the published price table.
     3. Raise if both paths fail. Production budget accounting must fail closed.
     """
-    raw = None
-    if hasattr(resp, "get"):
-        raw = resp.get("response_cost")  # type: ignore[union-attr]
-    elif hasattr(resp, "response_cost"):
-        raw = resp.response_cost
+    getter = getattr(resp, "get", None)
+    raw: Any = getter("response_cost") if callable(getter) else getattr(resp, "response_cost", None)
     # Distinguish "provider didn't populate cost" (None) from "provider says
     # the call was free" (0.0). Only the former should fall through to the
     # litellm price-table fallback; a real 0.0 must round-trip as 0.0.
-    cost = float(raw) if raw is not None else None
+    if isinstance(raw, bool):
+        raise CostUnknownError(f"invalid response cost: {raw!r}")
+    try:
+        cost = float(raw) if raw is not None else None
+    except (TypeError, ValueError) as exc:
+        raise CostUnknownError(f"invalid response cost: {raw!r}") from exc
     if cost is not None:
         if not math.isfinite(cost):
             raise CostUnknownError(f"non-finite response cost: {cost!r}")
+        if cost < 0:
+            raise CostUnknownError(f"negative response cost: {cost!r}")
         return cost
     try:
-        import litellm  # type: ignore[import-not-found]
+        import litellm
 
         fallback = float(litellm.completion_cost(completion_response=resp))
     except Exception as exc:
@@ -122,24 +131,36 @@ class LiteLLMClient:
     operator creates `.counterfact/approved` after eyeballing a smoke corpus.
     """
 
-    def __init__(self, role_to_model: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, role_to_model: dict[str, str] | None = None, *, approved: bool = False
+    ) -> None:
         self.role_to_model = role_to_model or ROLE_TO_MODEL
+        self.approved = approved
 
     def call(self, *, role: str, prompt: str) -> LLMResponse:
+        if not self.approved:
+            raise SpendNotApproved(
+                "Refusing to call a paid model: this spends money. Stop and ask Adam to approve "
+                "the run, then start it through `counterfact bench real` with its approval receipt."
+            )
         # Lazy import: keep `litellm` out of the test-time import path so unit
         # tests using mocked clients don't pay the import cost.
-        import litellm  # type: ignore[import-not-found]
+        import litellm
 
         model = self.role_to_model[role]
-        resp = litellm.completion(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=DEFAULT_MAX_TOKENS,
-            timeout=DEFAULT_REQUEST_TIMEOUT_S,
-            num_retries=DEFAULT_NUM_RETRIES,
+        # Streaming is not requested, so the response is a ModelResponse.
+        resp = cast(
+            litellm.ModelResponse,
+            litellm.completion(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=DEFAULT_MAX_TOKENS,
+                timeout=DEFAULT_REQUEST_TIMEOUT_S,
+                num_retries=DEFAULT_NUM_RETRIES,
+            ),
         )
         choice = resp["choices"][0]
         text = _message_content_to_text(choice["message"].get("content"))
         finish_reason = choice.get("finish_reason")
         cost = extract_cost(resp)
-        return LLMResponse(text=text, cost_usd=cost, finish_reason=finish_reason)
+        return LLMResponse(text=text, cost_usd=cost, finish_reason=finish_reason, model_id=model)

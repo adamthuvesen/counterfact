@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import random
+from dataclasses import replace
 
 import pytest
 
-from bench.real.analyze_routed_trial import analyze, to_markdown
+from bench.real.analyze_routed_trial import analyze, main, to_markdown
 from counterfact.intervene import IdentifiabilityStatus
 from counterfact.schema import Decision, Outcome, Run, Step
 
@@ -134,3 +135,72 @@ def test_single_class_routed_runs_get_the_honest_refusal() -> None:
     assert report.engine_routed.identifiability == IdentifiabilityStatus.UNIDENTIFIED
     assert report.engine_without_propensities.identifiability == IdentifiabilityStatus.UNIDENTIFIED
     assert "unidentified" in to_markdown(report)
+
+
+def test_corpus_contrast_does_not_require_any_single_call_focal_run() -> None:
+    rng = random.Random(3)
+    runs = [_run(i, rng) for i in range(300)]
+    for run in runs:
+        if len(run.steps) == 1:
+            first = run.steps[0].decisions[0]
+            run.steps.append(
+                Step(
+                    step_index=1,
+                    decisions=[
+                        first.model_copy(
+                            update={
+                                "decision_id": first.decision_id + "-retry",
+                            }
+                        )
+                    ],
+                )
+            )
+    report = analyze(runs)
+    assert report.engine_routed.identifiability == "identified"
+    assert report.engine_routed.diagnostics is not None
+    assert report.engine_routed.diagnostics.n_used == report.n_routed
+    assert "Newcombe-Wilson" in to_markdown(report)
+
+
+def test_zero_standard_error_reports_an_undefined_z() -> None:
+    rng = random.Random(4)
+    report = analyze([_run(i, rng) for i in range(300)])
+    delta = report.engine_routed.outcome_delta
+    assert delta is not None
+    engine = report.engine_routed.model_copy(
+        update={
+            "outcome_delta": delta.model_copy(
+                update={
+                    "point": 0.0,
+                    "ci_low": 0.0,
+                    "ci_high": 0.0,
+                }
+            )
+        }
+    )
+    report = replace(report, trial_se=0.0, engine_routed=engine)
+    assert "z = undefined: zero estimated standard error" in to_markdown(report)
+
+
+def test_routed_trial_main_reads_all_native_filenames_and_rejects_malformed_json(
+    tmp_path, capsys
+) -> None:
+    rng = random.Random(5)
+    runs = [_run(i, rng) for i in range(100)]
+    for index, run in enumerate(runs):
+        (tmp_path / f"trace-{index}.json").write_text(run.model_dump_json())
+    assert main([str(tmp_path)]) == 0
+    assert "Trial runs:" in capsys.readouterr().out
+    (tmp_path / "malformed.json").write_text("{")
+    assert main([str(tmp_path)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "malformed.json" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_routed_trial_rejects_duplicate_run_identity_before_design_partitioning() -> None:
+    rng = random.Random(6)
+    runs = [_run(i, rng) for i in range(100)]
+    with pytest.raises(ValueError, match="duplicate run_id"):
+        analyze([*runs, runs[0]])

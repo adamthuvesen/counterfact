@@ -4,13 +4,14 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEMO_PATH = REPO_ROOT / "notebooks" / "demo.ipynb"
 EXECUTED_NOTEBOOK_NAME = "demo.executed.ipynb"
 
 
-def execute_demo_notebook(out_dir: Path) -> dict:
+def execute_demo_notebook(out_dir: Path) -> dict[str, Any]:
     proc = subprocess.run(
         [
             sys.executable,
@@ -35,7 +36,7 @@ def execute_demo_notebook(out_dir: Path) -> dict:
     return json.loads((out_dir / EXECUTED_NOTEBOOK_NAME).read_text())
 
 
-def all_text_outputs(nb: dict) -> str:
+def all_text_outputs(nb: dict[str, Any]) -> str:
     pieces: list[str] = []
     for cell in nb["cells"]:
         if cell.get("cell_type") != "code":

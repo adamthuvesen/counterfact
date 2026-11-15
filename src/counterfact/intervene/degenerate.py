@@ -11,11 +11,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+from counterfact.analysis.outcomes import binary_outcome_value
 from counterfact.baselines import pass_rate_by_arm
 from counterfact.intervene.estimate import CausalEstimate, InterventionQuery
 from counterfact.intervene.suggest import fit_suggestion_to_corpus
 from counterfact.intervene.support import build_broaden_arm_support_estimate, missing_arms_for
-from counterfact.outcome.binary import binary_outcome_value
 from counterfact.schema import Run
 
 

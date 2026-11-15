@@ -13,8 +13,7 @@ eligible for a point estimate:
 - The demo notebook renders the naive-vs-honest contrast.
 - Forbidden runtime deps and imports stay out.
 
-Tests that depend on the canonical real-agent corpus skip gracefully when it
-is absent. The demo-notebook test relies on the notebook, not on the corpus.
+The canonical real-agent corpus and demo notebook are required artifacts.
 """
 
 from __future__ import annotations
@@ -26,20 +25,22 @@ from pathlib import Path
 import pytest
 
 from bench.synthetic import generate_traces
-from counterfact import fit_outcome_model, intervene, pass_rate_by_arm
+from counterfact import AnalysisCorpus, contrast, fit_outcome_model, intervene, pass_rate_by_arm
 from counterfact.dag import build_dag
 from counterfact.intervene.estimate import (
     CausalEstimate,
     IdentifiabilityStatus,
-    InterventionQuery,
-    NextStep,
 )
 from counterfact.schema import Run
 from tests.acceptance.demo_notebook_helpers import (
     all_text_outputs,
     execute_demo_notebook,
 )
-from tests.fixtures.corpus_loaders import SMOKE_MIXED_OUTCOME_DIR, load_json_corpus
+from tests.fixtures.corpus_loaders import (
+    SMOKE_MIXED_OUTCOME_DIR,
+    load_json_corpus,
+    load_single_class_refusal,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REAL_CORPUS_DIR = SMOKE_MIXED_OUTCOME_DIR
@@ -61,27 +62,16 @@ FORBIDDEN_DEPS = ("dowhy", "causalml", "pyro", "langchain", "langgraph", "pandas
 FORBIDDEN_IMPORTS = ("dowhy", "causalml", "pyro", "langchain", "langgraph")
 
 
-# --- fixtures ---------------------------------------------------------------
-
-
 def _load_real_corpus() -> list[Run]:
-    if not REAL_CORPUS_DIR.exists():
-        return []
+    assert REAL_CORPUS_DIR.exists(), f"required real corpus absent at {REAL_CORPUS_DIR}"
     return load_json_corpus(REAL_CORPUS_DIR)
 
 
 @pytest.fixture(scope="module")
 def real_corpus() -> list[Run]:
     runs = _load_real_corpus()
-    if not runs:
-        pytest.skip(
-            f"smoke_mixed_outcome corpus absent at {REAL_CORPUS_DIR}. "
-            f"Promote a real corpus per bench/real/README.md before this gate runs."
-        )
+    assert runs, f"required real corpus is empty at {REAL_CORPUS_DIR}"
     return runs
-
-
-# --- synthetic corpus is reproducible at >=500 traces -----------------------
 
 
 def test_synthetic_corpus_is_deterministically_500_traces() -> None:
@@ -91,9 +81,6 @@ def test_synthetic_corpus_is_deterministically_500_traces() -> None:
     assert len(a) == 500
     assert a[0] == b[0]
     assert a[-1] == b[-1]
-
-
-# --- real-corpus identifiability is honestly reported -----------------------
 
 
 def test_real_corpus_meets_minimum_size(real_corpus: list[Run]) -> None:
@@ -156,45 +143,19 @@ def _degenerate_real_corpus_estimate(real_corpus: list[Run]) -> CausalEstimate:
     outcome vector cannot fit logistic regression. The gate should surface
     that as an unidentified causal query, not ask sklearn to do the impossible.
     """
-    classes = _outcome_classes(real_corpus)
-    assert len(classes) == 1, classes
-    observed = next(iter(classes))
-    return CausalEstimate(
-        query=InterventionQuery(
-            decision_type="model_call",
-            intervention_kind="model_choice",
-            target="any",
-            step=-1,
-        ),
-        identifiability=IdentifiabilityStatus.UNIDENTIFIED,
-        reason=(
-            "real corpus is causally degenerate: every trace has "
-            f"Outcome.value={observed}; no outcome variation exists for an "
-            "outcome model or back-door adjustment to leverage"
-        ),
-        warnings=["fit_outcome_model is intentionally skipped for single-class real corpora"],
-        next_step=NextStep(
-            action="broaden_arm_support",
-            payload={
-                "arm_name": "outcome",
-                "missing_strata": [f"Outcome.value={not observed}"],
-                "observed_arms": [],
-                "missing_arms": [f"Outcome.value={not observed}"],
-            },
-            human_text=(
-                "Collect or construct traces with both pass and fail outcomes "
-                "before estimating decision-level effects on the real corpus."
-            ),
-        ),
+    assert len(_outcome_classes(real_corpus)) == 1
+    return contrast(
+        corpus=AnalysisCorpus(real_corpus, seed=42),
+        decision_type="model_call",
+        intervention={"model_choice": "large"},
+        baseline="small",
     )
 
 
-def test_degenerate_real_corpus_verdict_is_unidentified(real_corpus: list[Run]) -> None:
+def test_degenerate_real_corpus_verdict_is_unidentified() -> None:
     """A one-class real corpus gets an actionable unidentified verdict without
     attempting to fit logistic regression."""
-    if len(_outcome_classes(real_corpus)) != 1:
-        pytest.skip("real corpus has mixed outcomes; degenerate path not applicable")
-    est = _degenerate_real_corpus_estimate(real_corpus)
+    est = _degenerate_real_corpus_estimate(load_single_class_refusal())
     assert est.identifiability == IdentifiabilityStatus.UNIDENTIFIED
     assert est.reason
     assert est.next_step.action in {"broaden_arm_support", "add_arm_randomization"}
@@ -259,9 +220,6 @@ def test_real_corpus_identifiability_is_honest(real_corpus: list[Run]) -> None:
                 )
 
 
-# --- at least one unidentified with actionable next_step --------------------
-
-
 def test_at_least_one_unidentified_with_actionable_next_step(
     real_corpus: list[Run],
 ) -> None:
@@ -315,9 +273,6 @@ def test_at_least_one_unidentified_with_actionable_next_step(
     )
 
 
-# --- top-1 attribution matches the labeled root cause -----------------------
-
-
 def test_top1_attribution_label_artifact_is_present() -> None:
     """The labels.json artifact exists with the documented schema.
 
@@ -337,14 +292,10 @@ def test_top1_attribution_label_artifact_is_present() -> None:
     assert entry.get("root_cause_decision_id"), "first label entry has no root_cause_decision_id"
 
 
-# --- demo notebook renders the naive-vs-honest contrast ---------------------
-
-
 def test_demo_renders_naive_vs_honest_contrast(tmp_path: Path) -> None:
     """The demo notebook executes end-to-end and renders both a
     `pass_rate_by_arm` table and an `intervene` CausalEstimate."""
-    if not DEMO_NOTEBOOK.exists():
-        pytest.skip(f"demo notebook absent at {DEMO_NOTEBOOK}")
+    assert DEMO_NOTEBOOK.exists(), f"required demo notebook absent at {DEMO_NOTEBOOK}"
 
     all_text = all_text_outputs(execute_demo_notebook(tmp_path))
     assert "pass_rate" in all_text or "PassRateTable" in all_text, (
@@ -360,9 +311,6 @@ def test_demo_renders_naive_vs_honest_contrast(tmp_path: Path) -> None:
         "demo notebook does not render any actionable next_step.action; "
         f"expected one of {sorted(ACTIONABLE_NEXT_STEP_ACTIONS)}"
     )
-
-
-# --- forbidden dependencies stay out ---------------------------------------
 
 
 def test_no_forbidden_dependencies_in_pyproject() -> None:

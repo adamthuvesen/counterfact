@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from counterfact.analysis import AnalysisCorpus
+from counterfact.analysis.features import decision_feature_values
+from counterfact.analysis.outcomes import binary_outcome_value
 from counterfact.baselines import PassRateRow
 from counterfact.intervene.estimate import (
     CausalEstimate,
@@ -18,22 +21,26 @@ from counterfact.stats import wilson_ci
 IDENTIFIED_TIGHT_CI_WIDTH = 0.10
 
 
-def arm_table_from_model(model: OutcomeModel, feature_family: str) -> list[PassRateRow]:
+def arm_table_from_model(
+    model: OutcomeModel | AnalysisCorpus, feature_family: str
+) -> list[PassRateRow]:
     """Per-arm rows derived from the model's one-hot feature matrix."""
-    if not model.feature_index:
-        return []
-
-    prefix = f"{feature_family}::"
+    corpus = model.corpus if isinstance(model, OutcomeModel) else model
+    buckets: dict[str, list[bool]] = {}
+    for run in corpus.facts:
+        arms = {
+            value
+            for step in run.steps
+            for decision in step.decisions
+            for family, value in decision_feature_values(decision)
+            if family == feature_family
+        }
+        for arm in arms:
+            buckets.setdefault(arm, []).append(binary_outcome_value(run))
     rows: list[PassRateRow] = []
-    for key, idx in sorted(model.feature_index.items()):
-        if not key.startswith(prefix):
-            continue
-        arm = key[len(prefix) :]
-        col = model.train_X[:, idx]
-        n = int(col.sum())
-        if n == 0:
-            continue
-        pass_count = int(((col > 0).astype(int) * model.train_y).sum())
+    for arm, outcomes in sorted(buckets.items()):
+        n = len(outcomes)
+        pass_count = sum(outcomes)
         pass_rate = pass_count / n if n else 0.0
         ci_low, ci_high = wilson_ci(pass_count, n)
         rows.append(

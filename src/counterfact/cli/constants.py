@@ -8,8 +8,8 @@ DEFAULT_DEMO_RUNS_DIR = Path("bench/real/smoke_mixed_outcome")
 
 BENCH_UNAVAILABLE_MESSAGE = (
     "counterfact bench: the bench harness is not included in the wheel. "
-    "Install the development extras with `pip install counterfact[bench]` "
-    'or use an editable dev install (`uv pip install -e ".[dev]"`).'
+    "Run benchmarks from a source checkout after "
+    "`uv sync --locked --extra dev --extra bench`. Installing wheel extras does not include bench/."
 )
 
 DEMO_CONTRAST_THRESHOLD = 0.05
@@ -25,3 +25,13 @@ INGEST_FORMATS = [
     ("openai-agents", "OpenAI Agents SDK trace JSON (requires --outcome unless derivable)"),
     ("generic-jsonl", "Any JSONL with an explicit user-supplied --mapping file"),
 ]
+
+FIXTURE_SET_CHOICES = (
+    "v0",
+    "easy",
+    "hidden_v1",
+    "hard_hidden_v1",
+    "broad_calibration",
+    "very_hard_hidden_v1",
+    "stateful_calibration",
+)

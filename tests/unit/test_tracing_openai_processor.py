@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from counterfact.adapters.openai_agents import run_from_trace
 from counterfact.schema import Run
 from counterfact.tracing import CounterfactSpanProcessor
@@ -181,20 +183,12 @@ def test_processor_receipt_count_accumulates_across_traces(tmp_path: Path) -> No
 
 
 def test_processor_receipt_count_extends_existing_receipt(tmp_path: Path) -> None:
-    # Pre-seed an existing receipt to simulate a resumed session.
-    (tmp_path / "ingest-receipt.json").write_text(
-        json.dumps(
-            {
-                "source_format": "openai-agents",
-                "source_file": "<live-processor>",
-                "mapping_file": "",
-                "generated_count": 7,
-                "warnings": [],
-                "dropped_fields": [],
-                "validation_errors": [],
-            }
-        )
-    )
+    previous = CounterfactSpanProcessor(output_dir=tmp_path, outcome_provider=lambda payload: True)
+    for index in range(7):
+        trace_id = f"previous-{index}"
+        for span in _spans_for_minimal(trace_id):
+            previous.on_span_end(span)
+        previous.on_trace_end(_FakeTrace(trace_id=trace_id))
 
     processor = CounterfactSpanProcessor(
         output_dir=tmp_path,
@@ -234,3 +228,27 @@ def test_processor_shutdown_clears_buffers(tmp_path: Path) -> None:
     )
     processor.shutdown()
     assert processor._spans_by_trace == {}
+
+
+def test_processor_rejects_malformed_outcome_marker(tmp_path: Path) -> None:
+    from counterfact.adapters._common import IngestError
+
+    processor = CounterfactSpanProcessor(output_dir=tmp_path)
+    spans = _spans_for_minimal("bad-marker")
+    for span in spans:
+        processor.on_span_end(span)
+    processor.on_span_end(
+        {
+            "id": "outcome",
+            "trace_id": "bad-marker",
+            "parent_id": "span-root",
+            "span_data": {
+                "type": "custom",
+                "name": "counterfact.outcome",
+                "data": {"value": "false"},
+            },
+        }
+    )
+    with pytest.raises(IngestError, match="must be a JSON boolean"):
+        processor.on_trace_end(_FakeTrace(trace_id="bad-marker"))
+    assert not (tmp_path / "ingest-receipt.json").exists()

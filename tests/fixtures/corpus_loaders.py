@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
+from counterfact.corpus_io import load_corpus
 from counterfact.schema import Run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -18,16 +17,17 @@ def repo_root() -> Path:
 
 
 def load_json_corpus(runs_dir: Path) -> list[Run]:
-    return [Run.model_validate_json(p.read_text()) for p in sorted(runs_dir.glob("*.json"))]
+    if not runs_dir.is_dir():
+        raise FileNotFoundError(f"required committed corpus is missing or empty: {runs_dir}")
+    runs = load_corpus(runs_dir)
+    if not runs:
+        raise FileNotFoundError(f"required committed corpus is missing or empty: {runs_dir}")
+    return runs
 
 
 def load_single_class_refusal() -> list[Run]:
-    if not SINGLE_CLASS_REFUSAL_DIR.exists():
-        pytest.skip(f"single_class_refusal corpus absent at {SINGLE_CLASS_REFUSAL_DIR}")
     return load_json_corpus(SINGLE_CLASS_REFUSAL_DIR)
 
 
 def load_smoke_mixed_outcome() -> list[Run]:
-    if not SMOKE_MIXED_OUTCOME_DIR.exists():
-        pytest.skip(f"smoke_mixed_outcome corpus absent at {SMOKE_MIXED_OUTCOME_DIR}")
     return load_json_corpus(SMOKE_MIXED_OUTCOME_DIR)

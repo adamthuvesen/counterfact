@@ -18,17 +18,20 @@ Usage: `python -m bench.real.analyze_routed_trial <corpus-dir>`
 
 from __future__ import annotations
 
+import argparse
 import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from counterfact import build_dag, fit_outcome_model, intervene
+from counterfact import AnalysisCorpus, contrast
+from counterfact.analysis.outcomes import binary_outcome_value
+from counterfact.analysis.timeline import first_decision
+from counterfact.corpus_io import CorpusIOError, load_corpus
+from counterfact.errors import CounterError
 from counterfact.intervene import CausalEstimate
-from counterfact.intervene.degenerate import degenerate_estimate, outcome_classes
-from counterfact.outcome.binary import binary_outcome_value
 from counterfact.schema import Decision, Run
-from counterfact.stats import Z_95
+from counterfact.stats import Z_95, newcombe_difference_ci
 
 TARGET, BASELINE = "large", "small"
 
@@ -39,23 +42,18 @@ class RoutedTrialReport:
     n_routed: int
     trial_effect: float
     trial_se: float
+    trial_ci: tuple[float, float]
     naive_routed: float
     engine_routed: CausalEstimate
     engine_without_propensities: CausalEstimate
 
 
 def _first_model_call(run: Run) -> Decision | None:
-    return next(
-        (d for step in run.steps for d in step.decisions if d.decision_type == "model_call"),
-        None,
-    )
+    located = first_decision(run, "model_call")
+    return located[1] if located is not None else None
 
 
-def _model_call_count(run: Run) -> int:
-    return sum(d.decision_type == "model_call" for step in run.steps for d in step.decisions)
-
-
-def _difference_in_means(runs: list[Run], design: str) -> tuple[float, float]:
+def _difference_in_means(runs: list[Run], design: str) -> tuple[float, float, tuple[float, float]]:
     """Per-run pass-rate gap keyed on the first model_call, with its standard error.
 
     The harness logs a second model_call when it retries a failed attempt;
@@ -71,31 +69,22 @@ def _difference_in_means(runs: list[Run], design: str) -> tuple[float, float]:
         raise ValueError(f"the {design} runs have no {missing} model_call arm")
     rates = {arm: sum(v) / len(v) for arm, v in outcomes.items()}
     se = math.sqrt(sum(rates[a] * (1 - rates[a]) / len(outcomes[a]) for a in outcomes))
-    return rates[TARGET] - rates[BASELINE], se
+    interval = newcombe_difference_ci(
+        sum(outcomes[TARGET]),
+        len(outcomes[TARGET]),
+        sum(outcomes[BASELINE]),
+        len(outcomes[BASELINE]),
+    )
+    return rates[TARGET] - rates[BASELINE], se, interval
 
 
 def _engine(runs: list[Run]) -> CausalEstimate:
-    if len(outcome_classes(runs)) == 1:
-        return degenerate_estimate(
-            runs, decision_type="model_call", intervention_kind="model_choice", target=TARGET
-        )
-    # The step-scoped API refuses a focal trace that retried (two model_calls).
-    # The estimand keys on each run's first call, so any single-call run works
-    # as the focal trace; every run still enters the fit.
-    focal = next((r for r in runs if _model_call_count(r) == 1), None)
-    if focal is None:
-        raise ValueError("every run retried its model_call; no single-call focal trace exists")
-    step = next(
-        s.step_index
-        for s in focal.steps
-        if s.decisions and s.decisions[0].decision_type == "model_call"
-    )
-    return intervene(
-        dag=build_dag(focal),
-        model=fit_outcome_model(runs, seed=0),
-        step=step,
+    return contrast(
+        corpus=runs,
+        decision_type="model_call",
         intervention={"model_choice": TARGET},
         baseline=BASELINE,
+        seed=0,
     )
 
 
@@ -119,6 +108,7 @@ def _without_propensities(run: Run) -> Run:
 
 
 def analyze(runs: list[Run]) -> RoutedTrialReport:
+    runs = AnalysisCorpus(runs).runs
     policies = {r.run_id: getattr(_first_model_call(r), "policy", None) for r in runs}
     trial = [r for r in runs if policies[r.run_id] == "trial"]
     routed = [r for r in runs if policies[r.run_id] == "fixture_router"]
@@ -126,13 +116,14 @@ def analyze(runs: list[Run]) -> RoutedTrialReport:
         raise ValueError(
             f"corpus needs both designs; found {len(trial)} trial and {len(routed)} routed runs"
         )
-    trial_effect, trial_se = _difference_in_means(trial, "trial")
-    naive_routed, _ = _difference_in_means(routed, "fixture_router")
+    trial_effect, trial_se, trial_ci = _difference_in_means(trial, "trial")
+    naive_routed, _, _ = _difference_in_means(routed, "fixture_router")
     return RoutedTrialReport(
         n_trial=len(trial),
         n_routed=len(routed),
         trial_effect=trial_effect,
         trial_se=trial_se,
+        trial_ci=trial_ci,
         naive_routed=naive_routed,
         engine_routed=_engine(routed),
         engine_without_propensities=_engine([_without_propensities(r) for r in routed]),
@@ -140,14 +131,14 @@ def analyze(runs: list[Run]) -> RoutedTrialReport:
 
 
 def to_markdown(report: RoutedTrialReport) -> str:
-    lo = report.trial_effect - Z_95 * report.trial_se
-    hi = report.trial_effect + Z_95 * report.trial_se
+    lo, hi = report.trial_ci
     lines = [
         f"Trial runs: {report.n_trial}. Routed runs: {report.n_routed}.",
         "",
         "| Estimate | Source | Effect of large vs small | 95% interval |",
         "| --- | --- | ---: | --- |",
-        f"| Randomized trial | trial, difference in means | {report.trial_effect:+.3f} "
+        "| Randomized trial | trial, difference in means (Newcombe-Wilson CI) "
+        f"| {report.trial_effect:+.3f} "
         f"| [{lo:+.3f}, {hi:+.3f}] |",
         f"| Naive | routed, pass-rate gap | {report.naive_routed:+.3f} | — |",
     ]
@@ -170,10 +161,15 @@ def to_markdown(report: RoutedTrialReport) -> str:
     if engine.outcome_delta is not None:
         d = engine.outcome_delta
         engine_se = (d.ci_high - d.ci_low) / (2 * Z_95)
-        z = (d.point - report.trial_effect) / math.sqrt(engine_se**2 + report.trial_se**2)
+        comparison_se = math.hypot(engine_se, report.trial_se)
+        z_text = (
+            f"{(d.point - report.trial_effect) / comparison_se:+.2f}"
+            if comparison_se > 0
+            else "undefined: zero estimated standard error"
+        )
         lines += [
             "",
-            f"Engine minus trial: {d.point - report.trial_effect:+.3f} (z = {z:+.2f}, "
+            f"Engine minus trial: {d.point - report.trial_effect:+.3f} (z = {z_text}, "
             "independent samples). Naive minus trial: "
             f"{report.naive_routed - report.trial_effect:+.3f}.",
         ]
@@ -181,14 +177,15 @@ def to_markdown(report: RoutedTrialReport) -> str:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 1:
-        print("usage: python -m bench.real.analyze_routed_trial <corpus-dir>", file=sys.stderr)
-        return 2
-    corpus_dir = Path(argv[0])
-    runs = [Run.model_validate_json(p.read_text()) for p in sorted(corpus_dir.glob("real-*.json"))]
+    parser = argparse.ArgumentParser(
+        description="Compare routed estimates with a randomized trial."
+    )
+    parser.add_argument("corpus_dir", type=Path)
+    args = parser.parse_args(argv)
     try:
+        runs = load_corpus(args.corpus_dir)
         report = analyze(runs)
-    except ValueError as exc:
+    except (CorpusIOError, CounterError, ValueError) as exc:
         print(f"analyze_routed_trial: {exc}", file=sys.stderr)
         return 2
     print(to_markdown(report), end="")

@@ -32,17 +32,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field, model_validator
 
+from counterfact.analysis import AnalysisCorpus
+from counterfact.analysis.features import canonical_feature_value, decision_feature_values
+from counterfact.analysis.outcomes import binary_outcome_value
+from counterfact.analysis.timeline import ordered_steps
 from counterfact.intervene.estimate import (
     DistributionSummary,
     IdentifiabilityStatus,
     IdentificationBounds,
     NextStep,
+    ResultModel,
+    validate_estimate_payload,
 )
 from counterfact.intervene.estimators import has_mass
-from counterfact.outcome.binary import binary_outcome_value
-from counterfact.outcome.features import canonical_feature_value, decision_feature_values
 from counterfact.outcome.model import fit_logistic
 from counterfact.policy.model import HistoryFeature, Policy
 from counterfact.schema import Decision, Run
@@ -51,11 +55,7 @@ from counterfact.stats import Z_95
 MAX_CROSS_FIT_FOLDS = 5
 
 
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class PolicyDiagnostics(_Strict):
+class PolicyDiagnostics(ResultModel):
     n_runs: int
     n_controlled_decisions: int
     n_matching_runs: int
@@ -63,7 +63,7 @@ class PolicyDiagnostics(_Strict):
     max_weight: float
     policy_value: float
     baseline_value: float
-    snis_delta: float
+    snis_delta: float | None
     ice_delta: float
     # Descriptive, not causal: mean outcome of runs that already followed each
     # policy everywhere it decides. It is what filtering the logs would report.
@@ -71,7 +71,7 @@ class PolicyDiagnostics(_Strict):
     n_folds: int
 
 
-class PolicyEstimate(_Strict):
+class PolicyEstimate(ResultModel):
     policy: str
     baseline: str
     identifiability: IdentifiabilityStatus
@@ -83,6 +83,18 @@ class PolicyEstimate(_Strict):
     assumptions: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     next_step: NextStep
+
+    @model_validator(mode="after")
+    def _label_payload(self) -> PolicyEstimate:
+        validate_estimate_payload(
+            self.identifiability, self.outcome_delta, self.bounds, self.diagnostics
+        )
+        if (
+            self.outcome_delta is not None
+            and self.outcome_delta.ci_method != "sequential_dr_influence_function"
+        ):
+            raise ValueError("policy contrasts require the sequential DR interval method")
+        return self
 
 
 @dataclass(frozen=True)
@@ -123,6 +135,7 @@ def evaluate_policy(
     estimand = f"V({policy.name}) - V({baseline_name})"
     if not runs:
         raise ValueError("evaluate_policy requires at least one run")
+    runs = AnalysisCorpus(runs, seed=seed).runs
     outcomes = {binary_outcome_value(r) for r in runs}
     if len(outcomes) < 2:
         return _refusal(
@@ -174,17 +187,23 @@ def evaluate_policy(
     point = float(contrast.mean())
     matching = int((weights > 0).sum())
     warnings = []
-    if matching == 0:
-        warnings.append(
-            "no run followed the policy at every controlled decision; the estimate "
-            "rests entirely on the outcome models' extrapolation"
-        )
+    for name, value in ((policy.name, snis), (baseline_name, snis_b)):
+        if value is None:
+            warnings.append(
+                f"no run followed policy {name!r} at every controlled decision; its value "
+                "rests entirely on the outcome models' extrapolation, and SNIS is unavailable"
+            )
     return PolicyEstimate(
         policy=policy.name,
         baseline=baseline_name,
         identifiability=IdentifiabilityStatus.IDENTIFIED,
         estimand=estimand,
-        outcome_delta=DistributionSummary(point=point, ci_low=point - half, ci_high=point + half),
+        outcome_delta=DistributionSummary(
+            point=point,
+            ci_low=point - half,
+            ci_high=point + half,
+            ci_method="sequential_dr_influence_function",
+        ),
         diagnostics=PolicyDiagnostics(
             n_runs=len(runs),
             n_controlled_decisions=sum(len(r.nodes) for r in target),
@@ -193,7 +212,7 @@ def evaluate_policy(
             max_weight=float(weights.max()),
             policy_value=float(psi.mean()),
             baseline_value=float(psi_b.mean()),
-            snis_delta=snis - snis_b,
+            snis_delta=snis - snis_b if snis is not None and snis_b is not None else None,
             ice_delta=ice - ice_b,
             matched_runs_delta=(
                 matched - matched_b if matched is not None and matched_b is not None else None
@@ -217,7 +236,7 @@ def evaluate_policy(
 
 def _history(run: Run, before_step: int, observation_keys: set[str]) -> tuple[str, ...]:
     features: list[str] = []
-    for step in run.steps:
+    for step in ordered_steps(run):
         if step.step_index >= before_step:
             continue
         for decision in step.decisions:
@@ -232,7 +251,7 @@ def _history(run: Run, before_step: int, observation_keys: set[str]) -> tuple[st
 
 def _feature_value(run: Run, before_step: int, feature: HistoryFeature) -> str | None:
     value: str | None = None
-    for step in sorted(run.steps, key=lambda st: st.step_index):
+    for step in ordered_steps(run):
         if step.step_index >= before_step:
             continue
         if feature.source == "decision":
@@ -247,10 +266,8 @@ def _feature_value(run: Run, before_step: int, feature: HistoryFeature) -> str |
 
 
 def _run_nodes(run: Run, policy: Policy, keys: set[str]) -> _RunNodes:
-    # Time is step_index, not list position: a run may list steps out of order
-    # or split one index across several Step entries.
     by_step: dict[int, list[Decision]] = {}
-    for step in run.steps:
+    for step in ordered_steps(run):
         for decision in step.decisions:
             if policy.rule_for(decision.decision_type) is not None:
                 by_step.setdefault(step.step_index, []).append(decision)
@@ -414,7 +431,7 @@ def _kish(weights: np.ndarray) -> float:
 
 def _sequential_dr(
     runs: list[_RunNodes], folds: np.ndarray
-) -> tuple[np.ndarray, float, float, np.ndarray]:
+) -> tuple[np.ndarray, float, float | None, np.ndarray]:
     """Return per-run DR scores, the ICE value, the SNIS value, and trajectory weights."""
     n = len(runs)
     psi = np.zeros(n)
@@ -427,7 +444,7 @@ def _sequential_dr(
             psi[i], ice[i] = _dr_score(runs[i], models, fallback)
     weights = np.array([_trajectory_weight(r) for r in runs])
     y = np.array([r.outcome for r in runs])
-    snis = float((weights * y).sum() / weights.sum()) if weights.sum() > 0 else float("nan")
+    snis = float((weights * y).sum() / weights.sum()) if weights.sum() > 0 else None
     return psi, float(ice.mean()), snis, weights
 
 
@@ -454,7 +471,7 @@ class _QModel:
         for name in features:
             if name in self.columns:
                 x[0, self.columns[name]] = 1.0
-        prob: float = self.model.predict_proba(x)[0, 1]  # type: ignore[attr-defined]
+        prob: float = self.model.predict_proba(x)[0, 1]  # pyright: ignore[reportAttributeAccessIssue]  # fit_logistic returns an untyped sklearn model
         return prob
 
 

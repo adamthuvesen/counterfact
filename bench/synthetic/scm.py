@@ -18,6 +18,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass
+from typing import Any
 
 TOOL_CHOICE_ARMS = ("run_tests", "inspect_file", "search_docs")
 MODEL_CHOICE_ARMS = ("haiku", "sonnet")
@@ -134,16 +135,16 @@ class SyntheticSCM:
         propensity = p_sonnet if chosen == "sonnet" else 1.0 - p_sonnet
         return chosen, propensity
 
-    def sample_run(self, run_index: int) -> dict:
+    def sample_run(self, run_index: int) -> dict[str, Any]:
         """Generate a single run as a serializable dict in the native trace format."""
         tool, p_tool = self.uniform_choice(TOOL_CHOICE_ARMS)
         if self.confound:
             model, p_model = self._confounded_model_choice(tool)
             model_policy = "confounded_by_tool"
-            model_policy_params: dict = {
+            model_policy_params: dict[str, Any] = {
                 f"p_sonnet_given_{t}": _P_SONNET_GIVEN_TOOL[t] for t in TOOL_CHOICE_ARMS
             }
-            model_context_features: dict = {"tool_chosen": tool}
+            model_context_features: dict[str, Any] = {"tool_chosen": tool}
         else:
             model, p_model = self.uniform_choice(MODEL_CHOICE_ARMS)
             model_policy = "uniform"

@@ -34,3 +34,17 @@ def test_sampled_traces_are_valid_runs(scenario: Scenario) -> None:
     rng = random.Random(0)
     for i in range(50):
         Run.model_validate(scenario.sample(rng, i, None))
+
+
+def test_benchmark_engine_does_not_depend_on_the_descriptive_comparator_fit(monkeypatch) -> None:
+    from bench.synthetic import suite
+    from counterfact.errors import InsufficientOutcomeSupportError
+
+    def unavailable_comparator(*args, **kwargs):
+        raise InsufficientOutcomeSupportError("descriptive comparator is unavailable")
+
+    monkeypatch.setattr(suite, "fit_outcome_model", unavailable_comparator)
+    result = suite.run_seed("logged_confounding", 0)
+    assert result.adjust_all is None
+    assert result.label == "identified"
+    assert result.engine is not None

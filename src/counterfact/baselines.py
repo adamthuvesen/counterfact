@@ -11,26 +11,30 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from counterfact.outcome.binary import binary_outcome_value
+from counterfact.analysis.outcomes import binary_outcome_value
 from counterfact.schema import Run
 from counterfact.stats import wilson_ci
 
 
 class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
 class PassRateRow(_Strict):
-    """One row of the per-arm pass-rate table."""
-
     arm: str
-    n: int
-    pass_count: int
-    pass_rate: float
-    ci_low: float
-    ci_high: float
+    n: int = Field(ge=0)
+    pass_count: int = Field(ge=0)
+    pass_rate: float = Field(ge=0, le=1)
+    ci_low: float = Field(ge=0, le=1)
+    ci_high: float = Field(ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _valid_counts_and_interval(self) -> PassRateRow:
+        if self.pass_count > self.n or self.ci_low > self.ci_high:
+            raise ValueError("arm counts and sampling interval must be ordered")
+        return self
 
 
 class PassRateTable(_Strict):
