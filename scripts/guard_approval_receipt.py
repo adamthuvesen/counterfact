@@ -43,7 +43,8 @@ def denial(payload: dict[str, object]) -> str | None:
     path = tool_input.get("file_path") or tool_input.get("notebook_path")
     if isinstance(path, str):
         return MESSAGE if _is_receipt(cwd / path) else None
-    command = tool_input.get("command") or tool_input.get("input") or ""
+    # Claude sends `command`, apply_patch sends `input`, and Codex exec_command sends `cmd`.
+    command = tool_input.get("command") or tool_input.get("input") or tool_input.get("cmd") or ""
     if isinstance(command, list):
         command = " ".join(str(part) for part in command)
     text = str(command)

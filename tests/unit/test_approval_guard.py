@@ -66,6 +66,10 @@ RECEIPT = "/repo/.counterfact/approved"
                 "input": "*** Begin Patch\n*** Add File: .counterfact/approved\n+ok\n*** End Patch"
             },
         },
+        {
+            "tool_name": "exec_command",
+            "tool_input": {"cmd": "printf '{}' > .counterfact/approved"},
+        },
     ],
 )
 def test_receipt_writes_are_denied(payload: dict[str, object]) -> None:
