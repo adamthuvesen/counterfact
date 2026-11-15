@@ -119,6 +119,13 @@ def test_ingest_analyze_diagnose_export_uses_one_corpus_boundary(
     )
     capsys.readouterr()
     output = corpus / "runs.parquet"
+    # Export version 3 refuses runs without a task id: eval-audit pairs rows on it.
+    assert (
+        main(["export-runs", str(corpus), "--to", "runrecord-parquet", "--output", str(output)])
+        == 2
+    )
+    assert "no task id" in capsys.readouterr().err
+    _label_tasks(corpus, "claude-sdk-fixture")
     assert (
         main(
             [
@@ -166,3 +173,13 @@ def test_missing_io_paths_are_concise_cli_errors(
     assert captured.out == ""
     assert "Traceback" not in captured.err
     assert "counterfact" in captured.err
+
+
+def _label_tasks(run_dir: Path, task_id: str) -> None:
+    """Give ingested runs the task id export version 3 requires, as a user would."""
+    for path in run_dir.glob("*.json"):
+        data = json.loads(path.read_text())
+        if "metadata" not in data:
+            continue
+        data["metadata"].setdefault("extra", {})["task_id"] = task_id
+        path.write_text(json.dumps(data))

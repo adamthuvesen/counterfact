@@ -56,7 +56,13 @@ def main() -> None:
                     observations=[Observation(observation_id="cost", content={"cost_usd": 0.0})],
                 )
             ],
-            outcome=Outcome(kind="binary", value=index % 5 != 0, verifier="smoke"),
+            # Export version 3 needs a task id; consecutive runs share one task.
+            outcome=Outcome(
+                kind="binary",
+                value=index % 5 != 0,
+                verifier="smoke",
+                metadata={"fixture_id": f"smoke-task-{index // 2}"},
+            ),
         )
         runs.append(run)
     write_corpus(

@@ -262,6 +262,7 @@ def test_ingest_and_export_cli__write_receipts(
     assert rc == 0
     assert (out_dir / "ingest-receipt.json").exists()
     assert "wrote 1 trace" in capsys.readouterr().out
+    _label_tasks(out_dir, "forensics-fixture")
 
     export_path = tmp_path / "runrecord.parquet"
     rc = main(
@@ -280,3 +281,13 @@ def test_ingest_and_export_cli__write_receipts(
     assert export_path.with_suffix(".parquet.receipt.json").exists()
     for forbidden in ("switch", "hold", "hedge_on_cost", "drop_from_shortlist"):
         assert forbidden not in out
+
+
+def _label_tasks(run_dir: Path, task_id: str) -> None:
+    """Give ingested runs the task id export version 3 requires, as a user would."""
+    for path in run_dir.glob("*.json"):
+        data = json.loads(path.read_text())
+        if "metadata" not in data:
+            continue
+        data["metadata"].setdefault("extra", {})["task_id"] = task_id
+        path.write_text(json.dumps(data))
